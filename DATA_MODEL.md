@@ -24,6 +24,8 @@ Es una ejecución concreta de un Chunk. Un retry crea un nuevo Intento; nunca bo
 
 Es un archivo o evidencia producida, recibida o preservada por el proceso: input, output de ComfyUI, copia controlada del proyecto, frame de transición, metadata, log o ensamblado final. Mantiene trazabilidad hacia su origen (Proyecto, Ejecución, Chunk, Intento y fase cuando exista) y no se considera intercambiable sólo por tener un nombre parecido.
 
+La evidencia de F1 agrega una regla operativa al concepto: el frame de transición debe identificarse como el último frame realmente decodificable del output válido, seleccionado por índice `N-1`, y conservar PNG lossless, metadata y hash. Un path temporal o un nombre por sí solo no constituye identidad.
+
 ### Workflow Profile
 
 Es una descripción versionada del workflow soportado y de los bindings necesarios para traducir conceptos del proyecto a inputs reales. MiniMax H3 es el primer perfil, no una limitación estructural del dominio.
@@ -34,7 +36,7 @@ Es una descripción versionada del workflow soportado y de los bindings necesari
 - **Output:** resultado observado de una fase, como un MP4 de chunk o metadata. Un output sólo puede usarse para avanzar cuando está identificado y validado según el contrato vigente.
 - **Binding:** mapeo entre un concepto (por ejemplo `first_frame`, `prompt`, `length` o `seed`) y un punto de entrada del Workflow Profile. No obliga a que cada binding sea una entidad independiente.
 - **Error:** hecho explícito con fase, contexto, timestamp, causa observable y posibilidad de retry/recovery. Nunca se convierte silenciosamente en éxito.
-- **Frame de transición:** artefacto derivado del último fotograma exacto de un output válido; es el candidato a `first_frame` del chunk siguiente y conserva su origen.
+- **Frame de transición:** artefacto derivado del último fotograma exacto de un output válido; es el candidato a `first_frame` del chunk siguiente y conserva su origen. F1 demostró selección por índice decodificado, firma de píxeles equivalente y upload posterior mediante `subfolder/name`.
 - **Ensamblado:** operación que combina chunks compatibles para producir un resultado final adicional, preservando los originales.
 - **Estado:** representación del progreso conceptual de Proyecto, Ejecución, Chunk o Intento, sujeta a evidencia y transiciones permitidas.
 - **Checkpoint/punto seguro:** registro durable que identifica hasta qué fase se puede continuar sin repetir trabajo válido. No es sólo un porcentaje.
@@ -99,6 +101,8 @@ Un Intento nace al comenzar una tentativa concreta, avanza por las fases disponi
 
 Después de cada fase crítica, la aplicación registra durablemente el estado, referencias a artefactos y evidencia suficiente antes de avanzar. Un punto seguro típico es: output inequívoco identificado y validado, frame de transición extraído y validado, y relación con el siguiente input preparada o registrada.
 
+F1 verificó que `prompt_id → history → output node → descriptor → archivo` permite correlación técnica, pero queue/history/jobs del backend son memoria de ComfyUI y no son el registro durable del dominio. La persistencia propia debe conservar la relación entre output, frame, upload y `first_frame`.
+
 Al volver tras cierre, crash o reinicio:
 
 1. leer el último estado durable;
@@ -110,6 +114,6 @@ Al volver tras cierre, crash o reinicio:
 
 La política concreta de almacenamiento, atomicidad, versionado y migraciones queda abierta para F1/F2.
 
-## Límites de F0
+## Límites posteriores a F1
 
-No se fijan schema SQL, tablas, clases, nombres definitivos de campos, tecnología de persistencia, serialización ni implementación de estados. Esos detalles sólo se decidirán después de la evidencia técnica y de una revisión del modelo.
+No se fijan schema SQL, tablas, clases, nombres definitivos de campos, tecnología de persistencia, serialización ni implementación de estados. F1 demostró un chaining real de dos chunks, pero no recovery durable, retry productivo, chaining largo ni continuidad visual universal; esas garantías requieren evidencia posterior.

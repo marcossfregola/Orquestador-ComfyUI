@@ -8,13 +8,16 @@ La situación Git actual verificada es:
 
 - repositorio: `C:\Codex\Orquestador-ComfyUI`;
 - rama: `main`;
-- baseline HEAD: `c7bfff125c03791e78458663519db0d77404e522`;
-- `PREPROJECT.md` y los doce documentos autoridad de F0 (`README.md`, `PROJECT.md`, `ARCHITECTURE.md`, `STATUS.md`, `ROADMAP.md`, `BACKLOG.md`, `RULES.md`, `ENVIRONMENT.md`, `DATA_MODEL.md`, `COMFYUI_INTEGRATION.md`, `TESTING.md` y `DECISIONS.md`) figuran actualmente como `untracked` (`??`) y están pendientes de revisión, aprobación y commit;
-- todavía no existe un commit de F0; el HEAD continúa en el baseline indicado;
-- F1 — Spike técnico controlado todavía no comenzó;
-- no existe remote configurado ni tag.
+- baseline HEAD: `de79777fdef6bd232f78611b021a16e4a8f2a81d`;
+- la verificación previa a esta edición mostró `git status --short` vacío; este checkpoint documental queda sin commit;
+- workflow UI canónico: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Installs\PC casa\ComfyUI\user\default\workflows\Prueba Orquestador.json`;
+- SHA-256 del workflow: `3070EB659A0BDB3D8392B0D203F6B4B86409709A20143280473A12C44BA4A7`;
+- ComfyUI core verificado: `0.33.0`, endpoint `http://127.0.0.1:8188`;
+- raíz de input compartido: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Shared\input`;
+- raíz de output compartido: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Shared\output`;
+- FFmpeg/FFprobe usados en F1: `C:\ProjectStorage\VisorVideo\tools\ffmpeg\bin`.
 
-La creación documental de F0 no instaló dependencias, no ejecutó ComfyUI y no ejecutó FFmpeg/FFprobe sobre datos reales. El hash verificado de `PREPROJECT.md` es `4ACD468623C01B8E2D6E53C9839B551CF69344FA7577D2B45E2CDBB95C213A7A`.
+F1 está en curso, sin código productivo. No se modificaron el workflow canónico ni los assets durante los experimentos.
 
 ## Antecedentes históricos no contractuales
 
@@ -22,27 +25,29 @@ La creación documental de F0 no instaló dependencias, no ejecutó ComfyUI y no
 
 También registró como investigación previa los endpoints `/prompt`, `/queue`, `/history/{prompt_id}`, `/interrupt`, `/system_stats`, `/upload/image`, `/view` y `/ws`, junto con un SDK en evolución y proyectos comunitarios de referencia. Ninguno de esos datos se afirma aquí como disponible o compatible en la instalación actual.
 
-## Revalidaciones de F1
+## Revalidaciones de F1 verificadas
 
-F1 debe obtener evidencia reproducible sobre:
+F1 confirmó, contra la instalación real:
 
-- versión y variante de ComfyUI, custom nodes y modelos instalados;
-- workflow normal y JSON de API del H3 real;
-- mecanismo efectivo de queue, history, eventos, progreso y correlación de outputs;
-- uploads, rutas y permisos;
-- cancelación/interrupción observable y sus límites;
-- outputs completos, metadata y detección de fin de escritura;
-- FFmpeg/FFprobe, codecs, resolución, FPS, timebase, pix format, audio y concat;
-- bindings, manifest/versionado y compatibilidad ante cambios del workflow;
-- espacio libre, memoria, GPU y concurrencia segura;
-- opciones de SDK, cliente propio o librerías externas con licencia compatible.
+- endpoints HTTP `/system_stats`, `/queue`, `/prompt`, `/history`, `/history/{prompt_id}`, `/object_info`, `/object_info/{class}`, `/features`, `/api/jobs`, `/api/jobs/{id}`, `/upload/image` y `/view`;
+- WebSocket `/ws`, eventos de ejecución y progreso real del sampler;
+- derivación del prompt API desde el workflow UI sin editarlo;
+- correlación `prompt_id → history → node 92 → filename/subfolder/type → archivo físico`;
+- upload de assets externos mediante `subfolder/name` relativo;
+- seis referencias H3 densas y ordenadas, con crops, escalados y hashes preservables;
+- extracción del último frame decodificado por índice y validación pixel a pixel;
+- concat demuxer `-c copy` para dos MP4 H.264 compatibles.
 
-F1 debe registrar versiones, comandos, respuestas, artefactos de prueba y límites. Un experimento descartable no se convierte por sí solo en dependencia de producción.
+Estos resultados son evidencia de spike, no dependencias productivas. Queue/history/jobs siguen siendo memoria observable del backend.
+
+## Revalidaciones pendientes
+
+Todavía deben probarse y decidirse recovery tras crash/reinicio, retry y cancelación productivos, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, límites formales del profile, packaging, SDK/cliente y GUI.
 
 ## Principios de reproducibilidad
 
 - Registrar el entorno real antes de convertir un comportamiento en contrato.
 - Separar configuración del proyecto de la configuración del equipo.
 - Mantener el endpoint configurable aunque el primer release use ComfyUI local.
-- No elegir framework UI, persistencia, SDK, bindings definitivos ni packaging durante F0.
+- No elegir framework UI, persistencia, SDK, bindings definitivos ni packaging sólo por el resultado de un spike.
 - El producto esencial debe poder operar localmente sin IA ni servicios cloud pagos.

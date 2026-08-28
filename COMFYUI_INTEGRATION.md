@@ -2,6 +2,14 @@
 
 ComfyUI es el backend de inferencia del primer release. La aplicación lo usa mediante un adaptador detrás de contratos propios; no es la UI principal ni una dependencia del dominio.
 
+## Evidencia actual de F1
+
+La instalación real usada en el spike expone ComfyUI core `0.33.0` en `http://127.0.0.1:8188`. El workflow UI canónico `Prueba Orquestador.json` conserva SHA-256 `3070EB659A0BDB3D8392B0D203F6B4B86409709A20143280473A12C44BA4A7`; no es un prompt API JSON y no fue modificado.
+
+Se verificaron, mediante consultas o ejecuciones controladas, `/system_stats`, `/queue`, `/prompt`, `/history`, `/history/{prompt_id}`, `/object_info`, `/object_info/{class}`, `/features`, `/api/jobs`, `/api/jobs/{id}`, `/upload/image`, `/view` y WebSocket `/ws`.
+
+`queue` y `history` son memoria observable de ComfyUI. No sustituyen la persistencia durable del Orquestador.
+
 ## Responsabilidad del adaptador
 
 El adaptador debe encapsular, según evidencia de la instalación real:
@@ -34,6 +42,16 @@ Como mínimo, el perfil debe poder expresar conceptualmente:
 - seed o política de seed;
 - output y su identificación.
 
+El contrato observado del primer perfil H3 incluye, dentro del adaptador/profile:
+
+- `LoadImage` node 114 → `ImageCropV2` 127 → `ImageScaleToTotalPixels` 119 → `GetImageSize` 120 → `MiniMaxH3HybridRefAndKeyframe` 129 `first_frame`;
+- `width` y `height` de H3 permanecen enlazados a las salidas 0 y 1 de node 120;
+- `ref_images.ref_image_0..5` son seis slots densos, ordenados y conectados a los escalados correspondientes;
+- `prompt`, `length`, `steps`, `seed`, sampler, scheduler, FPS y `ref_image_size` se inyectan en sus inputs API reales;
+- node 92 `SaveVideo` expone el descriptor `filename/subfolder/type` usado para resolver el output.
+
+Estos IDs y nombres son evidencia del profile H3 instalado; no deben filtrarse al dominio.
+
 Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. El formato final del manifest y la estrategia de identificación (node id + input, título, `class_type`, alias o combinación controlada) quedan abiertos para F1.
 
 ## Bindings conceptuales
@@ -54,11 +72,11 @@ reference_1  -> node/input
 ...
 ```
 
-Los bindings definitivos, límites efectivos de referencias/chunks, uploads e inyección de imágenes se verifican en F1.
+Los bindings definitivos y su validación productiva todavía requieren formalización; F1 verificó los nombres y enlaces del primer profile H3, seis referencias, uploads e inyección externa de imágenes.
 
 ## Preflight de integración
 
-Antes de iniciar una ejecución larga se debe comprobar, con operaciones reales cuando F1 lo permita:
+Antes de iniciar una ejecución larga se debe comprobar:
 
 - ComfyUI disponible y endpoint accesible;
 - workflow y versión compatibles;
@@ -72,30 +90,37 @@ Antes de iniciar una ejecución larga se debe comprobar, con operaciones reales 
 
 Fallos de preflight deben ocurrir en segundos y no después de un render largo.
 
+F1 demostró este preflight con el workflow canónico, los assets baseline y los presets corto y largo. Las variantes B3–B7 se construyeron en memoria y se compararon por fingerprint antes del POST.
+
 ## Outputs y progreso
 
 El adaptador debe identificar el output correcto sin depender de una captura de pantalla o de un nombre ambiguo. La aplicación validará que el archivo terminó de escribirse y que es legible antes de extraer el frame de transición.
 
 Si el backend ofrece progreso real del sampler, se puede exponer como evidencia. Si no, sólo se muestran fases y eventos verificables; no se inventan porcentajes ni ETA.
 
+La correlación inequívoca observada es:
+
+`prompt_id` → `history` → output node 92 → `filename/subfolder/type` → archivo físico.
+
+No se usa `mtime`, “archivo más reciente” ni heurística de nombre. `api/jobs/{id}` aporta estado y conteo, pero no reemplaza esta correlación ni una persistencia propia.
+
 ## Cancelación y recuperación
 
-La semántica de cancelación, interrupción, jobs huérfanos y reconexión se mantiene abierta hasta observarla en F1. Un cierre o pérdida de conexión no se interpreta automáticamente como éxito o como permiso para regenerar. Recovery compara el estado durable, los artefactos y el backend observable; si no puede decidir, conserva la evidencia y emite un error explícito.
+La instalación expone `/interrupt` y cancelación de jobs, pero F1 no ejecutó una cancelación productiva ni demostró sus límites. Un cierre o pérdida de conexión no se interpreta automáticamente como éxito o como permiso para regenerar. Recovery debe comparar estado durable propio, artefactos y backend observable; si no puede decidir, conserva la evidencia y emite un error explícito.
 
 ## FFmpeg/FFprobe
 
-El adaptador ComfyUI no absorbe las operaciones exactas de video. Un adaptador separado valida outputs, obtiene metadata, extrae el último frame y ensambla chunks. La política de concat/re-encode, deduplicación del frame de unión y compatibilidad efectiva quedan para F1/F8.
+El adaptador ComfyUI no absorbe las operaciones exactas de video. Un adaptador separado valida outputs, obtiene metadata y extrae el último frame realmente decodificado por índice `N-1` a PNG lossless. F1 probó la firma `framemd5` con formato de píxel equivalente.
 
-## Hipótesis y preguntas de F1
+F1 también probó concat demuxer con `-c copy` para dos MP4 H.264 compatibles, preservando los originales. La política general de re-encode, deduplicación y ensamblado productivo sigue abierta.
 
-Lo siguiente proviene de la investigación histórica de `PREPROJECT.md` y es hipótesis, no hecho actual:
+## Resultado F1 y límites abiertos
 
-- podrían existir endpoints locales equivalentes a `POST /prompt`, `GET /queue`, `GET /history/{prompt_id}`, `POST /interrupt`, `GET /system_stats`, `POST /upload/image` y `GET /view`;
-- podría existir un WebSocket `/ws` con eventos de ejecución/progreso;
-- `comfy-python-sdk` y un proxy local podrían ser útiles, pero no son dependencia aprobada;
-- proyectos comunitarios como `ComfyUI-MiniMaxH3-FlowDirector`, `ComfyUI_VideoChunkTools` o wrappers de API podrían aportar patrones, sujetos a licencia, mantenimiento y valor demostrado.
+B2–B7 demostraron, en ejecuciones controladas, derivación del prompt API, overrides externos de prompt/referencia/first frame, upload de assets y separación conceptual entre Workflow Profile, Reference Set, First Frame, Prompt/Chunk, Preset y Output.
 
-F1 debe responder con evidencia: API y schema reales, queue/history/eventos, correlación prompt→output, uploads, cancelación, comportamiento tras reinicio, workflow JSON, límites de bindings, estrategia de cliente/SDK, y reutilización segura. No se adopta ni forkeará automáticamente un proyecto externo.
+C1 demostró extracción exacta del último frame decodificado. C2 demostró un chaining real de dos chunks: output → frame → upload → `first_frame`. C3 demostró un ensamblado técnico y recibió validación humana positiva de ese seam concreto.
+
+Continúan abiertos recovery después de crash/reinicio, retry productivo, cancelación productiva, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, GUI y generalización de la continuidad visual. No se adopta ni forkeará automáticamente un proyecto externo.
 
 ## Límites
 

@@ -6,13 +6,17 @@ Este documento contiene únicamente trabajo decidido. El orden aprobado de F0–
 
 Producto, alcance, no-alcance, arquitectura, dominio, estados, checkpoints, retry, recovery y reconciliación conceptuales; responsabilidades de infraestructura; Workflow Profiles y bindings como contratos; reglas, entorno, testing y documentación autoridad. No incluye funcionalidad de producto.
 
-**Estado:** documentación ejecutada sin commit; auditoría y aprobación formal pendientes.
+**Estado:** base documental establecida en el baseline; F0 no incluye funcionalidad de producto.
 
 ## F1 — Spike técnico controlado
 
 Inspeccionar la instalación real de ComfyUI/MiniMax H3 y verificar versiones, custom nodes, workflow normal y API JSON, API local, queue/history, WebSocket/eventos, outputs, uploads, cancelación, FFmpeg/FFprobe, bindings, recovery experimental y reutilización tecnológica.
 
 Puede usar experimentos descartables, harnesses o una cáscara técnica mínima para validar threading, cancelación, progreso o integración desktop. Esos experimentos no se convierten automáticamente en producción ni condicionan el diseño sin evidencia.
+
+**Estado:** checkpoint técnico B2–C3 ejecutado y documentado; F1 permanece abierta.
+
+F1 ya demostró derivación del prompt API, overrides externos, upload de assets, first frame externo, un proyecto integrado, extracción exacta del último frame, chaining real de dos chunks, ensamblado técnico y validación humana del primer seam. Antes del cierre formal todavía faltan recovery/retry/cancelación productivos, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura y validación de los límites restantes.
 
 ## F2 — Dominio + persistencia + reconciliación base
 

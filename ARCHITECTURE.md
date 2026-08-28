@@ -57,6 +57,14 @@ La semántica de los conceptos y sus relaciones es autoridad de [DATA_MODEL.md](
 
 Un cierre puede ocurrir entre cualquiera de estos pasos. En el siguiente inicio, recovery compara estado durable, artefactos y backend observable antes de continuar; no asume que la última operación terminó sólo porque existió una solicitud.
 
+## Frontera verificada por F1
+
+F1 confirmó que ComfyUI puede permanecer detrás de un adaptador programático: el workflow UI se conserva, el adaptador construye el prompt API, envía el trabajo, sigue WebSocket/history y resuelve el output por descriptor. La aplicación no necesita automatizar clicks ni exponer esos detalles al dominio.
+
+El adaptador de video separado usa FFprobe/FFmpeg para validar outputs, seleccionar el último frame realmente decodificado y ensamblar chunks compatibles. Queue/history del backend son observables de memoria; los checkpoints y la reconciliación durable siguen perteneciendo a la persistencia y a los casos de uso propios.
+
+El chaining real probado fue de dos chunks y la continuidad visual fue validada por el usuario sólo para ese caso. No constituye una garantía general ni una implementación productiva.
+
 ## Dependencias permitidas
 
 - UI depende de casos de uso, no de adaptadores externos.
@@ -77,6 +85,6 @@ Un cierre puede ocurrir entre cualquiera de estos pasos. En el siguiente inicio,
 - El progreso refleja hechos reales; no se inventan porcentajes ni ETA.
 - Las fronteras se preparan para perfiles, backends y asistentes futuros sin implementar esas funciones en F0.
 
-## Qué no decide F0
+## Qué permanece abierto tras F1
 
-Persistencia concreta, schema, framework UI, cliente o SDK ComfyUI, endpoints exactos, WebSocket real, política FFmpeg, packaging, límites efectivos, concurrencia segura y librerías externas quedan abiertos para F1. La lista operativa de preguntas está en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
+Persistencia concreta, schema, framework UI, cliente o SDK ComfyUI, packaging, límites formales del profile, concurrencia segura, recovery/retry/cancelación productivos, chaining largo, ensamblado productivo y librerías externas aún requieren decisiones y pruebas posteriores. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
