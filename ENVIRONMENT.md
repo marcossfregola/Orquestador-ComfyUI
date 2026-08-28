@@ -43,7 +43,7 @@ Estos resultados son evidencia de spike, no dependencias productivas. Queue/hist
 
 ## Revalidaciones pendientes / no contractuales
 
-F3/F4/F6/F7/F8/F9 deben decidir y probar recovery contra backend tras crash/reinicio, retry y cancelación productivos, contrato formal del profile, chaining largo, ensamblado, concurrencia, packaging, SDK/cliente y GUI. La persistencia SQLite y la reconciliación backend-agnóstica de F2 están implementadas, pendientes sólo de auditoría final. La evidencia F1 no convierte estos hechos en contrato.
+F3/F4/F6/F7/F8/F9 deben decidir y probar recovery contra backend tras crash/reinicio, retry y cancelación productivos, contrato formal del profile, chaining largo, ensamblado, concurrencia, packaging, SDK/cliente y GUI. La persistencia SQLite y la reconciliación backend-agnóstica de F2 están implementadas y F2 está **CLOSED — APPROVED** (cierre 2026-08-28). La evidencia F1 no convierte estos hechos en contrato.
 
 ## Principios de reproducibilidad
 

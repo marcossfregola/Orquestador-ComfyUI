@@ -87,7 +87,7 @@ El chaining real probado fue de dos chunks y la continuidad visual fue validada 
 
 ## Estado de implementación F2
 
-F2 está **IMPLEMENTATION COMPLETE — PENDING FINAL CHATGPT AUDIT**. El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI corresponde a F3 y no está implementado; Workflow Profile/bindings H3 corresponden a F4 y no están implementados.
+F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI corresponde a F3 y no está implementado; Workflow Profile/bindings H3 corresponden a F4 y no están implementados.
 
 ## Qué permanece abierto tras F2
 

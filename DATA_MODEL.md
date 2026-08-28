@@ -116,7 +116,7 @@ La política concreta de integración con ComfyUI, ensamblado productivo y recup
 
 ## Estado implementado de F2
 
-F2 está **IMPLEMENTATION COMPLETE — PENDING FINAL CHATGPT AUDIT**. El modelo ejecutable mantiene las entidades Proyecto, Ejecución, Chunk ordenado, Intento append-only (incluido el historial de retry), Artefacto, Error y `TransitionFrame`. `TransitionFrame` conserva procedencia exacta y semántica N-1: es el último frame realmente decodificable del output válido y su origen queda vinculado al artefacto y chunk que lo produjo. `WorkflowProfileRef` es una referencia opaca opcional de Ejecución; `BackendJobRef` es una referencia opaca opcional de Intento, se asigna una sola vez y se preserva al reiniciar. Los parámetros heredados y los overrides efectivos quedan distinguibles.
+F2 está **CLOSED — APPROVED**. El modelo ejecutable mantiene las entidades Proyecto, Ejecución, Chunk ordenado, Intento append-only (incluido el historial de retry), Artefacto, Error y `TransitionFrame`. `TransitionFrame` conserva procedencia exacta y semántica N-1: es el último frame realmente decodificable del output válido y su origen queda vinculado al artefacto y chunk que lo produjo. `WorkflowProfileRef` es una referencia opaca opcional de Ejecución; `BackendJobRef` es una referencia opaca opcional de Intento, se asigna una sola vez y se preserva al reiniciar. Los parámetros heredados y los overrides efectivos quedan distinguibles.
 
 El punto seguro se deriva del agregado durable y de los artefactos verificados requeridos; no existe una entidad `Checkpoint` persistida separada. No forman parte del dominio F2 los IDs ni bindings de nodos H3.
 
