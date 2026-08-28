@@ -1,5 +1,9 @@
 # Estrategia de pruebas
 
+## Evidencia verificada de F2 (task 026)
+
+La suite actual queda en **135 tests, OK**, incluyendo 15 escenarios dedicados save→close→reopen→reconcile de recovery E2E, 15 casos directos de corrupción SQLite, prueba de rollback de migración, auditoría AST/import y imports productivos stdlib/local. `git diff --check` está limpio y no hay SQLite/cache generados bajo el repositorio. Es evidencia backend-agnostic de unidad/integración/E2E: no ejecuta ComfyUI ni FFmpeg reales y no constituye validación visual.
+
 F0 define cómo se probará el producto. No afirma pruebas de producto que todavía no existen ni ejecuciones contra ComfyUI que no se realizaron.
 
 ## Niveles
@@ -95,7 +99,7 @@ No se debe afirmar “funciona” sin indicar qué se ejecutó, contra qué ento
 | pending-delete B por POST `/queue` 200, history `{}`, sin output; interrupt A; queue vacía; repo intacto | DEMONSTRATED | F3/F6 definen semántica productiva |
 | concat `-c copy` y seam visual | DEMONSTRATED sólo para ese caso | F8/F10 validan generalización |
 | automatización visual como integración | DISCARDED | — |
-| cancelación productiva por job, reconexión, crash/orphan recovery, retry, persistencia, chaining largo, concurrencia, GUI | DEFERRED | F2/F3/F4/F6/F7/F8/F9 |
+| cancelación productiva por job, reconexión, crash/orphan recovery contra backend, retry del pipeline, chaining largo, concurrencia, GUI | DEFERRED | F3/F4/F6/F7/F8/F9 |
 
 ## Estado de F1
 

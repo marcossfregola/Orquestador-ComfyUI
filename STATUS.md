@@ -1,7 +1,7 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-27
-**Fase:** F1 — Spike técnico controlado
+**Última actualización:** 2026-08-28
+**Fase:** F2 — Dominio + persistencia + reconciliación base
 **Estado:** CLOSED — aprobado por la dirección técnica de ChatGPT; se cumplieron los criterios de cierre de F1 con esta corrección exacta
 
 ## Fotografía viva
@@ -11,7 +11,9 @@
 - No se implementó código ni infraestructura de producción.
 - La consolidación documental de este checkpoint está sin commit; el estado Git posterior debe leerse en la evidencia final.
 - F1 no implementa F2/F3/F4. La evidencia de spike está completa y F1 queda formalmente cerrada por aprobación de la dirección técnica de ChatGPT.
-- F2: NOT STARTED.
+- F2: **IMPLEMENTATION COMPLETE — PENDING FINAL CHATGPT AUDIT**.
+- F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
+- F3: NOT STARTED.
 
 ## Baseline conocido
 
@@ -55,11 +57,11 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 ## Pendiente para fases posteriores
 
 - Recovery/retry ante crash, cierre, reinicio y jobs huérfanos.
-- Persistencia durable, checkpoints y reconciliación implementables.
+- Recovery contra backend, cancelación productiva y reconciliación de jobs huérfanos.
 - Cancelación productiva, concurrencia segura y comportamiento de reconexión.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
-- F2: persistencia durable y schema de Reference Set/checkpoints.
-- F3: adaptador productivo, reconexión, cancelación y errores.
+- F2: implementación técnica completa; pendiente auditoría final de ChatGPT (estado vigente arriba).
+- F3: NOT STARTED — adaptador productivo, reconexión, cancelación y errores.
 - F4: contrato versionado del Workflow Profile H3 y tests de compatibilidad/bindings.
 - F6/F7/F8/F9: recovery, chaining largo, ensamblado productivo y GUI.
 

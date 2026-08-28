@@ -31,7 +31,7 @@ Registro conciso. Cada entrada indica fecha, decisión, motivo, estado/reemplazo
 | 2026-08-27 | El dominio es independiente de detalles técnicos externos | Testabilidad y evolución | Aprobada en F0; no reemplazada | [DATA_MODEL.md](DATA_MODEL.md) |
 | 2026-08-27 | Primer release: proyecto H3 de N chunks durable, recuperable y ensamblable | Definición comprobable del valor inicial | Aprobada en F0; ampliaciones fuera de alcance | [PROJECT.md](PROJECT.md) |
 | 2026-08-27 | F6 valida recovery del pipeline y F7 recovery multi-chunk | Evitar confundir niveles de recuperación | Aprobada en F0; no reemplazada | [ROADMAP.md](ROADMAP.md) |
-| 2026-08-27 | F0 es documental y no implementa producto | Congelar base antes de F1 | Aprobada en F0; F1 en curso | [STATUS.md](STATUS.md) |
+| 2026-08-27 | F0 es documental y no implementa producto | Congelar base antes de F1 | Aprobada en F0; F1 cerrada | [STATUS.md](STATUS.md) |
 | 2026-08-27 | ComfyUI se integra detrás de un adaptador programático | F1 demostró API, WebSocket, history y outputs sin automatizar clicks | Respaldada por F1; implementación productiva pendiente | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
 | 2026-08-27 | El workflow UI canónico se conserva y el prompt API se deriva en memoria | F1 ejecutó B2–B7 sin modificar `Prueba Orquestador.json` | Respaldada por F1; profile formal pendiente | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
 | 2026-08-27 | `prompt_id` y descriptor de node 92 son la correlación de output | Evitar heurísticas de archivo reciente o nombre ambiguo | Respaldada por F1; persistencia propia pendiente | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
@@ -41,3 +41,11 @@ Registro conciso. Cada entrada indica fecha, decisión, motivo, estado/reemplazo
 | 2026-08-27 | FFmpeg/FFprobe son autoridad para video exacto | C1 y C3 verificaron extracción, firmas y concat compatible | Respaldada por F1; política productiva pendiente | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
 | 2026-08-27 | Queue/history de ComfyUI no sustituyen persistencia durable | Son memoria observable del backend | Respaldada por F1; schema durable pendiente | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 2026-08-27 | La continuidad visual requiere validación humana | C3 fue reportado perfecto sólo para el seam probado | Respaldada para ese caso; no generalizable | [TESTING.md](TESTING.md) |
+
+## Decisiones de diseño F2
+
+| Fecha | Decisión | Motivo breve | Estado | Autoridad |
+|---|---|---|---|---|
+| 2026-08-28 | No persistir una entidad `Checkpoint`; derivar el punto seguro del agregado durable y artefactos/transiciones verificados | Evitar estado duplicado y permitir recomputación auditable | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |
+| 2026-08-28 | `BackendJobRef` es opaco, opcional en Attempt, assign-once y preservado al reiniciar | Correlación durable sin acoplar el dominio al backend | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |
+| 2026-08-28 | Reconciliación pura, determinista y sin escrituras ocultas | Separar decisión de mutación y hacer recovery testeable | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |

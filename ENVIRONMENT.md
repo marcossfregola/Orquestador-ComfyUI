@@ -4,6 +4,8 @@ Este documento separa hechos comprobados en el repositorio, antecedentes histór
 
 ## Situación actual verificada del repositorio
 
+F2 verifica un núcleo de producción stdlib-only sobre Python 3.13, con SQLite provisto por la biblioteca estándar. Esto describe el entorno del núcleo; no sustituye la evidencia histórica de F1 ni implica adaptador ComfyUI o FFmpeg implementados.
+
 La situación Git actual verificada es:
 
 - repositorio: `C:\Codex\Orquestador-ComfyUI`;
@@ -41,7 +43,7 @@ Estos resultados son evidencia de spike, no dependencias productivas. Queue/hist
 
 ## Revalidaciones pendientes / no contractuales
 
-F2/F3/F4/F6/F7/F8/F9 deben decidir y probar recovery tras crash/reinicio, retry y cancelación productivos, persistencia durable, contrato formal del profile, chaining largo, ensamblado, concurrencia, packaging, SDK/cliente y GUI. La evidencia F1 no convierte estos hechos en contrato.
+F3/F4/F6/F7/F8/F9 deben decidir y probar recovery contra backend tras crash/reinicio, retry y cancelación productivos, contrato formal del profile, chaining largo, ensamblado, concurrencia, packaging, SDK/cliente y GUI. La persistencia SQLite y la reconciliación backend-agnóstica de F2 están implementadas, pendientes sólo de auditoría final. La evidencia F1 no convierte estos hechos en contrato.
 
 ## Principios de reproducibilidad
 

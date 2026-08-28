@@ -85,6 +85,10 @@ El chaining real probado fue de dos chunks y la continuidad visual fue validada 
 - El progreso refleja hechos reales; no se inventan porcentajes ni ETA.
 - Las fronteras se preparan para perfiles, backends y asistentes futuros sin implementar esas funciones en F0.
 
-## Qué permanece abierto tras F1
+## Estado de implementación F2
 
-Persistencia concreta, schema, framework UI, cliente o SDK ComfyUI, packaging, límites formales del profile, concurrencia segura, recovery/retry/cancelación productivos, chaining largo, ensamblado productivo y librerías externas aún requieren decisiones y pruebas posteriores. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
+F2 está **IMPLEMENTATION COMPLETE — PENDING FINAL CHATGPT AUDIT**. El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI corresponde a F3 y no está implementado; Workflow Profile/bindings H3 corresponden a F4 y no están implementados.
+
+## Qué permanece abierto tras F2
+
+Recovery real contra backend, cliente/SDK ComfyUI, framework UI, packaging, contrato formal del profile, concurrencia segura, cancelación productiva, chaining largo, ensamblado productivo y librerías externas aún requieren decisiones y pruebas posteriores. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
