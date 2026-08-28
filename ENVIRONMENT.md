@@ -8,8 +8,8 @@ La situación Git actual verificada es:
 
 - repositorio: `C:\Codex\Orquestador-ComfyUI`;
 - rama: `main`;
-- baseline HEAD: `de79777fdef6bd232f78611b021a16e4a8f2a81d`;
-- la verificación previa a esta edición mostró `git status --short` vacío; este checkpoint documental queda sin commit;
+- HEAD verificado antes de editar: `ecb33835b3378573b192c7fa094c2c5dfe6d953a`;
+- la verificación previa a esta edición mostró rama `main` y `git status --short` vacío; este checkpoint documental queda sin commit;
 - workflow UI canónico: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Installs\PC casa\ComfyUI\user\default\workflows\Prueba Orquestador.json`;
 - SHA-256 del workflow: `3070EB659A0BDB3D8392B0D203F6B4B86409709A20143280473A12C44BA4A7`;
 - ComfyUI core verificado: `0.33.0`, endpoint `http://127.0.0.1:8188`;
@@ -17,7 +17,7 @@ La situación Git actual verificada es:
 - raíz de output compartido: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Shared\output`;
 - FFmpeg/FFprobe usados en F1: `C:\ProjectStorage\VisorVideo\tools\ffmpeg\bin`.
 
-F1 está en curso, sin código productivo. No se modificaron el workflow canónico ni los assets durante los experimentos.
+F1 queda READY_FOR_FINAL_AUDIT, sin código productivo. No se modificaron workflow ni assets durante los experimentos.
 
 ## Antecedentes históricos no contractuales
 
@@ -40,9 +40,9 @@ F1 confirmó, contra la instalación real:
 
 Estos resultados son evidencia de spike, no dependencias productivas. Queue/history/jobs siguen siendo memoria observable del backend.
 
-## Revalidaciones pendientes
+## Revalidaciones pendientes / no contractuales
 
-Todavía deben probarse y decidirse recovery tras crash/reinicio, retry y cancelación productivos, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, límites formales del profile, packaging, SDK/cliente y GUI.
+F2/F3/F4/F6/F7/F8/F9 deben decidir y probar recovery tras crash/reinicio, retry y cancelación productivos, persistencia durable, contrato formal del profile, chaining largo, ensamblado, concurrencia, packaging, SDK/cliente y GUI. La evidencia F1 no convierte estos hechos en contrato.
 
 ## Principios de reproducibilidad
 

@@ -2,6 +2,13 @@
 
 Registro conciso. Cada entrada indica fecha, decisión, motivo, estado/reemplazo y documento autoridad.
 
+## Decisiones de diseño F1 (sin implementación)
+
+| Fecha | Decisión | Motivo breve | Estado o reemplazo | Autoridad |
+|---|---|---|---|---|
+| 2026-08-27 | Workflow Profile H3 versionado y autocontenido, con manifest declarativo de conceptos→inputs (tipo, cardinalidad, opcionalidad y compatibilidad); IDs/class_type aislados en profile/adapter; preflight obligatorio | F1 verificó bindings reales sin filtrarlos al dominio | DECIDIDA como diseño; contrato y tests en F4; consumo por adaptador en F3 | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
+| 2026-08-27 | MAKE/REUSE/ADAPT: REUSE API nativa ComfyUI, FFmpeg/FFprobe detrás de adaptadores; ADAPT/EVALUATE SDK v2 después; reutilizar sólo patrones de FlowDirector, VideoChunkTools y wrappers comunitarios; MAKE dominio, orquestación, persistencia, recovery, UI, estados, intentos, assembly y bindings de producto | Separar evidencia útil de dependencias estructurales | DECIDIDA como diseño F1; no implementación | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
+
 | Fecha | Decisión | Motivo breve | Estado o reemplazo | Autoridad |
 |---|---|---|---|---|
 | 2026-08-27 | Aplicación de escritorio independiente para Windows | Contexto y flujo del primer release | Aprobada en F0; no reemplazada | [PROJECT.md](PROJECT.md) |

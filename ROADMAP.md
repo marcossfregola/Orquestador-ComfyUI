@@ -14,9 +14,9 @@ Inspeccionar la instalación real de ComfyUI/MiniMax H3 y verificar versiones, c
 
 Puede usar experimentos descartables, harnesses o una cáscara técnica mínima para validar threading, cancelación, progreso o integración desktop. Esos experimentos no se convierten automáticamente en producción ni condicionan el diseño sin evidencia.
 
-**Estado:** checkpoint técnico B2–C3 ejecutado y documentado; F1 permanece abierta.
+**Estado:** trabajo técnico y evidencia completos; READY_FOR_FINAL_AUDIT, pendiente auditoría/checkpoint final. F2 no iniciada.
 
-F1 ya demostró derivación del prompt API, overrides externos, upload de assets, first frame externo, un proyecto integrado, extracción exacta del último frame, chaining real de dos chunks, ensamblado técnico y validación humana del primer seam. Antes del cierre formal todavía faltan recovery/retry/cancelación productivos, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura y validación de los límites restantes.
+F1 demostró derivación del prompt API, endpoints nativos, WebSocket/progreso, upload, correlación determinista prompt_id→history→SaveVideo92→archivo, bindings H3 reales, extracción exacta N-1, chaining de dos chunks y ensamblado técnico. La cancelación básica running→`/interrupt` y pending-delete están demostradas como spike; lo productivo queda asignado a F2/F3/F4/F6/F7/F8/F9.
 
 ## F2 — Dominio + persistencia + reconciliación base
 

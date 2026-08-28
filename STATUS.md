@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-08-27
 **Fase:** F1 — Spike técnico controlado
-**Estado:** checkpoint técnico B2–C3 consolidado, sin commit de este checkpoint
+**Estado:** READY_FOR_FINAL_AUDIT — evidencia F1 completa; pendiente únicamente auditoría/checkpoint final
 
 ## Fotografía viva
 
@@ -10,7 +10,7 @@
 - C3 recibió validación humana explícita: la unión Chunk 1 → Chunk 2 fue reportada como perfecta e imperceptible.
 - No se implementó código ni infraestructura de producción.
 - La consolidación documental de este checkpoint está sin commit; el estado Git posterior debe leerse en la evidencia final.
-- F1 permanece abierta: la evidencia actual no demuestra todavía recovery/retry productivo, persistencia durable, cancelación productiva, chaining largo ni GUI.
+- F1 no implementa F2/F3/F4. La evidencia de spike está completa; la aprobación formal queda reservada a la auditoría final de ChatGPT.
 
 ## Baseline conocido
 
@@ -18,7 +18,7 @@ La base documental vigente antes de esta consolidación fue:
 
 - raíz de trabajo y raíz Git: `C:\Codex\Orquestador-ComfyUI`;
 - rama: `main`;
-- HEAD base: `de79777fdef6bd232f78611b021a16e4a8f2a81d`;
+- HEAD verificado: `ecb33835b3378573b192c7fa094c2c5dfe6d953a`;
 - workflow UI canónico: `Prueba Orquestador.json`;
 - SHA-256 del workflow: `3070EB659A0BDBEB3D8392B0D203F6B4B86409709A20143280473A12C44BA4A7`.
 
@@ -41,14 +41,27 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 - Un chaining real Chunk 1 → Chunk 2 y ensamblado de validación con `-c copy`.
 - Validación humana del primer seam.
 
-## Pendiente para cerrar F1
+## Evidencia adicional y límites explícitos
+
+- ComfyUI core `0.33.0` en `127.0.0.1:8188`; endpoints nativos, prompt API derivada, POST `/prompt`, queue/history, WebSocket de ejecución/progreso, upload y FFmpeg/FFprobe fueron verificados.
+- Correlación determinista: `prompt_id → history → SaveVideo node 92 (filename/subfolder/type) → archivo físico`.
+- H3 observado: `LoadImage114→ImageCropV2 127→ImageScaleToTotalPixels119→GetImageSize120→H3 129 first_frame`; width/height desde 120; seis `ref_image_0..5` densas; parámetros prompt/length/steps/seed/sampler/scheduler/FPS/ref_image_size; salida node 92.
+- C1 probó frame exacto `N-1` y equivalencia pixel a pixel mediante `framemd5`; C2 probó chaining real de dos chunks con upload y continuidad hash; C3 sólo permite concat técnico `-c copy` y validación humana del seam de ese caso.
+- Tarea `orquestador-f1-e1-pending-delete-003`: A `f66c16d3-a699-47d8-a8ed-99085fa96cc9` running; B `99632fb4-7c20-4cba-8947-feebed5054ef` pending; B eliminado por `POST /queue` HTTP 200, history `{}`, sin output; A interrumpido por `/interrupt`; queue final vacía; repositorio sin cambios.
+
+Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED como spike. Cancelación productiva por job, reconexión, crash recovery, reconciliación de huérfanos, retry y seguridad de producción quedan DEFERRED.
+
+## Pendiente para fases posteriores
 
 - Recovery/retry ante crash, cierre, reinicio y jobs huérfanos.
 - Persistencia durable, checkpoints y reconciliación implementables.
 - Cancelación productiva, concurrencia segura y comportamiento de reconexión.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
-- Decisión y validación del primer Workflow Profile implementable.
+- F2: persistencia durable y schema de Reference Set/checkpoints.
+- F3: adaptador productivo, reconexión, cancelación y errores.
+- F4: contrato versionado del Workflow Profile H3 y tests de compatibilidad/bindings.
+- F6/F7/F8/F9: recovery, chaining largo, ensamblado productivo y GUI.
 
 ## Criterio de cierre
 
-F1 sólo podrá declararse cerrada cuando los pendientes técnicos estén resueltos con evidencia reproducible y una decisión formal actualice las autoridades correspondientes. Este checkpoint no autoriza todavía F2 ni implementación productiva.
+F1 está READY_FOR_FINAL_AUDIT: el trabajo técnico y la documentación de evidencia están completos. La auditoría/checkpoint formal determinará el cierre; no autoriza implementación productiva ni adelanta F2–F4.

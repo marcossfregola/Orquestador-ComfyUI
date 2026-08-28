@@ -86,9 +86,20 @@ Cada prueba relevante debe conservar, según corresponda:
 
 No se debe afirmar “funciona” sin indicar qué se ejecutó, contra qué entorno y con qué evidencia.
 
+## Matriz formal F1
+
+| Área | Clasificación | Asignación |
+|---|---|---|
+| API/endpoints, prompt derivation, queue/history, WS/progreso, upload, bindings H3, output correlation | DEMONSTRATED | F3/F4 implementan contratos |
+| N-1 PNG + framemd5, chaining real de dos chunks, hash continuity | DEMONSTRATED | F5/F7 amplían cobertura |
+| pending-delete B por POST `/queue` 200, history `{}`, sin output; interrupt A; queue vacía; repo intacto | DEMONSTRATED | F3/F6 definen semántica productiva |
+| concat `-c copy` y seam visual | DEMONSTRATED sólo para ese caso | F8/F10 validan generalización |
+| automatización visual como integración | DISCARDED | — |
+| cancelación productiva por job, reconexión, crash/orphan recovery, retry, persistencia, chaining largo, concurrencia, GUI | DEFERRED | F2/F3/F4/F6/F7/F8/F9 |
+
 ## Estado de F1
 
-F1 produjo evidencia experimental reproducible, pero no implementó código de producto ni convirtió harnesses descartables en dependencias. El checkpoint B2–C3 no cierra F1: siguen pendientes recovery/retry/cancelación productivos, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura y GUI.
+F1 produjo evidencia experimental reproducible, no implementó producto ni convirtió harnesses en dependencias. Estado: READY_FOR_FINAL_AUDIT; la aprobación formal queda pendiente.
 
 ## Criterios de avance
 

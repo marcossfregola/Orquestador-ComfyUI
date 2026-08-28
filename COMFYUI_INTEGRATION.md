@@ -54,6 +54,8 @@ Estos IDs y nombres son evidencia del profile H3 instalado; no deben filtrarse a
 
 Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. El formato final del manifest y la estrategia de identificación (node id + input, título, `class_type`, alias o combinación controlada) quedan abiertos para F1.
 
+La decisión de diseño F1 es un profile/manifest versionado y autocontenido: mappings declarativos concepto→input con tipo, cardinalidad, opcionalidad y compatibilidad; IDs y `class_type` quedan aislados detrás del profile/adapter. F4 formaliza contrato y tests; F3 lo consume.
+
 ## Bindings conceptuales
 
 Un binding traduce un concepto del proyecto a un input real del workflow. Debe declarar suficiente información para validar que el objetivo existe, es del tipo esperado y no está ocupado por otra semántica. No se asume que cada binding sea una clase o tabla.
@@ -106,7 +108,7 @@ No se usa `mtime`, “archivo más reciente” ni heurística de nombre. `api/jo
 
 ## Cancelación y recuperación
 
-La instalación expone `/interrupt` y cancelación de jobs, pero F1 no ejecutó una cancelación productiva ni demostró sus límites. Un cierre o pérdida de conexión no se interpreta automáticamente como éxito o como permiso para regenerar. Recovery debe comparar estado durable propio, artefactos y backend observable; si no puede decidir, conserva la evidencia y emite un error explícito.
+La instalación expone `/interrupt` y cancelación de jobs. El spike demostró interrupción básica de un job running y un caso pending-delete: A `f66c16d3-a699-47d8-a8ed-99085fa96cc9` running, B `99632fb4-7c20-4cba-8947-feebed5054ef` pending; B eliminado por `POST /queue` HTTP 200, history `{}`, sin output; A interrumpido por `/interrupt`; queue final vacía y repositorio sin cambios. Esto es DEMONSTRATED como capacidad de spike, no semántica productiva por job. Reconnect, crash recovery, huérfanos, retry y seguridad productiva quedan DEFERRED a F3/F6.
 
 ## FFmpeg/FFprobe
 
@@ -121,6 +123,12 @@ B2–B7 demostraron, en ejecuciones controladas, derivación del prompt API, ove
 C1 demostró extracción exacta del último frame decodificado. C2 demostró un chaining real de dos chunks: output → frame → upload → `first_frame`. C3 demostró un ensamblado técnico y recibió validación humana positiva de ese seam concreto.
 
 Continúan abiertos recovery después de crash/reinicio, retry productivo, cancelación productiva, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, GUI y generalización de la continuidad visual. No se adopta ni forkeará automáticamente un proyecto externo.
+
+### MAKE / REUSE / ADAPT (decisión F1)
+
+- REUSE: API nativa ComfyUI y FFmpeg/FFprobe, siempre detrás de adaptadores propios.
+- ADAPT/EVALUATE después: `comfy-python-sdk`/API v2; FlowDirector sólo patrones; VideoChunkTools sólo ideas/utilidades selectivas; wrappers o loop scripts comunitarios sólo patrones.
+- MAKE: dominio, orquestación, persistencia, recovery, UI, estados, intentos, assembly y bindings de producto. No se establece dependencia estructural externa.
 
 ## Límites
 
