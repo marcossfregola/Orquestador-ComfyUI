@@ -22,7 +22,8 @@ class ErrorId(EntityId): pass
 class BackendJobRef:
  value:str
  def __post_init__(self):
-  v=str(self.value).strip()
+  if not isinstance(self.value,str): raise DomainError('backend job reference must be a string')
+  v=self.value.strip()
   if not v: raise DomainError('backend job reference must be nonblank')
   object.__setattr__(self,'value',v)
  def __str__(self): return self.value

@@ -91,4 +91,11 @@ F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconcilia
 
 ## Qué permanece abierto tras F2
 
+## F3 — unidad lógica 1 (en implementación)
+
+Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`). Expone contratos internos para health/preflight, envío (`BackendJobRef`), snapshot de queue e history, y traduce transporte, timeout, protocolo y respuestas de servidor a errores explícitos. El parseo conservador mantiene estados desconocidos ante datos incompletos. No incluye WebSocket, perfiles/bindings H3, chaining, FFmpeg, GUI ni orquestación; F3 permanece abierto.
+
 Recovery real contra backend, cliente/SDK ComfyUI, framework UI, packaging, contrato formal del profile, concurrencia segura, cancelación productiva, chaining largo, ensamblado productivo y librerías externas aún requieren decisiones y pruebas posteriores. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
+# F3 HTTP adapter contract
+
+The ComfyUI adapter validates endpoint, prompt identifiers, client_id, queue/history evidence, and HTTP/JSON error taxonomy fail-closed. BackendJobRef instances supplied to history are reused by identity.

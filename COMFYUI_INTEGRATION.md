@@ -12,6 +12,8 @@ Se verificaron, mediante consultas o ejecuciones controladas, `/system_stats`, `
 
 ## Responsabilidad del adaptador
 
+La unidad F3-1 implementa un cliente HTTP local configurable para `/system_stats`, `/prompt`, `/queue` y `/history/{prompt_id}`. Sus modelos son internos y reutilizan `BackendJobRef`; las respuestas malformadas no se convierten en éxito y los estados no determinables quedan explícitamente `unknown`. WebSocket, outputs, bindings H3, cancelación y reconexión productivas permanecen fuera de esta unidad.
+
 El adaptador debe encapsular, según evidencia de la instalación real:
 
 - health y endpoint configurable;
@@ -131,3 +133,6 @@ Continúan abiertos recovery después de crash/reinicio, retry productivo, cance
 ## Límites
 
 El primer release usa ComfyUI local como backend. Backend remoto/cloud, múltiples backends y otros modelos/workflows están fuera de alcance; su posible incorporación queda en [BACKLOG.md](BACKLOG.md).
+# F3 live evidence (2026-08-28)
+
+Read-only GETs to `127.0.0.1:8188` returned HTTP 200: `/system_stats` reported ComfyUI `0.33.0` with non-empty `system` fields (`os`, RAM and version metadata); `/queue` returned empty `queue_running` and `queue_pending`; `/history` returned a mapping of prompt IDs to history records. No prompt was enqueued and no ComfyUI files were modified.

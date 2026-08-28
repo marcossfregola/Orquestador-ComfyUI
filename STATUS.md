@@ -13,7 +13,9 @@
 - F1 no implementa F2/F3/F4. La evidencia de spike está completa y F1 queda formalmente cerrada por aprobación de la dirección técnica de ChatGPT.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
-- F3: NOT STARTED.
+- F3: IN PROGRESS — unidad 1 implementa el contrato/adaptador HTTP genérico; no está cerrada.
+
+F3 Unidad 1 (corrección R3): adaptador HTTP y contrato fail-closed implementados; focused suite 38/38 verde. Evidencia live separada en COMFYUI_INTEGRATION.md.
 
 ## Baseline conocido
 
@@ -61,7 +63,6 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 - Cancelación productiva, concurrencia segura y comportamiento de reconexión.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
-- F3: NOT STARTED — adaptador productivo, reconexión, cancelación y errores.
 - F4: contrato versionado del Workflow Profile H3 y tests de compatibilidad/bindings.
 - F6/F7/F8/F9: recovery, chaining largo, ensamblado productivo y GUI.
 

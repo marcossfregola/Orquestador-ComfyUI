@@ -8,6 +8,8 @@ F0 define cómo se probará el producto. No afirma pruebas de producto que todav
 
 ## Niveles
 
+La unidad F3-1 añade pruebas de contrato deterministas contra servidores HTTP locales para health, submit, queue, history y traducción de errores; no implica ejecuciones reales de ComfyUI.
+
 ### Unitarias
 
 Cubrir modelo de Proyecto, Ejecución, Chunk e Intento; estados y transiciones; validaciones; herencia y overrides de parámetros; bindings; seeds; rutas; compatibilidad de outputs; checkpoints; retry; y reglas de reconciliación.
@@ -112,3 +114,6 @@ F1 produjo evidencia experimental reproducible, no implementó producto ni convi
 - F6 requiere recovery/retry del pipeline sin declarar recovery multi-chunk.
 - F7 requiere por primera vez recovery completo de una cadena de dos o tres chunks.
 - F10 reúne E2E, fallos, recovery, continuidad visual, UX y demás criterios del release.
+# F3 Unidad 1
+
+Focused contract suite: `python -B -m unittest tests.test_f3_adapter -v` — **38 tests**, all green. The suite uses a local mocked HTTP server; live ComfyUI evidence is recorded separately and is not a unit-test result.
