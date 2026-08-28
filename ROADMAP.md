@@ -14,7 +14,7 @@ Inspeccionar la instalación real de ComfyUI/MiniMax H3 y verificar versiones, c
 
 Puede usar experimentos descartables, harnesses o una cáscara técnica mínima para validar threading, cancelación, progreso o integración desktop. Esos experimentos no se convierten automáticamente en producción ni condicionan el diseño sin evidencia.
 
-**Estado:** trabajo técnico y evidencia completos; READY_FOR_FINAL_AUDIT, pendiente auditoría/checkpoint final. F2 no iniciada.
+**Estado:** COMPLETED/CLOSED — trabajo técnico y evidencia completos, con aprobación de la dirección técnica de ChatGPT. F2: NOT STARTED.
 
 F1 demostró derivación del prompt API, endpoints nativos, WebSocket/progreso, upload, correlación determinista prompt_id→history→SaveVideo92→archivo, bindings H3 reales, extracción exacta N-1, chaining de dos chunks y ensamblado técnico. La cancelación básica running→`/interrupt` y pending-delete están demostradas como spike; lo productivo queda asignado a F2/F3/F4/F6/F7/F8/F9.
 

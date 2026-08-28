@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-08-27
 **Fase:** F1 — Spike técnico controlado
-**Estado:** READY_FOR_FINAL_AUDIT — evidencia F1 completa; pendiente únicamente auditoría/checkpoint final
+**Estado:** CLOSED — aprobado por la dirección técnica de ChatGPT; se cumplieron los criterios de cierre de F1 con esta corrección exacta
 
 ## Fotografía viva
 
@@ -10,7 +10,8 @@
 - C3 recibió validación humana explícita: la unión Chunk 1 → Chunk 2 fue reportada como perfecta e imperceptible.
 - No se implementó código ni infraestructura de producción.
 - La consolidación documental de este checkpoint está sin commit; el estado Git posterior debe leerse en la evidencia final.
-- F1 no implementa F2/F3/F4. La evidencia de spike está completa; la aprobación formal queda reservada a la auditoría final de ChatGPT.
+- F1 no implementa F2/F3/F4. La evidencia de spike está completa y F1 queda formalmente cerrada por aprobación de la dirección técnica de ChatGPT.
+- F2: NOT STARTED.
 
 ## Baseline conocido
 
@@ -64,4 +65,4 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 
 ## Criterio de cierre
 
-F1 está READY_FOR_FINAL_AUDIT: el trabajo técnico y la documentación de evidencia están completos. La auditoría/checkpoint formal determinará el cierre; no autoriza implementación productiva ni adelanta F2–F4.
+F1 está CLOSED: el trabajo técnico, la documentación de evidencia y esta corrección exacta cumplen todos los criterios de cierre. No autoriza implementación productiva ni adelanta F2–F4.

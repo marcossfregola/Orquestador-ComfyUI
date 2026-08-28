@@ -52,9 +52,7 @@ El contrato observado del primer perfil H3 incluye, dentro del adaptador/profile
 
 Estos IDs y nombres son evidencia del profile H3 instalado; no deben filtrarse al dominio.
 
-Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. El formato final del manifest y la estrategia de identificación (node id + input, título, `class_type`, alias o combinación controlada) quedan abiertos para F1.
-
-La decisión de diseño F1 es un profile/manifest versionado y autocontenido: mappings declarativos concepto→input con tipo, cardinalidad, opcionalidad y compatibilidad; IDs y `class_type` quedan aislados detrás del profile/adapter. F4 formaliza contrato y tests; F3 lo consume.
+Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. La decisión de diseño F1 queda registrada: un Workflow Profile/manifest versionado y autocontenido, con bindings declarativos y validación de compatibilidad en preflight; los IDs de nodo y `class_type` quedan aislados detrás del profile/adapter; la correlación determinista de outputs usa `prompt_id`/history y el descriptor de `SaveVideo`. El esquema formal, las pruebas de compatibilidad y la implementación del profile permanecen en F4; la frontera del adaptador consumidor de ComfyUI permanece en F3.
 
 ## Bindings conceptuales
 

@@ -8,8 +8,7 @@ La situación Git actual verificada es:
 
 - repositorio: `C:\Codex\Orquestador-ComfyUI`;
 - rama: `main`;
-- HEAD verificado antes de editar: `ecb33835b3378573b192c7fa094c2c5dfe6d953a`;
-- la verificación previa a esta edición mostró rama `main` y `git status --short` vacío; este checkpoint documental queda sin commit;
+- Git es la autoridad para el HEAD actual; la verificación previa a esta corrección mostró rama `main`, estado limpio y HEAD `4bea00f97b27607bd9dde51adef1910c7b3076ee` (primer checkpoint documental de cierre F1, ya committeado; baseline pre-corrección final);
 - workflow UI canónico: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Installs\PC casa\ComfyUI\user\default\workflows\Prueba Orquestador.json`;
 - SHA-256 del workflow: `3070EB659A0BDB3D8392B0D203F6B4B86409709A20143280473A12C44BA4A7`;
 - ComfyUI core verificado: `0.33.0`, endpoint `http://127.0.0.1:8188`;
@@ -17,7 +16,7 @@ La situación Git actual verificada es:
 - raíz de output compartido: `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Shared\output`;
 - FFmpeg/FFprobe usados en F1: `C:\ProjectStorage\VisorVideo\tools\ffmpeg\bin`.
 
-F1 queda READY_FOR_FINAL_AUDIT, sin código productivo. No se modificaron workflow ni assets durante los experimentos.
+F1 queda CLOSED, sin código productivo. No se modificaron workflow ni assets durante los experimentos.
 
 ## Antecedentes históricos no contractuales
 
