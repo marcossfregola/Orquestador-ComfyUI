@@ -76,3 +76,4 @@ F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED / APROBADA CON OBSERVACIONES 
 ### F3-5 application bridge
 
 Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors remain logical evidence only; physical artifact validation/output-root policy are out of scope. F3 remains IN PROGRESS pending controlled live validation and global closure.
+F3-6: implementación completa, pendiente de auditoría/checkpoint. F3 global permanece IN PROGRESS; F3-7 live validation sigue abierta.

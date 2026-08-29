@@ -151,3 +151,6 @@ La evidencia histórica/spike de F1 sobre “interrupción básica” no es una 
 | queue/history `UNKNOWN`, malformada, contradictoria o ambigua | `UNKNOWN`/`CONTRADICTORY`/`AMBIGUOUS` | ninguna |
 
 Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. No hay validación live F3-4; F3-4 está corregido pero pendiente de auditoría/checkpoint. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.
+### F3-6 validación física mínima
+
+La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. No descubre raíces ni selecciona archivos por mtime/latest; falla cerrado ante escapes y no crea `Artifact` ni cambia lifecycle. El mapeo live de raíz queda para F3-7.

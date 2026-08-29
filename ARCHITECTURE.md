@@ -106,3 +106,4 @@ The ComfyUI adapter validates endpoint, prompt identifiers, client_id, queue/his
 # F3-4 safety boundary
 
 Cancellation is isolated in `adapters.cancellation`: pending queue deletion plus fresh queue/history verification is the only production-safe operation. The F1 “basic interruption” result is historical spike evidence only. Running targets return `RUNNING_INTERRUPT_UNSAFE`; native `/interrupt` is non-atomic on ComfyUI 0.33.0 and is not called by F3-4. No domain or persistence transition occurs.
+La frontera `orquestador.adapters.physical_outputs` mantiene separada la evidencia física de la correlación lógica: requiere raíz explícita y no tiene efectos de dominio.
