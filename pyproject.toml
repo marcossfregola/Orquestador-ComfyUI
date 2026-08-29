@@ -2,4 +2,4 @@
 name = "orquestador-comfyui"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["websocket-client>=1.7,<2"]

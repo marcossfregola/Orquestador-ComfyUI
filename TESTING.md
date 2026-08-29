@@ -114,6 +114,8 @@ F1 produjo evidencia experimental reproducible, no implementó producto ni convi
 - F6 requiere recovery/retry del pipeline sin declarar recovery multi-chunk.
 - F7 requiere por primera vez recovery completo de una cadena de dos o tres chunks.
 - F10 reúne E2E, fallos, recovery, continuidad visual, UX y demás criterios del release.
-# F3 Unidad 1
+# F3 Unidades 1 y 2
 
 Focused contract suite: `python -B -m unittest tests.test_f3_adapter -v` — **38 tests**, all green. The suite uses a local mocked HTTP server; live ComfyUI evidence is recorded separately and is not a unit-test result.
+
+F3-2 usa transporte WebSocket falso inyectable y cubre correlación, estados, reconexión y fallback sin requerir ComfyUI vivo.

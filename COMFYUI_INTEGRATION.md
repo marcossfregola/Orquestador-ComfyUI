@@ -12,7 +12,7 @@ Se verificaron, mediante consultas o ejecuciones controladas, `/system_stats`, `
 
 ## Responsabilidad del adaptador
 
-La unidad F3-1 implementa un cliente HTTP local configurable para `/system_stats`, `/prompt`, `/queue` y `/history/{prompt_id}`. Sus modelos son internos y reutilizan `BackendJobRef`; las respuestas malformadas no se convierten en éxito y los estados no determinables quedan explícitamente `unknown`. WebSocket, outputs, bindings H3, cancelación y reconexión productivas permanecen fuera de esta unidad.
+La unidad F3-1 implementa un cliente HTTP local configurable para `/system_stats`, `/prompt`, `/queue` y `/history/{prompt_id}`. Sus modelos son internos y reutilizan `BackendJobRef`; las respuestas malformadas no se convierten en éxito y los estados no determinables quedan explícitamente `unknown`. F3-2 añade observación WebSocket genérica con transporte inyectable, correlación estricta y reconciliación acotada; outputs y bindings H3 permanecen fuera de alcance.
 
 El adaptador debe encapsular, según evidencia de la instalación real:
 

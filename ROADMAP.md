@@ -30,7 +30,7 @@ Incluye 135 pruebas verdes (incluidos escenarios recovery E2E y corrupción SQLi
 
 Implementar health, submit, seguimiento, history, outputs, errores, reconexión y cancelación según los contratos y la evidencia obtenida en F1.
 
-**Estado:** NOT STARTED.
+**Estado:** IN PROGRESS — F3-1 checkpointed; F3-2 implemented, pending approval.
 
 ## F4 — Workflow Profile / bindings MiniMax H3
 

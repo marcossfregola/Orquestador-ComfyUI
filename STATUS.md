@@ -1,19 +1,19 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-08-28
-**Fase:** F2 — Dominio + persistencia + reconciliación base
-**Estado:** CLOSED — aprobado por la dirección técnica de ChatGPT; se cumplieron los criterios de cierre de F1 con esta corrección exacta
+**Fase:** F3 — Adaptador ComfyUI y observación (IN PROGRESS)
+**Estado:** F3-2 implementada, pendiente de aprobación; F3 no está cerrada
 
 ## Fotografía viva
 
-- F1 tiene evidencia controlada de B2–B7 y C1–C3 contra la instalación real de ComfyUI.
-- C3 recibió validación humana explícita: la unión Chunk 1 → Chunk 2 fue reportada como perfecta e imperceptible.
-- No se implementó código ni infraestructura de producción.
+- (Histórico F1) F1 tiene evidencia controlada de B2–B7 y C1–C3 contra la instalación real de ComfyUI.
+- (Histórico F1) C3 recibió validación humana explícita: la unión Chunk 1 → Chunk 2 fue reportada como perfecta e imperceptible.
+- (Histórico de F1) No se implementó código ni infraestructura de producción en ese checkpoint.
 - La consolidación documental de este checkpoint está sin commit; el estado Git posterior debe leerse en la evidencia final.
-- F1 no implementa F2/F3/F4. La evidencia de spike está completa y F1 queda formalmente cerrada por aprobación de la dirección técnica de ChatGPT.
+- (Histórico de F1) F1 no implementaba F2/F3/F4; la evidencia de spike quedó formalmente cerrada en ese checkpoint.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
-- F3: IN PROGRESS — unidad 1 implementa el contrato/adaptador HTTP genérico; no está cerrada.
+- F3: IN PROGRESS — F3-1 checkpointed y F3-2 implementada, pendiente de aprobación; no está cerrada.
 
 F3 Unidad 1 (corrección R3): adaptador HTTP y contrato fail-closed implementados; focused suite 38/38 verde. Evidencia live separada en COMFYUI_INTEGRATION.md.
 
@@ -68,4 +68,4 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 
 ## Criterio de cierre
 
-F1 está CLOSED: el trabajo técnico, la documentación de evidencia y esta corrección exacta cumplen todos los criterios de cierre. No autoriza implementación productiva ni adelanta F2–F4.
+(Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
