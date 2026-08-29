@@ -93,11 +93,11 @@ F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconcilia
 
 F3-3 devuelve todos los descriptores lógicos validados; la selección del artefacto esperado queda para Workflow Profile/binding posterior. La validación física quedó fuera de F3-3 específicamente y se implementó después en F3-6.
 
-## F3 — implementación técnica completa; auditoría global pendiente
+## F3 — adaptador genérico CLOSED / live validated
 
-Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. Perfiles H3, chaining, FFmpeg, GUI y orquestación permanecen fuera de alcance; F3 está técnicamente completo, pendiente de auditoría final/global independiente y checkpoint documental.
+Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings son F4; completion/artifact durable y chunk orchestration son F5.
 
-Recovery real contra backend, cliente/SDK ComfyUI, framework UI, packaging, contrato formal del profile, concurrencia segura, cancelación productiva, chaining largo, ensamblado productivo y librerías externas aún requieren decisiones y pruebas posteriores. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
+La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**; lo que permanece futuro es la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, contrato formal del profile, concurrencia segura, chaining largo, ensamblado productivo y librerías externas. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
 
 F3-1, F3-2 y F3-3 están checkpointed. F3-4 está corregida e implementada; la validación física de outputs y el mapper a `ArtifactObservation` están técnicamente completos. La persistencia durable de completion/artifact sigue siendo F5.
 

@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-08-28
-**Fase:** F3 — Adaptador ComfyUI y observación (IN PROGRESS)
-**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado, pendiente de esta auditoría/checkpoint; F3 no está cerrada
+**Fase:** F3 — Adaptador ComfyUI y observación (**CLOSED / COMPLETED; LIVE VALIDATED**)
+**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado. F3-5 está **COMPLETED** y F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**, con cierre respaldado por la auditoría global independiente 096 y el proceso de auditoría documental final.
 
 ## Fotografía viva
 
@@ -14,7 +14,7 @@
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F3-3 implementa correlación lógica genérica sobre `HistoryResult`; el mapper F3 integra validación física explícita y observación de artefacto.
 - F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
-- F3: IN PROGRESS — técnicamente completa y pendiente de auditoría final independiente; no está APPROVED.
+- F3: **CLOSED / COMPLETED — LIVE VALIDATED**. Auditoría global independiente 096: cero bloqueadores técnicos; sólo sincronización documental.
 
 F3 Unidad 1 (corrección R3): adaptador HTTP y contrato fail-closed implementados; focused suite 38/38 verde. Evidencia live separada en COMFYUI_INTEGRATION.md.
 
@@ -55,13 +55,13 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 - C1 probó frame exacto `N-1` y equivalencia pixel a pixel mediante `framemd5`; C2 probó chaining real de dos chunks con upload y continuidad hash; C3 sólo permite concat técnico `-c copy` y validación humana del seam de ese caso.
 - Tarea `orquestador-f1-e1-pending-delete-003`: A `f66c16d3-a699-47d8-a8ed-99085fa96cc9` running; B `99632fb4-7c20-4cba-8947-feebed5054ef` pending; B eliminado por `POST /queue` HTTP 200, history `{}`, sin output; A interrumpido por `/interrupt`; queue final vacía; repositorio sin cambios.
 
-Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED como spike. Cancelación productiva por job, reconexión, crash recovery, reconciliación de huérfanos, retry y seguridad de producción quedan DEFERRED.
+**HISTORICAL SPIKE:** la interrupción running mediante `/interrupt` es sólo evidencia histórica. F3-4 final es pending-only LIVE VALIDATED en ComfyUI 0.33.0 aislado: un único `POST /queue` dirigido, sin `/interrupt` ni clear; confirmación backend sola no equivale a `Lifecycle.CANCELLED`.
 
 ## Pendiente para fases posteriores
 
 - Recovery/retry ante crash, cierre, reinicio y jobs huérfanos.
-- Recovery contra backend, cancelación productiva y reconciliación de jobs huérfanos.
-- Cancelación productiva, concurrencia segura y comportamiento de reconexión.
+- Recovery/orquestación contra backend, crash/retry y reconciliación de jobs huérfanos.
+- Semántica de cancelación a nivel de pipeline/dominio, concurrencia segura y comportamiento de reconexión; la cancelación backend pending-only de F3-4 está cerrada y live validada.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F4: contrato versionado del Workflow Profile H3 y tests de compatibilidad/bindings.
@@ -70,12 +70,12 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 ## Criterio de cierre
 
 (Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
-# F3-4 status
+# F3 closure status
 
-F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED / APROBADA CON OBSERVACIONES at baseline `bb58d6b...`; safe pending cancellation is live-validated with observation. Real WS/history/output physical-path validation has been live validated. Global F3 remains IN PROGRESS pending independent final audit. The F1 `/interrupt` result remains historical spike evidence, not a production capability.
+F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED and LIVE VALIDATED with pending-only targeted delete. F3-6 validates caller-supplied trusted root with containment/path-escape protections. F3-7 live validation completed health, submit, production WS, execution_success, exact history, deterministic logical descriptor and physical file. Final `ArtifactObservation` seam is fail-closed; durable completion/artifact persistence remains F5. F4/H3 bindings are NOT STARTED.
 ### F3-5 application bridge
 
-Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 remains IN PROGRESS pending independent final audit.
-F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global permanece IN PROGRESS pendiente de auditoría final independiente.
+Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 is CLOSED; durable completion/artifact persistence remains F5.
+F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings NOT STARTED.
 
-Mapper output→`ArtifactObservation` implementado y probado; F3 técnicamente completa pendiente de auditoría final independiente. Persistencia durable sigue en F5.
+Mapper output→`ArtifactObservation` implementado, probado y fail-closed. Persistencia durable sigue en F5.

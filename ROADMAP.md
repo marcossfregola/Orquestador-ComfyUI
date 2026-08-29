@@ -30,13 +30,15 @@ Incluye 135 pruebas verdes (incluidos escenarios recovery E2E y corrupción SQLi
 
 Implementar health, submit, seguimiento, history, outputs, errores, reconexión y cancelación según los contratos y la evidencia obtenida en F1.
 
-**Estado:** IN PROGRESS — F3-1 y F3-2 checkpointed; F3 técnicamente completa pendiente de auditoría final independiente.
+**Estado:** **COMPLETED/CLOSED — LIVE VALIDATED**. Auditoría global independiente 096 no encontró bloqueadores técnicos; sólo requirió sincronización documental.
 
-La integración output→`ArtifactObservation` está implementada, side-effect free y fail-closed; completion/artifact durable permanece en F5. F3 espera auditoría final independiente.
+La integración output→`ArtifactObservation` está implementada, side-effect free y fail-closed; completion/artifact durable permanece en F5. F3 está **CLOSED / COMPLETED; LIVE VALIDATED**.
 
 ## F4 — Workflow Profile / bindings MiniMax H3
 
 Definir y probar el contrato versionado del workflow H3 real, sus bindings y su validación de compatibilidad.
+
+**Estado:** **NOT STARTED — NEXT**.
 
 ## F5 — Pipeline robusto de un chunk
 

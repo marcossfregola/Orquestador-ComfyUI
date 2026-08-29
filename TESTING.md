@@ -96,16 +96,20 @@ No se debe afirmar “funciona” sin indicar qué se ejecutó, contra qué ento
 
 | Área | Clasificación | Asignación |
 |---|---|---|
-| API/endpoints, prompt derivation, queue/history, WS/progreso, upload, bindings H3, output correlation | DEMONSTRATED | F3/F4 implementan contratos |
+| API/endpoints, prompt derivation, queue/history, WS/progreso, upload, output correlation | DEMONSTRATED | F3 genérico; H3 bindings F4 |
 | N-1 PNG + framemd5, chaining real de dos chunks, hash continuity | DEMONSTRATED | F5/F7 amplían cobertura |
 | pending-delete B por POST `/queue` 200, history `{}`, sin output; interrupt A; queue vacía; repo intacto | DEMONSTRATED | F3/F6 definen semántica productiva |
 | concat `-c copy` y seam visual | DEMONSTRATED sólo para ese caso | F8/F10 validan generalización |
 | automatización visual como integración | DISCARDED | — |
-| cancelación productiva por job, reconexión, crash/orphan recovery contra backend, retry del pipeline, chaining largo, concurrencia, GUI | DEFERRED | F3/F4/F6/F7/F8/F9 |
+| **FUTURE:** cancelación productiva de dominio, crash/orphan recovery contra backend, retry del pipeline, chaining largo, concurrencia, GUI | FUTURE / NOT STARTED | F5/F6/F7/F8/F9 |
 
 ## Estado de F1
 
-F1 produjo evidencia experimental reproducible, no implementó producto ni convirtió harnesses en dependencias. Estado: READY_FOR_FINAL_AUDIT; la aprobación formal queda pendiente.
+F1 produjo evidencia experimental reproducible, no implementó producto ni convirtió harnesses en dependencias. Su estado histórico no se confunde con F3.
+
+## F3 closure evidence
+
+La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4/F5 permanecen futuros; no se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
 
 ## Criterios de avance
 

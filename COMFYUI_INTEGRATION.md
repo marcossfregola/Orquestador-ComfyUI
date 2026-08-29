@@ -108,7 +108,7 @@ No se usa `mtime`, “archivo más reciente” ni heurística de nombre. `api/jo
 
 ## Cancelación y recuperación
 
-La instalación expone `/interrupt` y cancelación de jobs. El spike demostró interrupción básica de un job running y un caso pending-delete: A `f66c16d3-a699-47d8-a8ed-99085fa96cc9` running, B `99632fb4-7c20-4cba-8947-feebed5054ef` pending; B eliminado por `POST /queue` HTTP 200, history `{}`, sin output; A interrumpido por `/interrupt`; queue final vacía y repositorio sin cambios. Esto es DEMONSTRATED como capacidad de spike, no semántica productiva por job. Reconnect, crash recovery, huérfanos, retry y seguridad productiva quedan DEFERRED a F3/F6.
+**HISTORICAL/INTERIM SPIKE:** la interrupción running mediante `/interrupt` y el caso pending-delete fueron experimentales, no semántica productiva. La cancelación final F3-4 es pending-only mediante un único `POST /queue` dirigido, sin `/interrupt` ni clear, con verificación fresca.
 
 ## FFmpeg/FFprobe
 
@@ -122,7 +122,7 @@ B2–B7 demostraron, en ejecuciones controladas, derivación del prompt API, ove
 
 C1 demostró extracción exacta del último frame decodificado. C2 demostró un chaining real de dos chunks: output → frame → upload → `first_frame`. C3 demostró un ensamblado técnico y recibió validación humana positiva de ese seam concreto.
 
-Continúan abiertos recovery después de crash/reinicio, retry productivo, cancelación productiva, persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, GUI y generalización de la continuidad visual. No se adopta ni forkeará automáticamente un proyecto externo.
+Continúan abiertos el recovery/orquestación después de crash/reinicio, el retry productivo, la semántica de cancelación a nivel de pipeline/dominio y la política para trabajos running; la cancelación backend segura pending-only de F3-4 está cerrada y live validada. También siguen abiertos persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, GUI y generalización de la continuidad visual. No se adopta ni forkeará automáticamente un proyecto externo.
 
 ### MAKE / REUSE / ADAPT (decisión F1)
 
@@ -157,4 +157,4 @@ La evidencia histórica/spike de F1 sobre “interrupción básica” no es una 
 Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. La validación live F3-4 de eliminación segura está completada y aprobada independientemente con observaciones. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.
 ### F3-6 validación física mínima (completada)
 
-La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. La validación real WS/history/output descriptor y ruta física se completó en un ComfyUI 0.33.0 aislado; exige raíz confiable explícita, falla cerrado ante escapes y no crea `Artifact` ni cambia lifecycle. La persistencia durable de artifact/completion sigue siendo F5; H3/F4 no están completados.
+La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. F3 genérico está CLOSED/LIVE VALIDATED en ComfyUI 0.33.0 aislado: parser de queue de 5 campos, correlación exacta por `prompt_id`, WS corregido, outputs lógicos deterministas y protección fail-closed contra escapes. H3 profile/bindings son F4 (NOT STARTED); persistencia durable y chunk orchestration son F5.
