@@ -43,13 +43,36 @@ class AdapterTests(unittest.TestCase):
  def test_client_id_invalid(self):
   for v in ('','  ',1,False,[]): self.assertRaises(ComfyUIProtocolError,self.c.submit,{},v)
  def test_prompt_id_url_quoting(self): self.put({}); self.c.history('a/b c')
+ def test_queue_running_known_shape(self):
+  self.put({'queue_running':[[1,'run',{'prompt':{}},{'client_id':'c'},['node']]],'queue_pending':[]})
+  snapshot=self.c.queue(); self.assertEqual(snapshot.state,QueueState.RUNNING); self.assertEqual([r.value for r in snapshot.running],['run'])
+ def test_queue_pending_known_shape(self):
+  self.put({'queue_running':[],'queue_pending':[[2,'wait',{'prompt':{}},{},['node']]]})
+  snapshot=self.c.queue(); self.assertEqual(snapshot.state,QueueState.PENDING); self.assertEqual([r.value for r in snapshot.pending],['wait'])
+ def test_queue_running_and_pending_extract_both_ids(self):
+  self.put({'queue_running':[[1,'run',{}, {}, {}]],'queue_pending':[[2,'wait',{}, {}, {}]]})
+  snapshot=self.c.queue(); self.assertEqual(snapshot.state,QueueState.RUNNING); self.assertEqual([r.value for r in snapshot.running],['run']); self.assertEqual([r.value for r in snapshot.pending],['wait'])
  def test_queue_empty(self): self.put({'queue_running':[],'queue_pending':[]}); self.assertEqual(self.c.queue().state,QueueState.EMPTY)
- def test_queue_running_known_shape(self): self.put({'queue_running':[[1,'run',{}]],'queue_pending':[]}); self.assertEqual(self.c.queue().state,QueueState.RUNNING)
- def test_queue_pending_known_shape(self): self.put({'queue_running':[],'queue_pending':[[2,'wait',{}]]}); self.assertEqual(self.c.queue().state,QueueState.PENDING)
- def test_queue_malformed_lengths(self): self.put({'queue_running':[[1,'x',{},'z']],'queue_pending':[]}); self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
- def test_queue_bool_number(self): self.put({'queue_running':[[True,'x',{}]],'queue_pending':[]}); self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
- def test_queue_non_string_prompt_id(self): self.put({'queue_running':[[1,2,{}]],'queue_pending':[]}); self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
- def test_queue_unknown_shape(self): self.put({'queue_running':[{}],'queue_pending':[]}); self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
+ def test_queue_malformed_lengths_fail_closed(self):
+  for length in (3,4,6):
+   self.put({'queue_running':[[1,'x'] + [{}] * (length-2)],'queue_pending':[]})
+   self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
+ def test_queue_invalid_first_field_fail_closed(self):
+  for number in (True, '1', 1.0, None):
+   self.put({'queue_running':[[number,'x',{}, {}, {}]],'queue_pending':[]})
+   self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
+ def test_queue_invalid_prompt_id_fail_closed(self):
+  for prompt_id in (None, 2, '', '  ', '\t'):
+   self.put({'queue_running':[[1,prompt_id,{}, {}, {}]],'queue_pending':[]})
+   self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
+ def test_queue_wrong_top_level_and_entry_types_fail_closed(self):
+  self.put([])
+  with self.assertRaises(ComfyUIProtocolError): self.c.queue()
+  for body in ({'queue_running':{},'queue_pending':[]}, {'queue_running':[{}],'queue_pending':[]}):
+   self.put(body); self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
+ def test_queue_mixed_valid_and_malformed_fails_closed(self):
+  self.put({'queue_running':[[1,'ok',{}, {}, {}],[2,'bad',{}, {}]],'queue_pending':[]})
+  self.assertEqual(self.c.queue().state,QueueState.UNKNOWN)
  def test_history_not_found(self): self.put({}); self.assertEqual(self.c.history('x').state,HistoryState.NOT_FOUND)
  def test_history_queued(self): self.put({'x':{'status':{'status_str':'queued'}}}); self.assertEqual(self.c.history('x').state,HistoryState.QUEUED)
  def test_history_running(self): self.put({'x':{'status':{'status_str':'running'}}}); self.assertEqual(self.c.history('x').state,HistoryState.RUNNING)

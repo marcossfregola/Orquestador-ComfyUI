@@ -84,7 +84,7 @@ class ComfyUIClient:
         if not isinstance(items, list): return None
         out=[]
         for item in items:
-            if not isinstance(item, list) or len(item) != 3 or isinstance(item[0], bool) or not isinstance(item[0], int): return None
+            if not isinstance(item, list) or len(item) != 5 or isinstance(item[0], bool) or not isinstance(item[0], int): return None
             raw = item[1]
             if not isinstance(raw, str) or not raw.strip(): return None
             out.append(BackendJobRef(raw))
