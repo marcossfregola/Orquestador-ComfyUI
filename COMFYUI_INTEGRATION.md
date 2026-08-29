@@ -135,7 +135,7 @@ Continúan abiertos recovery después de crash/reinicio, retry productivo, cance
 El primer release usa ComfyUI local como backend. Backend remoto/cloud, múltiples backends y otros modelos/workflows están fuera de alcance; su posible incorporación queda en [BACKLOG.md](BACKLOG.md).
 # F3-2 URL contract
 
-El adaptador HTTP recibe sólo endpoints `http(s)`; F3-2 deriva `ws(s)` exactamente una vez y el transporte WebSocket consume la URL final sin re-normalizarla.
+El adaptador HTTP recibe sólo endpoints `http(s)`; F3-2 deriva `ws(s)` exactamente una vez y el transporte WebSocket consume la URL final sin re-normalizarla. Los timeouts específicos de `websocket-client` se normalizan en el límite del transporte a evidencia interna de timeout; la capa de observación permanece independiente de la dependencia.
 
 # F3 live evidence (2026-08-28)
 

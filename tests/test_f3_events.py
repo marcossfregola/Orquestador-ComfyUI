@@ -17,6 +17,47 @@ class EventsTests(unittest.TestCase):
     def test_optional_import_failure_maps(self):
         with patch('orquestador.adapters.events.importlib.import_module',side_effect=ImportError):
             with self.assertRaises(ComfyUITransportError): WebSocketClientTransport().connect('ws://host/ws',client_id='x')
+
+    def test_websocket_client_receive_normalizes_dependency_timeout(self):
+        class DependencyTimeout(Exception): pass
+        sock=Mock(); original=DependencyTimeout('receive timeout'); sock.recv.side_effect=original
+        ws=Mock(create_connection=Mock(return_value=sock), WebSocketTimeoutException=DependencyTimeout)
+        transport=WebSocketClientTransport()
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws): transport.connect('ws://host/ws',client_id='x')
+        with self.assertRaises(ComfyUITimeoutError) as caught: transport.receive(1)
+        self.assertIs(caught.exception.__cause__, original)
+
+    def test_websocket_client_settimeout_and_connect_timeout_normalize_only_dependency(self):
+        class DependencyTimeout(Exception): pass
+        sock=Mock(); sock.settimeout.side_effect=DependencyTimeout('set timeout')
+        ws=Mock(create_connection=Mock(return_value=sock), WebSocketTimeoutException=DependencyTimeout)
+        transport=WebSocketClientTransport()
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws):
+            transport.connect('ws://host/ws',client_id='x')
+            with self.assertRaises(ComfyUITimeoutError): transport.receive(1)
+            ws.create_connection.side_effect=DependencyTimeout('connect timeout')
+            with self.assertRaises(ComfyUITimeoutError): transport.connect('ws://host/ws',client_id='x')
+
+    def test_websocket_client_generic_exception_preserved(self):
+        class DependencyTimeout(Exception): pass
+        class GenericFailure(Exception): pass
+        sock=Mock(); failure=GenericFailure('boom'); sock.recv.side_effect=failure
+        ws=Mock(create_connection=Mock(return_value=sock), WebSocketTimeoutException=DependencyTimeout)
+        transport=WebSocketClientTransport()
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws): transport.connect('ws://host/ws',client_id='x')
+        with self.assertRaises(GenericFailure) as caught: transport.receive(1)
+        self.assertIs(caught.exception, failure)
+
+    def test_production_transport_timeout_observe_reconnect_and_terminal_fallback(self):
+        class DependencyTimeout(Exception): pass
+        sock=Mock(); sock.recv.side_effect=DependencyTimeout('live timeout')
+        ws=Mock(create_connection=Mock(return_value=sock), WebSocketTimeoutException=DependencyTimeout)
+        self.client.history.return_value=HistoryResult(self.ref,HistoryState.SUCCEEDED)
+        transport=WebSocketClientTransport()
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws):
+            out=list(ComfyUIObservation(self.client,transport=transport,reconnects=2,backoff=0).observe(self.ref))
+        self.assertEqual(ws.create_connection.call_count,3); self.assertEqual(sock.close.call_count,3)
+        self.assertEqual(out[-1].kind,ObservationKind.COMPLETED); self.assertEqual(out[-1].job_ref,self.ref); self.assertEqual(out[-1].issue_kind,ObservationIssueKind.TIMEOUT)
     def test_connection_failure_preserves_oserror(self):
         ws=Mock(); ws.create_connection.side_effect=OSError('refused')
         with patch('orquestador.adapters.events.importlib.import_module',return_value=ws):

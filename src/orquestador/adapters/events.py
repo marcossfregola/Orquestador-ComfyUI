@@ -30,18 +30,41 @@ class WebSocketTransport(Protocol):
 
 class WebSocketClientTransport:
     """Production transport; ``connect`` consumes an already-final ws(s) URL."""
-    def __init__(self) -> None: self._socket = None
+    def __init__(self) -> None:
+        self._socket = None
+        self._websocket_timeout_error = None
+
+    @staticmethod
+    def _timeout_class(websocket: Any) -> type[BaseException] | None:
+        candidate = getattr(websocket, 'WebSocketTimeoutException', None)
+        if isinstance(candidate, type) and issubclass(candidate, BaseException):
+            return candidate
+        exceptions = getattr(websocket, '_exceptions', None)
+        candidate = getattr(exceptions, 'WebSocketTimeoutException', None)
+        return candidate if isinstance(candidate, type) and issubclass(candidate, BaseException) else None
+
     def connect(self, url: str, *, client_id: str) -> None:
         try:
             websocket = importlib.import_module('websocket')
         except ImportError as exc:
             raise ComfyUITransportError('websocket-client is required for live observation') from exc
+        self._websocket_timeout_error = self._timeout_class(websocket)
         # URL conversion/normalization is performed exactly once by observe().
-        self._socket = websocket.create_connection(url)
+        try:
+            self._socket = websocket.create_connection(url)
+        except Exception as exc:
+            if self._websocket_timeout_error is not None and isinstance(exc, self._websocket_timeout_error):
+                raise ComfyUITimeoutError(str(exc)) from exc
+            raise
     def receive(self, timeout: float) -> str | bytes:
         if self._socket is None: raise ComfyUITransportError('transport is not connected')
-        self._socket.settimeout(timeout)
-        return self._socket.recv()
+        try:
+            self._socket.settimeout(timeout)
+            return self._socket.recv()
+        except Exception as exc:
+            if self._websocket_timeout_error is not None and isinstance(exc, self._websocket_timeout_error):
+                raise ComfyUITimeoutError(str(exc)) from exc
+            raise
     def close(self) -> None:
         if self._socket is not None: self._socket.close()
 
