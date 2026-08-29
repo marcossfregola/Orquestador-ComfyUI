@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-08-28
 **Fase:** F3 — Adaptador ComfyUI y observación (IN PROGRESS)
-**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido, pendiente de aprobación/checkpoint; F3 no está cerrada
+**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado, pendiente de esta auditoría/checkpoint; F3 no está cerrada
 
 ## Fotografía viva
 
@@ -72,4 +72,7 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 (Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
 # F3-4 status
 
-F3-1/F3-2/F3-3 remain checkpointed. F3-4 is corrected and implemented pending audit/checkpoint; global F3 remains IN PROGRESS. Pending deletion is locally tested only; controlled live validation is still required. The F1 `/interrupt` result remains historical spike evidence, not a production capability.
+F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED / APROBADA CON OBSERVACIONES at baseline `bb58d6b...`; F3-5 is corrected and implemented pending this audit/checkpoint. Global F3 remains IN PROGRESS. Pending deletion is locally tested only; controlled live validation is still required. The F1 `/interrupt` result remains historical spike evidence, not a production capability.
+### F3-5 application bridge
+
+Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors remain logical evidence only; physical artifact validation/output-root policy are out of scope. F3 remains IN PROGRESS pending controlled live validation and global closure.
