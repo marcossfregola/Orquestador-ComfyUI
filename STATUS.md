@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-08-28
-**Fase:** F3 — Adaptador ComfyUI y observación (**CLOSED / COMPLETED; LIVE VALIDATED**)
+**Fase:** F4 — Workflow Profile H3 (**IN PROGRESS**; contrato/manifiesto estático completo)
 **Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado. F3-5 está **COMPLETED** y F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**, con cierre respaldado por la auditoría global independiente 096 y el proceso de auditoría documental final.
 
 ## Fotografía viva
@@ -64,7 +64,7 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 - Semántica de cancelación a nivel de pipeline/dominio, concurrencia segura y comportamiento de reconexión; la cancelación backend pending-only de F3-4 está cerrada y live validada.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
-- F4: contrato versionado del Workflow Profile H3 y tests de compatibilidad/bindings.
+- F4 UNIT A correction R3: implementación y suite unitaria corregidas; **awaiting independent audit against canonical bytes**. No se afirma pase real del workflow canónico. API mapping/object_info y unidades posteriores siguen pendientes.
 - F6/F7/F8/F9: recovery, chaining largo, ensamblado productivo y GUI.
 
 ## Criterio de cierre
