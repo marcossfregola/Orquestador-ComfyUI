@@ -12,9 +12,9 @@
 - La consolidación documental de este checkpoint está sin commit; el estado Git posterior debe leerse en la evidencia final.
 - (Histórico de F1) F1 no implementaba F2/F3/F4; la evidencia de spike quedó formalmente cerrada en ese checkpoint.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
-- F3-3 implementa correlación lógica genérica sobre `HistoryResult`; no incluye output_root, validación física, fixture F1 completo ni validación live.
+- F3-3 implementa correlación lógica genérica sobre `HistoryResult`; el mapper F3 integra validación física explícita y observación de artefacto.
 - F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
-- F3: IN PROGRESS — F3-1 y F3-2 checkpointed; F3-3 implementado/corregido, pendiente de aprobación/checkpoint; no está cerrada.
+- F3: IN PROGRESS — técnicamente completa y pendiente de auditoría final independiente; no está APPROVED.
 
 F3 Unidad 1 (corrección R3): adaptador HTTP y contrato fail-closed implementados; focused suite 38/38 verde. Evidencia live separada en COMFYUI_INTEGRATION.md.
 
@@ -72,8 +72,10 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 (Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
 # F3-4 status
 
-F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED / APROBADA CON OBSERVACIONES at baseline `bb58d6b...`; F3-5 is corrected and implemented pending this audit/checkpoint. Global F3 remains IN PROGRESS. Pending deletion is locally tested only; controlled live validation is still required. The F1 `/interrupt` result remains historical spike evidence, not a production capability.
+F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED / APROBADA CON OBSERVACIONES at baseline `bb58d6b...`; safe pending cancellation is live-validated with observation. Real WS/history/output physical-path validation has been live validated. Global F3 remains IN PROGRESS pending independent final audit. The F1 `/interrupt` result remains historical spike evidence, not a production capability.
 ### F3-5 application bridge
 
-Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors remain logical evidence only; physical artifact validation/output-root policy are out of scope. F3 remains IN PROGRESS pending controlled live validation and global closure.
-F3-6: implementación completa, pendiente de auditoría/checkpoint. F3 global permanece IN PROGRESS; F3-7 live validation sigue abierta.
+Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 remains IN PROGRESS pending independent final audit.
+F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global permanece IN PROGRESS pendiente de auditoría final independiente.
+
+Mapper output→`ArtifactObservation` implementado y probado; F3 técnicamente completa pendiente de auditoría final independiente. Persistencia durable sigue en F5.

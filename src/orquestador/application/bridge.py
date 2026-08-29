@@ -5,12 +5,13 @@ from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-from ..domain.core import BackendJobRef, Execution, Project
+from ..domain.core import BackendJobRef, Execution, Project, OutputRef
 from ..domain.recovery import Action, ArtifactObservation, BackendJobObservation, BackendJobState, ReconciliationResult, reconcile
 from ..adapters.http import HistoryResult, HistoryState, QueueSnapshot, QueueState
 from ..adapters.events import ObservationEvent, ObservationKind
 from ..adapters.outputs import OutputCorrelationResult, OutputCorrelationStatus, OutputDescriptor
 from ..adapters.cancellation import CancellationResult
+from ..adapters.physical_outputs import PhysicalOutputEvidence, PhysicalOutputStatus
 
 @dataclass(frozen=True)
 class BackendEvidence:
@@ -63,6 +64,31 @@ def map_cancellation_evidence(*, execution:Execution, project_id:str, execution_
     _authority(execution,project_id,execution_id,chunk_id,attempt_id,result.target)
     return CancellationEvidence(result.target,result.state,result.action,result.issue,result.issue_kind,result.phase)
 
+def map_verified_artifact_observation(*, evidence: BackendEvidence,
+                                      physical: PhysicalOutputEvidence,
+                                      project_id: str, execution_id: str,
+                                      chunk_id: str, attempt_id: str,
+                                      job_ref: BackendJobRef) -> ArtifactObservation | None:
+    """Project coherent logical+physical evidence into the coarse F2 observation.
+
+    This is deliberately pure: it neither persists nor mutates the supplied DTOs.
+    """
+    if not isinstance(evidence, BackendEvidence) or not isinstance(physical, PhysicalOutputEvidence):
+        return None
+    if not isinstance(job_ref, BackendJobRef) or evidence.job_ref != job_ref:
+        return None
+    if (evidence.project_id, evidence.execution_id, evidence.chunk_id, evidence.attempt_id) != (str(project_id), str(execution_id), str(chunk_id), str(attempt_id)):
+        return None
+    if evidence.state is not BackendJobState.COMPLETED:
+        return None
+    if len(evidence.logical_outputs) != 1 or physical.status is not PhysicalOutputStatus.EXISTS:
+        return None
+    descriptor = evidence.logical_outputs[0]
+    if descriptor.prompt_id != job_ref or physical.descriptor != descriptor or physical.resolved_path is None:
+        return None
+    return ArtifactObservation(str(project_id), str(execution_id), str(chunk_id), str(attempt_id),
+                               OutputRef(str(physical.resolved_path)), True, True, "output")
+
 class ComfyUIJobBridge:
     def __init__(self,repository): self.repository=repository
     def bind(self,project,execution,chunk_id,attempt_id,job_ref,*,execution_id=None):
@@ -95,4 +121,4 @@ class ComfyUIJobBridge:
         self.repository.save(project,[clone]); target.new_attempt()
         return result
 
-__all__=['BackendEvidence','CancellationEvidence','map_backend_evidence','map_cancellation_evidence','ComfyUIJobBridge']
+__all__=['BackendEvidence','CancellationEvidence','map_backend_evidence','map_cancellation_evidence','map_verified_artifact_observation','ComfyUIJobBridge']

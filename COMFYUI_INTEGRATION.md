@@ -141,7 +141,7 @@ El adaptador HTTP recibe sólo endpoints `http(s)`; F3-2 deriva `ws(s)` exactame
 
 Read-only GETs to `127.0.0.1:8188` returned HTTP 200: `/system_stats` reported ComfyUI `0.33.0` with non-empty `system` fields (`os`, RAM and version metadata); `/queue` returned empty `queue_running` and `queue_pending`; `/history` returned a mapping of prompt IDs to history records. No prompt was enqueued and no ComfyUI files were modified.
 
-F3-3 añade correlación lógica genérica, sin filesystem ni selección H3. No hay fixture F1 real completo comprometido; la compatibilidad live requiere validación controlada.
+F3-3 añade correlación lógica genérica, sin filesystem ni selección H3. La validación live real aislada de WS/history, descriptor lógico y ruta física se completó; H3 sigue reservado a F4.
 # F3-4 cancellation contract
 
 La evidencia histórica/spike de F1 sobre “interrupción básica” no es una capacidad de producción. En ComfyUI 0.33.0, el handler HTTP nativo `/interrupt` es no atómico; el adaptador seguro F3-4 no lo usa y rechaza fail-closed la cancelación de trabajos running. La eliminación `/queue` acepta `{"delete": [prompt_id, ...]}` y sólo remueve pendientes, con verificación posterior obligatoria.
@@ -154,7 +154,7 @@ La evidencia histórica/spike de F1 sobre “interrupción básica” no es una 
 | target ausente + history `NOT_FOUND` | `NOT_FOUND` | ninguna |
 | queue/history `UNKNOWN`, malformada, contradictoria o ambigua | `UNKNOWN`/`CONTRADICTORY`/`AMBIGUOUS` | ninguna |
 
-Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. No hay validación live F3-4; F3-4 está corregido pero pendiente de auditoría/checkpoint. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.
-### F3-6 validación física mínima
+Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. La validación live F3-4 de eliminación segura está completada y aprobada independientemente con observaciones. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.
+### F3-6 validación física mínima (completada)
 
-La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. No descubre raíces ni selecciona archivos por mtime/latest; falla cerrado ante escapes y no crea `Artifact` ni cambia lifecycle. El mapeo live de raíz queda para F3-7.
+La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. La validación real WS/history/output descriptor y ruta física se completó en un ComfyUI 0.33.0 aislado; exige raíz confiable explícita, falla cerrado ante escapes y no crea `Artifact` ni cambia lifecycle. La persistencia durable de artifact/completion sigue siendo F5; H3/F4 no están completados.
