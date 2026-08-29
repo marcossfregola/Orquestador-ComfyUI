@@ -136,3 +136,5 @@ El primer release usa ComfyUI local como backend. Backend remoto/cloud, múltipl
 # F3 live evidence (2026-08-28)
 
 Read-only GETs to `127.0.0.1:8188` returned HTTP 200: `/system_stats` reported ComfyUI `0.33.0` with non-empty `system` fields (`os`, RAM and version metadata); `/queue` returned empty `queue_running` and `queue_pending`; `/history` returned a mapping of prompt IDs to history records. No prompt was enqueued and no ComfyUI files were modified.
+
+F3-3 añade correlación lógica genérica, sin filesystem ni selección H3. No hay fixture F1 real completo comprometido; la compatibilidad live requiere validación controlada.

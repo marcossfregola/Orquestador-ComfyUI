@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-08-28
 **Fase:** F3 — Adaptador ComfyUI y observación (IN PROGRESS)
-**Estado:** F3-2 implementada, pendiente de aprobación; F3 no está cerrada
+**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido, pendiente de aprobación/checkpoint; F3 no está cerrada
 
 ## Fotografía viva
 
@@ -12,8 +12,9 @@
 - La consolidación documental de este checkpoint está sin commit; el estado Git posterior debe leerse en la evidencia final.
 - (Histórico de F1) F1 no implementaba F2/F3/F4; la evidencia de spike quedó formalmente cerrada en ese checkpoint.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
+- F3-3 implementa correlación lógica genérica sobre `HistoryResult`; no incluye output_root, validación física, fixture F1 completo ni validación live.
 - F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
-- F3: IN PROGRESS — F3-1 checkpointed y F3-2 implementada, pendiente de aprobación; no está cerrada.
+- F3: IN PROGRESS — F3-1 y F3-2 checkpointed; F3-3 implementado/corregido, pendiente de aprobación/checkpoint; no está cerrada.
 
 F3 Unidad 1 (corrección R3): adaptador HTTP y contrato fail-closed implementados; focused suite 38/38 verde. Evidencia live separada en COMFYUI_INTEGRATION.md.
 

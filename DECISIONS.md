@@ -44,6 +44,14 @@ Registro conciso. Cada entrada indica fecha, decisión, motivo, estado/reemplazo
 
 ## Decisiones de diseño F2
 
+## Decisiones de diseño F3
+
+| Fecha | Decisión | Motivo breve | Estado | Autoridad |
+|---|---|---|---|---|
+| 2026-08-28 | El adaptador genérico devuelve todos los descriptores lógicamente validados; el workflow profile/binding seleccionará más adelante el artefacto esperado | Evitar selección heurística y acoplamiento H3 | Implementada en F3-3 lógico | [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) |
+
+No hay fixture real F1 completo comprometido; la compatibilidad live requiere validación controlada antes del cierre de F3.
+
 | Fecha | Decisión | Motivo breve | Estado | Autoridad |
 |---|---|---|---|---|
 | 2026-08-28 | No persistir una entidad `Checkpoint`; derivar el punto seguro del agregado durable y artefactos/transiciones verificados | Evitar estado duplicado y permitir recomputación auditable | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |
