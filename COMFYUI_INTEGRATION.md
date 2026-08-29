@@ -138,3 +138,16 @@ El primer release usa ComfyUI local como backend. Backend remoto/cloud, múltipl
 Read-only GETs to `127.0.0.1:8188` returned HTTP 200: `/system_stats` reported ComfyUI `0.33.0` with non-empty `system` fields (`os`, RAM and version metadata); `/queue` returned empty `queue_running` and `queue_pending`; `/history` returned a mapping of prompt IDs to history records. No prompt was enqueued and no ComfyUI files were modified.
 
 F3-3 añade correlación lógica genérica, sin filesystem ni selección H3. No hay fixture F1 real completo comprometido; la compatibilidad live requiere validación controlada.
+# F3-4 cancellation contract
+
+La evidencia histórica/spike de F1 sobre “interrupción básica” no es una capacidad de producción. En ComfyUI 0.33.0, el handler HTTP nativo `/interrupt` es no atómico; el adaptador seguro F3-4 no lo usa y rechaza fail-closed la cancelación de trabajos running. La eliminación `/queue` acepta `{"delete": [prompt_id, ...]}` y sólo remueve pendientes, con verificación posterior obligatoria.
+
+| Evidencia de preflight | Clasificación | Acción segura |
+|---|---|---|
+| target en pending + history `queued` o `NOT_FOUND` (política respaldada por F1) | `TARGET_PENDING` | `POST /queue` con el ID exacto |
+| target en running | `TARGET_RUNNING` o `RUNNING_INTERRUPT_UNSAFE` | ninguna; no `/interrupt` |
+| target ausente + history `SUCCEEDED`/`FAILED` | `ALREADY_TERMINAL` | ninguna |
+| target ausente + history `NOT_FOUND` | `NOT_FOUND` | ninguna |
+| queue/history `UNKNOWN`, malformada, contradictoria o ambigua | `UNKNOWN`/`CONTRADICTORY`/`AMBIGUOUS` | ninguna |
+
+Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. No hay validación live F3-4; F3-4 está corregido pero pendiente de auditoría/checkpoint. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.

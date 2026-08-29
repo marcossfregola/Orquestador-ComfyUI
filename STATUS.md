@@ -70,3 +70,6 @@ Cancelación básica de un job running mediante `/interrupt` queda DEMONSTRATED 
 ## Criterio de cierre
 
 (Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
+# F3-4 status
+
+F3-1/F3-2/F3-3 remain checkpointed. F3-4 is corrected and implemented pending audit/checkpoint; global F3 remains IN PROGRESS. Pending deletion is locally tested only; controlled live validation is still required. The F1 `/interrupt` result remains historical spike evidence, not a production capability.

@@ -57,3 +57,6 @@ No hay fixture real F1 completo comprometido; la compatibilidad live requiere va
 | 2026-08-28 | No persistir una entidad `Checkpoint`; derivar el punto seguro del agregado durable y artefactos/transiciones verificados | Evitar estado duplicado y permitir recomputación auditable | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |
 | 2026-08-28 | `BackendJobRef` es opaco, opcional en Attempt, assign-once y preservado al reiniciar | Correlación durable sin acoplar el dominio al backend | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |
 | 2026-08-28 | Reconciliación pura, determinista y sin escrituras ocultas | Separar decisión de mutación y hacer recovery testeable | Implementada en F2 | [DATA_MODEL.md](DATA_MODEL.md) |
+# F3-4 decision
+
+Adopt the verified ComfyUI 0.33.0 pending-delete contract with mandatory post-verification. The native `/interrupt` route is non-atomic (it does not use an atomic target check such as `PromptQueue.interrupt_if_running`), so the safe adapter explicitly refuses running cancellation and leaves the low-level route outside F3-4. F3-4 is corrected and locally tested, pending audit/checkpoint; no backend confirmation is mapped automatically to `Lifecycle.CANCELLED`.

@@ -41,7 +41,7 @@ class ComfyUIClient:
         self.endpoint = endpoint.rstrip('/') or f'{parts.scheme}://{parts.hostname}'; self.timeout = float(timeout)
         if self.timeout <= 0: raise ValueError('timeout must be positive')
 
-    def _request(self, method: str, path: str, payload: Any = None) -> Any:
+    def _request(self, method: str, path: str, payload: Any = None, *, allow_empty: bool = False) -> Any:
         data = None if payload is None else json.dumps(payload).encode('utf-8')
         req = Request(self.endpoint + path, data=data, method=method, headers={'Accept':'application/json', **({'Content-Type':'application/json'} if data else {})})
         try:
@@ -53,7 +53,13 @@ class ComfyUIClient:
             except Exception: detail = str(exc)
             if 400 <= exc.code < 500: raise ComfyUIRejectedError(f'ComfyUI rejected request ({exc.code}): {detail}', exc.code) from exc
             raise ComfyUIServerError(f'ComfyUI server error ({exc.code}): {detail}', exc.code) from exc
-        except (URLError, OSError) as exc: raise ComfyUITransportError(str(exc)) from exc
+        except URLError as exc:
+            reason = getattr(exc, 'reason', None)
+            if isinstance(reason, (TimeoutError, socket.timeout)):
+                raise ComfyUITimeoutError(str(exc)) from exc
+            raise ComfyUITransportError(str(exc)) from exc
+        except OSError as exc: raise ComfyUITransportError(str(exc)) from exc
+        if not body and allow_empty: return None
         try: return json.loads(body.decode('utf-8'))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc: raise ComfyUIProtocolError('response was not valid JSON') from exc
 
@@ -121,3 +127,29 @@ class ComfyUIClient:
         if text in {'queued','pending'}: return HistoryResult(ref, HistoryState.QUEUED, entry)
         return HistoryResult(ref, HistoryState.UNKNOWN, entry, 'unrecognized terminal status')
     history_lookup = history
+
+    @staticmethod
+    def _mutation_ids(prompt_ids: Any) -> list[str]:
+        if not isinstance(prompt_ids, (list, tuple)) or not prompt_ids:
+            raise ComfyUIProtocolError('prompt_ids must be a non-empty sequence')
+        out=[]
+        for item in prompt_ids:
+            if isinstance(item, BackendJobRef): value=item.value
+            elif isinstance(item, str) and item.strip(): value=item.strip()
+            else: raise ComfyUIProtocolError('prompt_ids must contain BackendJobRef or nonblank strings')
+            out.append(value)
+        return out
+
+    def delete_pending(self, prompt_ids: list[BackendJobRef | str] | tuple[BackendJobRef | str, ...]) -> None:
+        """Delete only the supplied pending IDs; ComfyUI may return no body."""
+        self._request('POST', '/queue', {'delete': self._mutation_ids(prompt_ids)}, allow_empty=True)
+
+    def interrupt_running_native_non_atomic(self, prompt_id: BackendJobRef | str) -> None:
+        """Expose native ``/interrupt`` for low-level callers only.
+
+        ComfyUI 0.33.0 does not make this route an atomic, target-safe
+        running cancellation. The F3-4 safe adapter deliberately never calls
+        this method.
+        """
+        ids = self._mutation_ids((prompt_id,))
+        self._request('POST', '/interrupt', {'prompt_id': ids[0]}, allow_empty=True)
