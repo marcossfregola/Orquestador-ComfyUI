@@ -133,6 +133,10 @@ Continúan abiertos recovery después de crash/reinicio, retry productivo, cance
 ## Límites
 
 El primer release usa ComfyUI local como backend. Backend remoto/cloud, múltiples backends y otros modelos/workflows están fuera de alcance; su posible incorporación queda en [BACKLOG.md](BACKLOG.md).
+# F3-2 URL contract
+
+El adaptador HTTP recibe sólo endpoints `http(s)`; F3-2 deriva `ws(s)` exactamente una vez y el transporte WebSocket consume la URL final sin re-normalizarla.
+
 # F3 live evidence (2026-08-28)
 
 Read-only GETs to `127.0.0.1:8188` returned HTTP 200: `/system_stats` reported ComfyUI `0.33.0` with non-empty `system` fields (`os`, RAM and version metadata); `/queue` returned empty `queue_running` and `queue_pending`; `/history` returned a mapping of prompt IDs to history records. No prompt was enqueued and no ComfyUI files were modified.

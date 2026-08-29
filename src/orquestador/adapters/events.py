@@ -29,14 +29,15 @@ class WebSocketTransport(Protocol):
     def close(self) -> None: ...
 
 class WebSocketClientTransport:
-    """Production transport using optional ``websocket-client``."""
+    """Production transport; ``connect`` consumes an already-final ws(s) URL."""
     def __init__(self) -> None: self._socket = None
     def connect(self, url: str, *, client_id: str) -> None:
         try:
             websocket = importlib.import_module('websocket')
         except ImportError as exc:
             raise ComfyUITransportError('websocket-client is required for live observation') from exc
-        self._socket = websocket.create_connection(ComfyUIObservation.websocket_url(url, client_id))
+        # URL conversion/normalization is performed exactly once by observe().
+        self._socket = websocket.create_connection(url)
     def receive(self, timeout: float) -> str | bytes:
         if self._socket is None: raise ComfyUITransportError('transport is not connected')
         self._socket.settimeout(timeout)

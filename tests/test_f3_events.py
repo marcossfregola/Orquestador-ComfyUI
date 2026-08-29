@@ -1,10 +1,30 @@
 import json, unittest
-from unittest.mock import Mock
+from urllib.parse import parse_qsl, urlencode, urlsplit
+from unittest.mock import Mock, patch
 from orquestador.adapters import *
 
 class EventsTests(unittest.TestCase):
     def setUp(self):
         self.ref = BackendJobRef('job-1'); self.client = Mock(); self.client.endpoint='https://host:8188/base'
+    def test_production_transport_exact_final_url(self):
+        for endpoint in ('http://host:123/base','https://host:123/base'):
+            final=ComfyUIObservation.websocket_url(endpoint,'cid'); ws=Mock(create_connection=Mock(return_value=Mock()))
+            with patch('orquestador.adapters.events.importlib.import_module',return_value=ws): WebSocketClientTransport().connect(final,client_id='cid')
+            ws.create_connection.assert_called_once_with(final)
+    def test_production_transport_never_re_normalizes(self):
+        ws=Mock(create_connection=Mock(return_value=Mock()))
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws), patch.object(ComfyUIObservation,'websocket_url',side_effect=AssertionError): WebSocketClientTransport().connect('ws://host/ws?clientId=x',client_id='x')
+    def test_optional_import_failure_maps(self):
+        with patch('orquestador.adapters.events.importlib.import_module',side_effect=ImportError):
+            with self.assertRaises(ComfyUITransportError): WebSocketClientTransport().connect('ws://host/ws',client_id='x')
+    def test_connection_failure_preserves_oserror(self):
+        ws=Mock(); ws.create_connection.side_effect=OSError('refused')
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws):
+            with self.assertRaises(OSError): WebSocketClientTransport().connect('ws://host/ws',client_id='x')
+    def test_observe_production_route(self):
+        sock=Mock(); sock.recv.return_value=json.dumps({'type':'execution_success','data':{'prompt_id':'job-1'}}); ws=Mock(create_connection=Mock(return_value=sock)); self.client.endpoint='http://host:123/base'
+        with patch('orquestador.adapters.events.importlib.import_module',return_value=ws): out=list(ComfyUIObservation(self.client,reconnects=0).observe(self.ref))
+        ws.create_connection.assert_called_once_with(ComfyUIObservation.websocket_url(self.client.endpoint,'orquestador')); self.assertEqual(out[0].kind,ObservationKind.COMPLETED)
     def test_url_encoding_and_scheme(self):
         u=ComfyUIObservation.websocket_url('https://host:8188/base?x=1','a &?#% ü')
         self.assertTrue(u.startswith('wss://host:8188/base/ws?x=1&clientId=')); self.assertIn('%26',u)
@@ -123,6 +143,18 @@ class EventsTests(unittest.TestCase):
         self.client.history.return_value=HistoryResult(self.ref,HistoryState.UNKNOWN); self.client.queue.return_value=QueueSnapshot(running=(self.ref,),pending=(self.ref,)); t=Mock(); t.connect.side_effect=TimeoutError(); self.assertEqual(list(ComfyUIObservation(self.client,transport=t,reconnects=0).observe(self.ref))[-1].kind,ObservationKind.UNKNOWN)
         self.client.queue.return_value=QueueSnapshot(); self.assertEqual(list(ComfyUIObservation(self.client,transport=t,reconnects=0).observe(self.ref))[-1].kind,ObservationKind.UNKNOWN)
     def test_client_id_encoding_special_cases(self):
-        for cid in ('a b','a&b','a?b','a#b','a%b','á'): self.assertNotIn(cid,ComfyUIObservation.websocket_url('http://host',cid).split('clientId=',1)[1])
+        endpoint = 'https://host:8188/base?existing=one&blank='
+        client_id = ' id &?#% ñ '
+        stripped = client_id.strip()
+        final = ComfyUIObservation.websocket_url(endpoint, client_id)
+        parts = urlsplit(final)
+        existing_query = parse_qsl(urlsplit(endpoint).query, keep_blank_values=True)
+        expected_pairs = existing_query + [('clientId', stripped)]
+        expected_query = urlencode(expected_pairs, doseq=True)
+        self.assertEqual((parts.scheme, parts.netloc, parts.path), ('wss', 'host:8188', '/base/ws'))
+        self.assertEqual(parts.query, expected_query)
+        self.assertEqual(parse_qsl(parts.query, keep_blank_values=True), expected_pairs)
+        self.assertEqual(parse_qsl(parts.query, keep_blank_values=True).count(('clientId', stripped)), 1)
+        self.assertEqual(final, 'wss://host:8188/base/ws?' + expected_query)
 
 if __name__ == '__main__': unittest.main()
