@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-28
-**Fase:** F4 — Workflow Profile H3 (**IN PROGRESS**; contrato/manifiesto estático completo)
-**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado. F3-5 está **COMPLETED** y F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**, con cierre respaldado por la auditoría global independiente 096 y el proceso de auditoría documental final.
+**Última actualización:** 2026-08-29
+**Fase:** F4 — Workflow Profile H3 (**CLOSED — APPROVED**); siguiente F5 (**NOT STARTED**)
+**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado. F3-5 está **COMPLETED** y F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**, con cierre respaldado por la auditoría global independiente 096 y el proceso de auditoría documental final. F4 está **CLOSED — APPROVED**; F5 está **NOT STARTED**.
 
 ## Fotografía viva
 
@@ -51,7 +51,7 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 
 - ComfyUI core `0.33.0` en `127.0.0.1:8188`; endpoints nativos, prompt API derivada, POST `/prompt`, queue/history, WebSocket de ejecución/progreso, upload y FFmpeg/FFprobe fueron verificados.
 - Correlación determinista: `prompt_id → history → SaveVideo node 92 (filename/subfolder/type) → archivo físico`.
-- H3 observado: `LoadImage114→ImageCropV2 127→ImageScaleToTotalPixels119→GetImageSize120→H3 129 first_frame`; width/height desde 120; seis `ref_image_0..5` densas; parámetros prompt/length/steps/seed/sampler/scheduler/FPS/ref_image_size; salida node 92.
+- H3 observado: `LoadImage114→ImageCropV2 127→ImageScaleToTotalPixels119→GetImageSize120→H3 129 first_frame`; width/height desde 120; seis `ref_image_0..5` densas; API F4 soporta prompt, first_frame, width, height, length, ref_image_size, also_ref_first_frame y FPS en node 148; steps/seed/sampler/scheduler no están expuestos por la evidencia canónica; salida node 92.
 - C1 probó frame exacto `N-1` y equivalencia pixel a pixel mediante `framemd5`; C2 probó chaining real de dos chunks con upload y continuidad hash; C3 sólo permite concat técnico `-c copy` y validación humana del seam de ese caso.
 - Tarea `orquestador-f1-e1-pending-delete-003`: A `f66c16d3-a699-47d8-a8ed-99085fa96cc9` running; B `99632fb4-7c20-4cba-8947-feebed5054ef` pending; B eliminado por `POST /queue` HTTP 200, history `{}`, sin output; A interrumpido por `/interrupt`; queue final vacía; repositorio sin cambios.
 
@@ -64,7 +64,7 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 - Semántica de cancelación a nivel de pipeline/dominio, concurrencia segura y comportamiento de reconexión; la cancelación backend pending-only de F3-4 está cerrada y live validada.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
-- F4 UNIT A correction R3: implementación y suite unitaria corregidas; **awaiting independent audit against canonical bytes**. No se afirma pase real del workflow canónico. API mapping/object_info y unidades posteriores siguen pendientes.
+- F4: implementación del perfil H3, bindings centralizados, artefactos canónicos sanitizados y fixture durable versionado completados; **CLOSED — APPROVED**. La validación estática contra bytes canónicos y las suites de cierre quedaron en verde; no se afirma una nueva ejecución de generación ni validación visual.
 - F6/F7/F8/F9: recovery, chaining largo, ensamblado productivo y GUI.
 
 ## Criterio de cierre
@@ -72,10 +72,10 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 (Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
 # F3 closure status
 
-F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED and LIVE VALIDATED with pending-only targeted delete. F3-6 validates caller-supplied trusted root with containment/path-escape protections. F3-7 live validation completed health, submit, production WS, execution_success, exact history, deterministic logical descriptor and physical file. Final `ArtifactObservation` seam is fail-closed; durable completion/artifact persistence remains F5. F4/H3 bindings are NOT STARTED.
+F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED and LIVE VALIDATED with pending-only targeted delete. F3-6 validates caller-supplied trusted root with containment/path-escape protections. F3-7 live validation completed health, submit, production WS, execution_success, exact history, deterministic logical descriptor and physical file. Final `ArtifactObservation` seam is fail-closed; durable completion/artifact persistence remains F5. F4/H3 bindings are **CLOSED — APPROVED** after durable canonical-fixture and suite validation; F5 is **NOT STARTED**.
 ### F3-5 application bridge
 
 Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 is CLOSED; durable completion/artifact persistence remains F5.
-F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings NOT STARTED.
+F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings están **CLOSED — APPROVED**; F5 permanece **NOT STARTED**.
 
 Mapper output→`ArtifactObservation` implementado, probado y fail-closed. Persistencia durable sigue en F5.

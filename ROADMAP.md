@@ -38,11 +38,13 @@ La integración output→`ArtifactObservation` está implementada, side-effect f
 
 Definir y probar el contrato versionado del workflow H3 real, sus bindings y su validación de compatibilidad.
 
-**Estado:** **NOT STARTED — NEXT**.
+**Estado:** **CLOSED — APPROVED** (cierre técnico de F4); F5 **NOT STARTED**.
 
 ## F5 — Pipeline robusto de un chunk
 
 Completar el flujo preflight → preparación → generación → detección inequívoca → validación → extracción del frame de transición → completado durable.
+
+**Estado:** **NOT STARTED**.
 
 ## F6 — Recovery/retry real del pipeline y checkpoints
 

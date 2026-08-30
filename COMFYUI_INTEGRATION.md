@@ -49,12 +49,12 @@ El contrato observado del primer perfil H3 incluye, dentro del adaptador/profile
 - `LoadImage` node 114 → `ImageCropV2` 127 → `ImageScaleToTotalPixels` 119 → `GetImageSize` 120 → `MiniMaxH3HybridRefAndKeyframe` 129 `first_frame`;
 - `width` y `height` de H3 permanecen enlazados a las salidas 0 y 1 de node 120;
 - `ref_images.ref_image_0..5` son seis slots densos, ordenados y conectados a los escalados correspondientes;
-- `prompt`, `length`, `steps`, `seed`, sampler, scheduler, FPS y `ref_image_size` se inyectan en sus inputs API reales;
+- `prompt`, `length`, FPS y `ref_image_size` se inyectan en sus inputs API reales; steps, seed, sampler y scheduler permanecen en nodos separados y no son bindings H3 del perfil F4;
 - node 92 `SaveVideo` expone el descriptor `filename/subfolder/type` usado para resolver el output.
 
 Estos IDs y nombres son evidencia del profile H3 instalado; no deben filtrarse al dominio.
 
-Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. La decisión de diseño F1 queda registrada: un Workflow Profile/manifest versionado y autocontenido, con bindings declarativos y validación de compatibilidad en preflight; los IDs de nodo y `class_type` quedan aislados detrás del profile/adapter; la correlación determinista de outputs usa `prompt_id`/history y el descriptor de `SaveVideo`. El esquema formal, las pruebas de compatibilidad y la implementación del profile permanecen en F4; la frontera del adaptador consumidor de ComfyUI permanece en F3.
+Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. La decisión de diseño F1 queda registrada: un Workflow Profile/manifest versionado y autocontenido, con bindings declarativos y validación de compatibilidad en preflight; los IDs de nodo y `class_type` quedan aislados detrás del profile/adapter; la correlación determinista de outputs usa `prompt_id`/history y el descriptor de `SaveVideo`. El esquema formal, las pruebas de compatibilidad y la implementación del profile F4 están **CLOSED — APPROVED**; la frontera del adaptador consumidor de ComfyUI permanece en F3.
 
 ## Bindings conceptuales
 
@@ -157,4 +157,4 @@ La evidencia histórica/spike de F1 sobre “interrupción básica” no es una 
 Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. La validación live F3-4 de eliminación segura está completada y aprobada independientemente con observaciones. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.
 ### F3-6 validación física mínima (completada)
 
-La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. F3 genérico está CLOSED/LIVE VALIDATED en ComfyUI 0.33.0 aislado: parser de queue de 5 campos, correlación exacta por `prompt_id`, WS corregido, outputs lógicos deterministas y protección fail-closed contra escapes. H3 profile/bindings son F4 (NOT STARTED); persistencia durable y chunk orchestration son F5.
+La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. F3 genérico está CLOSED/LIVE VALIDATED en ComfyUI 0.33.0 aislado: parser de queue de 5 campos, correlación exacta por `prompt_id`, WS corregido, outputs lógicos deterministas y protección fail-closed contra escapes. H3 profile/bindings F4 están **CLOSED — APPROVED**. Persistencia durable y chunk orchestration son F5 (**NOT STARTED**).

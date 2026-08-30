@@ -87,7 +87,7 @@ El chaining real probado fue de dos chunks y la continuidad visual fue validada 
 
 ## Estado de implementación F2
 
-F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y no están implementados.
+F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 permanece **NOT STARTED**.
 
 ## Qué permanece abierto tras F2
 
@@ -95,9 +95,9 @@ F3-3 devuelve todos los descriptores lógicos validados; la selección del artef
 
 ## F3 — adaptador genérico CLOSED / live validated
 
-Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings son F4; completion/artifact durable y chunk orchestration son F5.
+Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration son F5 (**NOT STARTED**).
 
-La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**; lo que permanece futuro es la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, contrato formal del profile, concurrencia segura, chaining largo, ensamblado productivo y librerías externas. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
+La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**; lo que permanece futuro es la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, concurrencia segura, chaining largo, ensamblado productivo y librerías externas. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
 
 F3-1, F3-2 y F3-3 están checkpointed. F3-4 está corregida e implementada; la validación física de outputs y el mapper a `ArtifactObservation` están técnicamente completos. La persistencia durable de completion/artifact sigue siendo F5.
 
