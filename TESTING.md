@@ -109,7 +109,7 @@ F1 produjo evidencia experimental reproducible, no implementó producto ni convi
 
 ## F3 closure evidence
 
-La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4 está **CLOSED — APPROVED** con validación estática, fixture canónico durable y suites de cierre en verde; F5 está **IN PROGRESS — Slices 1-2 underway**. No se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
+La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4 está **CLOSED — APPROVED** con validación estática, fixture canónico durable y suites de cierre en verde; F5 está **IN PROGRESS — Slice 3 implemented/locally tested**. No se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
 
 ## Criterios de avance
 
@@ -155,3 +155,7 @@ Suite completa:
 `python -B -m unittest discover -s tests`
 
 Resultado observado en esta ronda: **351 tests, OK**. Las tres ejecuciones usaron un directorio temporal controlado process-local y no modificaron ComfyUI.
+
+## F5 Slice 3
+
+Las pruebas contractuales cubren submit único, history terminal correlacionado, correlación/validación física, persistencia tardía, TransitionFrame nullable y FFprobe/FFmpeg shell-free con N-1. G está cubierto por `test_final_save_failure_does_not_mutate_in_memory` con SQLite real y reapertura; I por `test_happy_path_durable_sqlite_reopen_preserves_output_and_transition` (artefacto previo + output); J por `test_transition_frame_target_none_and_second_chunk_reload` con la fila durable completa y `first_frame` del target; K por `tests/test_f5_video_adapter.py` (destino existente, args exactos y `shell=False`). A–K explícito se considera sustentado por estos contratos y los focused F2/F3/F5 suites. Verificación local: discovery **377 tests, OK**, dos ejecuciones consecutivas. No hay claim de ComfyUI vivo ni visual.

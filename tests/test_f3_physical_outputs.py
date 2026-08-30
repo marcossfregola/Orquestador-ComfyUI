@@ -59,18 +59,30 @@ class PhysicalOutputTests(unittest.TestCase):
         for bad in ("..\\escape", "C:\\absolute.mp4", "/absolute.mp4"):
             edge = OutputDescriptor(self.job, "9", bad, "safe", "video")
             self.assertNotEqual(validate_physical_output(edge, self.base).status, PhysicalOutputStatus.EXISTS)
-        outside = self.base.parent / "outside.txt"; outside.write_text("x")
+        outside = self.base.parent / "outside_containment"; shutil.rmtree(outside, ignore_errors=True); outside.mkdir(); (outside / "x").write_text("x")
         link = self.base / "link"
         try:
-            link.symlink_to(outside)
+            link.symlink_to(outside, target_is_directory=True)
         except (OSError, NotImplementedError):
+            # Windows commonly denies symlink creation.  A directory junction
+            # is equivalent for containment and normally needs no elevation.
+            import subprocess
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                           check=False, capture_output=True, text=True)
+        if link.is_dir():
+            self.assertEqual(validate_physical_output(self.d(filename="x", subfolder="link"), self.base).status, PhysicalOutputStatus.OUTSIDE_ROOT)
+        else:
+            # Deterministic test-only fallback: resolve the external target
+            # before patching and return it only for the exact candidate.
+            resolved_outside = (outside / "x").resolve()
             original_resolve = Path.resolve
+            candidate = link / "x"
             def resolve_edge(path, *args, **kwargs):
-                return outside.resolve() if path == link / "x" else original_resolve(path, *args, **kwargs)
+                if path == candidate:
+                    return resolved_outside
+                return original_resolve(path, *args, **kwargs)
             with patch.object(Path, "resolve", resolve_edge):
                 self.assertEqual(validate_physical_output(self.d(filename="x", subfolder="link"), self.base).status, PhysicalOutputStatus.OUTSIDE_ROOT)
-        else:
-            self.assertEqual(validate_physical_output(self.d(filename="x", subfolder="link"), self.base).status, PhysicalOutputStatus.OUTSIDE_ROOT)
 
     def test_evidence_is_frozen(self):
         ev = validate_physical_output(self.d(), self.base)

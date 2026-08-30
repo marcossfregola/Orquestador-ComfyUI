@@ -134,3 +134,5 @@ La reconciliación implementada es pura y agnóstica del backend: recibe evidenc
 ## Límites posteriores a F2
 
 ComfyUI querying pertenece al adaptador F3; las operaciones FFmpeg/FFprobe y el ensamblado permanecen en fronteras posteriores. F2 no implementa recovery real contra ComfyUI, bindings/profile H3, GUI, orquestación productiva, chaining largo, ensamblado productivo ni validación visual universal.
+
+`TransitionFrame.target_chunk_id` es nullable para el checkpoint del chunk único; los enlaces con target mantienen validación de procedencia y schema v1.

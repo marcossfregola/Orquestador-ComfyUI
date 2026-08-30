@@ -87,7 +87,7 @@ El chaining real probado fue de dos chunks y la continuidad visual fue validada 
 
 ## Estado de implementación F2
 
-F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 está **IN PROGRESS — Slices 1-2 underway**.
+F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 está **IN PROGRESS — Slice 3 implemented/locally tested**.
 
 ## Qué permanece abierto tras F2
 
@@ -117,3 +117,7 @@ Corrección contractual F5: `orchestration_timeout_seconds` se resuelve antes de
 F5 coordina únicamente un chunk: preflight → Attempt durable → submit → monitoring/history → correlación determinista → validación física → extracción exacta N-1 → completion durable. El límite de orquestación se configura en las opciones efectivas de la defaults JSON persistidos (proyecto → ejecución → chunk; `WorkflowProfileRef` no es fuente de defaults), por Attempt, y es exactamente **1800 segundos (30 minutos) por defecto**. Es distinto de los límites de transporte F3: HTTP 10 s y WebSocket 5 s. Su expiración es un resultado explícito fallido/bloqueado y nunca autoriza resubmit o retry automático.
 
 La única elegibilidad de retry automático es exhaustiva: (a) un estado terminal backend explícito `FAILED` sin output verificado, o (b) un fallo pre-submit con evidencia determinista de que el backend no aceptó el trabajo. Nunca es elegible `RUNNING`, `UNKNOWN`, timeout de orquestación, evidencia ambigua/contradictoria, aceptación de submit incierta, pérdida de evidencia, mismatch de procedencia/path, estado u output corrupto, ni cualquier caso en que pueda existir ya un job. El retry elegible crea exactamente un nuevo Attempt append-only y preserva toda la evidencia previa; no hay un tercer intento automático. Las condiciones ambiguas se deciden con estados existentes `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, según corresponda, sin crear estados persistidos nuevos. La cancelación de una generación running no pertenece a F5 y conserva el contrato F3 pending-only. Los outputs parciales e intermedios se mantienen como evidencia. Chaining multi-chunk, ensamblado, GUI, F6+ y crash-recovery real quedan fuera.
+
+## F5 Slice 3 (IN PROGRESS)
+
+La coordinación de un chunk único persiste el `BackendJobRef`, exige history terminal SUCCESS correlacionado, valida el artefacto físico y extrae exactamente el frame N-1 con commit tardío. Slice1 (timeout) y Slice2 (pre-submit/job ref durable) están implementados; Slice4 (deadline/retry/política fail-closed) queda PENDING.
