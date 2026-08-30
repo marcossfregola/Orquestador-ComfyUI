@@ -82,7 +82,11 @@ Un Chunk no se marca `COMPLETADO` si falta output válido, validación requerida
 
 Un Intento nace al comenzar una tentativa concreta, avanza por las fases disponibles y termina con resultado válido, error explícito o cancelación. Un retry siempre crea otro Intento y mantiene el vínculo con el anterior.
 
+En F5 el límite de orquestación se configura por Attempt en las opciones efectivas de la defaults JSON persistidos (proyecto → ejecución → chunk; `WorkflowProfileRef` no es fuente de defaults) y vale exactamente 1800 segundos (30 minutos) por defecto, distinto de los transportes F3 (HTTP 10 s / WebSocket 5 s). Su expiración termina el Intento en fallo/bloqueo explícito y nunca autoriza retry/resubmit. La única elegibilidad automática es `FAILED` terminal explícito sin output verificado o fallo pre-submit con evidencia determinista de no aceptación backend. Nunca son elegibles `RUNNING`, `UNKNOWN`, timeout, evidencia ambigua/contradictoria, submit incierto, pérdida de evidencia, mismatch de procedencia/path, estado/output corrupto o cualquier caso donde pueda existir un job. El retry elegible crea exactamente un segundo Intento append-only y conserva todos los artefactos/evidencias; las condiciones ambiguas usan `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, sin estado persistido nuevo.
+
 ## Invariantes
+
+Corrección F5: `orchestration_timeout_seconds` (defaults JSON) es entero, bool inválido, `>0`, default 1800 s, merge proyecto→ejecución→chunk; se resuelve antes de cada Attempt, que no tiene options. Timeout no-retryable. `CANCELLED` nunca auto-retry F5 aunque F2 lo clasifique retryable; no redefine F2/F6. `prompt_id` sólo en `external_job_ref`, asignación única y persistencia inmediata; incertidumbre no reenvía.
 
 1. Proyecto y Ejecución no se confunden ni comparten silenciosamente el estado mutable.
 2. Chunk e Intento son distintos; un retry no reescribe el historial.
@@ -96,6 +100,7 @@ Un Intento nace al comenzar una tentativa concreta, avanza por las fases disponi
 10. Ninguna transición convierte un error desconocido en éxito.
 11. El ensamblado final es adicional y no destruye chunks ni intermedios.
 12. Los parámetros heredados y los overrides efectivos de cada chunk quedan distinguibles para poder reproducir el intento.
+13. Los outputs parciales e intermedios de cada Intento se conservan como Artefactos de evidencia; F5 no ejecuta limpieza automática.
 
 ## Checkpoints y recovery conceptual
 

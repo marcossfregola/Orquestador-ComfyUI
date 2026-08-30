@@ -102,3 +102,21 @@ class Execution:
   prev=self.chunks[chunk.order-1]
   if frame.source_chunk_id!=prev.id or not any(a.id==frame.source_attempt_id and a.state is Lifecycle.SUCCEEDED and a.output==frame.source_output for a in prev.attempts): raise DomainError('transition requires immediately previous successful attempt')
   chunk.first_frame=frame
+
+ORCHESTRATION_TIMEOUT_DEFAULT_SECONDS = 1800
+ORCHESTRATION_TIMEOUT_KEY = 'orchestration_timeout_seconds'
+
+def resolve_orchestration_timeout_seconds(project: Project, execution: Execution, chunk: Chunk) -> int:
+ """Resolve and validate the orchestration deadline from effective defaults.
+
+ The effective source precedence is project, execution, then chunk defaults.
+ This function is pure and does not mutate any supplied entity or attempt.
+ """
+ value = chunk.effective_parameters(project, execution.defaults).get(
+  ORCHESTRATION_TIMEOUT_KEY, ORCHESTRATION_TIMEOUT_DEFAULT_SECONDS
+ )
+ if type(value) is not int or value <= 0:
+  raise DomainError(
+   f'{ORCHESTRATION_TIMEOUT_KEY} must be a positive integer number of seconds'
+  )
+ return value

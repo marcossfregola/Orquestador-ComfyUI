@@ -87,7 +87,7 @@ El chaining real probado fue de dos chunks y la continuidad visual fue validada 
 
 ## Estado de implementación F2
 
-F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 permanece **NOT STARTED**.
+F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 está **IN PROGRESS — Slices 1-2 underway**.
 
 ## Qué permanece abierto tras F2
 
@@ -95,7 +95,7 @@ F3-3 devuelve todos los descriptores lógicos validados; la selección del artef
 
 ## F3 — adaptador genérico CLOSED / live validated
 
-Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration son F5 (**NOT STARTED**).
+Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration son F5 (**IN PROGRESS**).
 
 La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**; lo que permanece futuro es la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, concurrencia segura, chaining largo, ensamblado productivo y librerías externas. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
 
@@ -109,3 +109,11 @@ The ComfyUI adapter validates endpoint, prompt identifiers, client_id, queue/his
 
 Cancellation is isolated in `adapters.cancellation`: pending queue deletion plus fresh queue/history verification is the only production-safe operation. The F1 “basic interruption” result is historical spike evidence only. Running targets return `RUNNING_INTERRUPT_UNSAFE`; native `/interrupt` is non-atomic on ComfyUI 0.33.0 and is not called by F3-4. No domain or persistence transition occurs.
 La frontera `orquestador.adapters.physical_outputs` mantiene separada la evidencia física de la correlación lógica: requiere raíz explícita y no tiene efectos de dominio.
+
+## F5 — Contrato de orquestación de un chunk
+
+Corrección contractual F5: `orchestration_timeout_seconds` se resuelve antes de cada Attempt desde defaults JSON (entero, bool inválido, `>0`, default 1800; merge proyecto→ejecución→chunk con override de chunk permitido); Attempt no tiene options. Timeout no-retryable fail-closed. `CANCELLED` nunca auto-retry F5 aunque F2 pueda clasificarlo `RETRY_CURRENT_CHUNK`/`CREATE_NEW_ATTEMPT`; no redefine F2/F6. `prompt_id` usa sólo `Attempt.external_job_ref`/`attempts.external_job_ref`, sin columna nueva: persistir sin ref→submit→validar BackendJobRef no vacío→asignar una vez→persistir inmediatamente. Incertidumbre nunca reenvía; job observado durable es ref persistida más evidencia correlacionada.
+
+F5 coordina únicamente un chunk: preflight → Attempt durable → submit → monitoring/history → correlación determinista → validación física → extracción exacta N-1 → completion durable. El límite de orquestación se configura en las opciones efectivas de la defaults JSON persistidos (proyecto → ejecución → chunk; `WorkflowProfileRef` no es fuente de defaults), por Attempt, y es exactamente **1800 segundos (30 minutos) por defecto**. Es distinto de los límites de transporte F3: HTTP 10 s y WebSocket 5 s. Su expiración es un resultado explícito fallido/bloqueado y nunca autoriza resubmit o retry automático.
+
+La única elegibilidad de retry automático es exhaustiva: (a) un estado terminal backend explícito `FAILED` sin output verificado, o (b) un fallo pre-submit con evidencia determinista de que el backend no aceptó el trabajo. Nunca es elegible `RUNNING`, `UNKNOWN`, timeout de orquestación, evidencia ambigua/contradictoria, aceptación de submit incierta, pérdida de evidencia, mismatch de procedencia/path, estado u output corrupto, ni cualquier caso en que pueda existir ya un job. El retry elegible crea exactamente un nuevo Attempt append-only y preserva toda la evidencia previa; no hay un tercer intento automático. Las condiciones ambiguas se deciden con estados existentes `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, según corresponda, sin crear estados persistidos nuevos. La cancelación de una generación running no pertenece a F5 y conserva el contrato F3 pending-only. Los outputs parciales e intermedios se mantienen como evidencia. Chaining multi-chunk, ensamblado, GUI, F6+ y crash-recovery real quedan fuera.

@@ -21,6 +21,45 @@ class BackendEvidence:
 class CancellationEvidence:
     target:BackendJobRef; state:Enum; action:Enum; issue:str|None=None; issue_kind:Enum|None=None; phase:Enum|None=None
 
+class SubmitOutcome(str, Enum):
+    SUCCEEDED = 'succeeded'
+    INVALID_REF = 'invalid_ref'
+    AMBIGUOUS = 'ambiguous'
+    BIND_FAILED = 'bind_failed'
+
+@dataclass(frozen=True)
+class SubmitAttemptResult:
+    outcome: SubmitOutcome
+    attempt_id: str
+    job_ref: BackendJobRef | None = None
+    error: str | None = None
+
+class SubmitAttemptUseCase:
+    """Durably create an attempt, submit exactly once, then bind and persist."""
+    def __init__(self, repository, client, bridge=None):
+        self.repository = repository
+        self.client = client
+        self.bridge = bridge or ComfyUIJobBridge(repository)
+
+    def submit(self, project, execution, chunk_id, prompt, *, client_id=None):
+        chunk = next((c for c in execution.chunks if str(c.id) == str(chunk_id)), None)
+        if chunk is None:
+            raise ValueError('chunk identity mismatch')
+        attempt = chunk.new_attempt()
+        # Intentionally propagate pre-submit persistence failures: no external request boundary has been crossed.
+        self.repository.save(project, [execution])
+        try:
+            ref = self.client.submit(prompt, client_id=client_id)
+        except Exception as exc:
+            return SubmitAttemptResult(SubmitOutcome.AMBIGUOUS, str(attempt.id), error=str(exc))
+        if not isinstance(ref, BackendJobRef) or not ref.value.strip():
+            return SubmitAttemptResult(SubmitOutcome.INVALID_REF, str(attempt.id), error='invalid backend job reference')
+        try:
+            self.bridge.bind(project, execution, chunk_id, str(attempt.id), ref, execution_id=execution.id)
+        except Exception as exc:
+            return SubmitAttemptResult(SubmitOutcome.BIND_FAILED, str(attempt.id), ref, str(exc))
+        return SubmitAttemptResult(SubmitOutcome.SUCCEEDED, str(attempt.id), ref)
+
 def _authority(execution, project_id, execution_id, chunk_id, attempt_id, ref):
     if str(execution.project_id)!=str(project_id) or str(execution.id)!=str(execution_id): raise ValueError('provenance mismatch')
     for c in execution.chunks:
@@ -121,4 +160,4 @@ class ComfyUIJobBridge:
         self.repository.save(project,[clone]); target.new_attempt()
         return result
 
-__all__=['BackendEvidence','CancellationEvidence','map_backend_evidence','map_cancellation_evidence','map_verified_artifact_observation','ComfyUIJobBridge']
+__all__=['BackendEvidence','CancellationEvidence','SubmitOutcome','SubmitAttemptResult','SubmitAttemptUseCase','map_backend_evidence','map_cancellation_evidence','map_verified_artifact_observation','ComfyUIJobBridge']

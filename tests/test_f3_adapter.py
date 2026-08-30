@@ -6,13 +6,21 @@ class H(BaseHTTPRequestHandler):
  def do_GET(self): self.go()
  def do_POST(self): self.go()
  def go(self):
-  b,s=self.response; raw=json.dumps(b).encode(); self.send_response(s); self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
+  length_header=self.headers.get('Content-Length')
+  try: length=int(length_header) if length_header is not None else 0
+  except (TypeError,ValueError): length=0
+  if length > 0: self.rfile.read(length)
+  b,s=self.response; raw=json.dumps(b).encode(); self.send_response(s); self.send_header('Content-Length',str(len(raw))); self.send_header('Connection','close'); self.end_headers(); self.wfile.write(raw)
+  self.close_connection=True
  def log_message(self,*a): pass
 class AdapterTests(unittest.TestCase):
  @classmethod
- def setUpClass(c): c.s=HTTPServer(('127.0.0.1',0),H); threading.Thread(target=c.s.serve_forever,daemon=True).start(); c.base=f'http://127.0.0.1:{c.s.server_port}'
+ def setUpClass(c):
+  c.s=HTTPServer(('127.0.0.1',0),H); c.thread=threading.Thread(target=c.s.serve_forever,daemon=True); c.thread.start(); c.base=f'http://127.0.0.1:{c.s.server_port}'
  @classmethod
- def tearDownClass(c): c.s.shutdown()
+ def tearDownClass(c):
+  c.s.shutdown(); c.s.server_close(); c.thread.join(timeout=5)
+  if c.thread.is_alive(): raise AssertionError('serve_forever thread did not terminate')
  def setUp(self): self.c=ComfyUIClient(self.base,.2)
  def put(self,b,s=200): H.response=(b,s)
  def test_valid_endpoint_schemes(self): ComfyUIClient('https://example.com/base/')

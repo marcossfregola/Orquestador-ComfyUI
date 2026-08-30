@@ -101,7 +101,7 @@ No se debe afirmar “funciona” sin indicar qué se ejecutó, contra qué ento
 | pending-delete B por POST `/queue` 200, history `{}`, sin output; interrupt A; queue vacía; repo intacto | DEMONSTRATED | F3/F6 definen semántica productiva |
 | concat `-c copy` y seam visual | DEMONSTRATED sólo para ese caso | F8/F10 validan generalización |
 | automatización visual como integración | DISCARDED | — |
-| **FUTURE:** cancelación productiva de dominio, crash/orphan recovery contra backend, retry del pipeline, chaining largo, concurrencia, GUI | FUTURE / NOT STARTED | F5/F6/F7/F8/F9 |
+| **FUTURE:** cancelación productiva de dominio, crash/orphan recovery contra backend, retry del pipeline, chaining largo, concurrencia, GUI | FUTURE / NOT STARTED | F6/F7/F8/F9 |
 
 ## Estado de F1
 
@@ -109,7 +109,7 @@ F1 produjo evidencia experimental reproducible, no implementó producto ni convi
 
 ## F3 closure evidence
 
-La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4 está **CLOSED — APPROVED** con validación estática, fixture canónico durable y suites de cierre en verde; F5 permanece **NOT STARTED**. No se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
+La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4 está **CLOSED — APPROVED** con validación estática, fixture canónico durable y suites de cierre en verde; F5 está **IN PROGRESS — Slices 1-2 underway**. No se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
 
 ## Criterios de avance
 
@@ -118,6 +118,12 @@ La suite externa final quedó **322/322 verde** tras la corrección manual sólo
 - F6 requiere recovery/retry del pipeline sin declarar recovery multi-chunk.
 - F7 requiere por primera vez recovery completo de una cadena de dos o tres chunks.
 - F10 reúne E2E, fallos, recovery, continuidad visual, UX y demás criterios del release.
+
+## F5 — Criterios y pruebas de aceptación documental
+
+Pruebas adicionales: defaults/validación/precedencia de `orchestration_timeout_seconds`; timeout no-retryable; `CANCELLED` excluido; Attempt sin ref antes de submit, BackendJobRef no vacío, asignación única y reload durable de `external_job_ref` sin `prompt_id`; y submit/persistencia inciertos sin resubmit.
+
+Las pruebas de contrato de F5 deberán cubrir: flujo feliz de un chunk con Attempt, submit, monitoring/history, correlación determinista, validación física, extracción exacta N-1 y completion durable; retry automático sólo para `FAILED` terminal explícito sin output verificado o fallo pre-submit con evidencia determinista de no aceptación; un único retry como nuevo Attempt preservando el anterior y segundo fallo sin tercer submit; timeout de orquestación por Attempt configurable con valor predeterminado exacto de 1800 s (30 min), separado de HTTP 10 s/WebSocket 5 s, como fallo/bloqueo no exitoso y sin retry; y rechazo de retry para `RUNNING`, `UNKNOWN`, timeout, evidencia ambigua/contradictoria, submit incierto, pérdida de evidencia, mismatch de procedencia/path, estado/output corrupto o posible job existente. Las condiciones ambiguas deben mapearse a `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, sin estado nuevo persistido. También se verifica cancelación running rechazada conforme a F3 pending-only y conservación de outputs parciales/intermedios. No se incluyen chaining multi-chunk, ensamblado, GUI ni crash-recovery real.
 # F3 Unidades 1–4
 
 Focused contract suite: `python -B -m unittest tests.test_f3_adapter -v` — **38 tests**, all green. The suite uses a local mocked HTTP server; live ComfyUI evidence is recorded separately and is not a unit-test result.
@@ -134,7 +140,7 @@ F3-6 cubre determinísticamente raíz explícita, contención, escapes/symlink, 
 
 ## F4 — Workflow Profile H3
 
-La suite enfocada `python -B -m unittest tests.test_f4_workflow_profile -v` cubre la validación estructural fail-closed del workflow UI, el hash canónico, la integridad del template API, los bindings declarados y la topología width/height contrastada con evidencia canónica independiente versionada en `tests/fixtures/minimax_h3/prompt.sanitized.v2.json`. Es una validación determinista local: no ejecuta una nueva generación contra ComfyUI ni constituye validación visual. F4 está **CLOSED — APPROVED**; F5 está **NOT STARTED**. En esta ronda: **29 tests, OK**.
+La suite enfocada `python -B -m unittest tests.test_f4_workflow_profile -v` cubre la validación estructural fail-closed del workflow UI, el hash canónico, la integridad del template API, los bindings declarados y la topología width/height contrastada con evidencia canónica independiente versionada en `tests/fixtures/minimax_h3/prompt.sanitized.v2.json`. Es una validación determinista local: no ejecuta una nueva generación contra ComfyUI ni constituye validación visual. F4 está **CLOSED — APPROVED**; snapshot histórico de esa ronda: F5 estaba **NOT STARTED**. En esa ronda: **29 tests, OK**.
 
 La regresión reproducible F3+F4 usa exactamente estos módulos: `tests.test_f3_adapter tests.test_f3_events tests.test_f3_outputs tests.test_f3_physical_outputs tests.test_f3_cancellation tests.test_f3_application_bridge tests.test_f4_workflow_profile`.
 

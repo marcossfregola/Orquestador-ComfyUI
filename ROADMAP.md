@@ -38,13 +38,19 @@ La integración output→`ArtifactObservation` está implementada, side-effect f
 
 Definir y probar el contrato versionado del workflow H3 real, sus bindings y su validación de compatibilidad.
 
-**Estado:** **CLOSED — APPROVED** (cierre técnico de F4); F5 **NOT STARTED**.
+**Estado:** **CLOSED — APPROVED** (cierre técnico de F4); F5 **IN PROGRESS — Slices 1-2 underway**.
 
 ## F5 — Pipeline robusto de un chunk
 
-Completar el flujo preflight → preparación → generación → detección inequívoca → validación → extracción del frame de transición → completado durable.
+Corrección de aceptación F5: probar defaults/validación/precedencia de `orchestration_timeout_seconds`; excluir `CANCELLED` del auto-retry F5 sin redefinir F2/F6; verificar asignación única/reload de `external_job_ref` sin columna prompt_id y submit incierto sin reenvío. Job observado durable es ref persistida más evidencia correlacionada.
 
-**Estado:** **NOT STARTED**.
+Completar un único chunk end-to-end: preflight → preparación → generación → detección inequívoca → validación → extracción exacta del frame de transición N-1 → completado durable.
+
+Decisiones aprobadas para F5: el timeout de orquestación se configura por Attempt en las opciones efectivas de defaults JSON persistidos (proyecto → ejecución → chunk; `WorkflowProfileRef` no es fuente de defaults) y su valor predeterminado es exactamente 1800 segundos (30 minutos), distinto de F3 HTTP 10 s / WebSocket 5 s; su vencimiento es fallo/bloqueo explícito, nunca éxito ni retry/resubmit. La única elegibilidad de retry automático es `FAILED` terminal explícito sin output verificado o fallo pre-submit con evidencia determinista de no aceptación backend. Nunca son elegibles `RUNNING`, `UNKNOWN`, timeout, evidencia ambigua/contradictoria, submit incierto, pérdida de evidencia, mismatch de procedencia/path, estado/output corrupto o cualquier caso donde pueda existir un job. Cada retry elegible crea exactamente un nuevo Intento y preserva la evidencia previa; las ambigüedades se mapean a `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, sin inventar estados persistidos. La cancelación de una generación running queda fuera de F5 y se conserva el contrato F3 pending-only; todos los outputs parciales/intermedios se conservan como evidencia, sin limpieza automática. Quedan fuera chaining multi-chunk, ensamblado, GUI, F6+ y crash-recovery real más allá de los contratos necesarios para este estado seguro.
+
+Aceptación F5: un chunk exitoso deja durablemente Attempt, job observado, output correlacionado de forma determinista, validación física, frame N-1 y completion; cada fallo elegible consume como máximo el retry único y preserva ambos Attempts; timeout, ambigüedad o `RUNNING` no producen `COMPLETADO` ni resubmit; las decisiones ambiguas son `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`; y ningún artefacto parcial se elimina.
+
+**Estado:** **IN PROGRESS — Slices 1-2 underway**.
 
 ## F6 — Recovery/retry real del pipeline y checkpoints
 
