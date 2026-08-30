@@ -122,7 +122,7 @@ B2–B7 demostraron, en ejecuciones controladas, derivación del prompt API, ove
 
 C1 demostró extracción exacta del último frame decodificado. C2 demostró un chaining real de dos chunks: output → frame → upload → `first_frame`. C3 demostró un ensamblado técnico y recibió validación humana positiva de ese seam concreto.
 
-Continúan abiertos el recovery/orquestación después de crash/reinicio, el retry productivo, la semántica de cancelación a nivel de pipeline/dominio y la política para trabajos running; la cancelación backend segura pending-only de F3-4 está cerrada y live validada. También siguen abiertos persistencia durable, chaining largo, ensamblado productivo, concurrencia segura, GUI y generalización de la continuidad visual. No se adopta ni forkeará automáticamente un proyecto externo.
+Continúan abiertos el recovery/orquestación después de crash/reinicio, el retry productivo, la semántica de cancelación a nivel de pipeline/dominio y la política para trabajos running; la cancelación backend segura pending-only de F3-4 está cerrada y live validada. La persistencia durable y el completion/artifact persistence de F5 están **CLOSED — APPROVED**; siguen abiertos chaining largo, ensamblado productivo, concurrencia segura, GUI y generalización de la continuidad visual. No se adopta ni forkeará automáticamente un proyecto externo.
 
 ### MAKE / REUSE / ADAPT (decisión F1)
 
@@ -157,7 +157,7 @@ La evidencia histórica/spike de F1 sobre “interrupción básica” no es una 
 Tras un `2xx` de `/queue`, sólo la lectura fresca de queue/history puede producir `CONFIRMED`; una terminalización concurrente se informa como `RACED_TERMINAL`. Los errores de lectura devuelven `UNKNOWN` sin mutar; timeout/transport/protocol/server durante el delete son inciertos y no se reintentan. La validación live F3-4 de eliminación segura está completada y aprobada independientemente con observaciones. `Lifecycle.CANCELLED` es un estado genérico previo: la confirmación backend F3-4 no se mapea automáticamente; la transición de dominio pertenece a una unidad posterior. ComfyUI installation was not modified.
 ### F3-6 validación física mínima (completada)
 
-La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. F3 genérico está CLOSED/LIVE VALIDATED en ComfyUI 0.33.0 aislado: parser de queue de 5 campos, correlación exacta por `prompt_id`, WS corregido, outputs lógicos deterministas y protección fail-closed contra escapes. H3 profile/bindings F4 están **CLOSED — APPROVED**. Persistencia durable y chunk orchestration son F5 (**IN PROGRESS — Slice 3 implemented/locally tested**).
+La validación física recibe un `OutputDescriptor` ya correlacionado y un `trusted_root` explícito. F3 genérico está CLOSED/LIVE VALIDATED en ComfyUI 0.33.0 aislado: parser de queue de 5 campos, correlación exacta por `prompt_id`, WS corregido, outputs lógicos deterministas y protección fail-closed contra escapes. H3 profile/bindings F4 están **CLOSED — APPROVED**. Persistencia durable y chunk orchestration de F5 están **CLOSED — APPROVED**; F6 es la siguiente etapa, no iniciada.
 
 ## F5 — Contrato de ejecución de un chunk
 
@@ -167,4 +167,4 @@ F5 consume este adaptador en la secuencia preflight → Attempt durable → subm
 
 La única elegibilidad de retry automático es: estado terminal backend explícito `FAILED` sin output verificado, o fallo pre-submit con evidencia determinista de que el backend no aceptó el trabajo. No son elegibles `RUNNING`, `UNKNOWN`, timeout de orquestación, evidencia ambigua/contradictoria, aceptación incierta del submit, pérdida de evidencia, mismatch de procedencia/path, estado u output corrupto, ni cualquier posibilidad de que ya exista un job. Un retry elegible crea exactamente un nuevo Attempt y conserva toda la evidencia anterior. Las situaciones ambiguas se mapean a decisiones existentes `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, sin persistir un estado nuevo. La cancelación de trabajos running permanece fuera de F5: sólo se conserva el contrato F3 pending-only. Outputs parciales e intermedios se preservan como evidencia y no se limpian automáticamente.
 
-F5 Slice 3 implementa completion de un solo chunk y extracción N-1. La evidencia es local/mock; no implica ComfyUI vivo ni validación visual.
+F5 está **CLOSED — APPROVED** (2026-08-30): Slices 1, 2, 3 y 4A completadas/auditadas. La evidencia es local/mock; no implica ComfyUI vivo ni validación visual.

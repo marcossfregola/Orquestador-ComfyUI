@@ -102,6 +102,10 @@ Corrección F5: `orchestration_timeout_seconds` (defaults JSON) es entero, bool 
 12. Los parámetros heredados y los overrides efectivos de cada chunk quedan distinguibles para poder reproducir el intento.
 13. Los outputs parciales e intermedios de cada Intento se conservan como Artefactos de evidencia; F5 no ejecuta limpieza automática.
 
+### Estado F5 (2026-08-30)
+
+F5 **CLOSED — APPROVED**: Slices 1, 2, 3 y 4A completadas/auditadas. F6 **NOT STARTED**; no schema migration nueva.
+
 ## Checkpoints y recovery conceptual
 
 Después de cada fase crítica, la aplicación registra durablemente el estado, referencias a artefactos y evidencia suficiente antes de avanzar. Un punto seguro típico es: output inequívoco identificado y validado, frame de transición extraído y validado, y relación con el siguiente input preparada o registrada.

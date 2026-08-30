@@ -38,34 +38,39 @@ class ChunkExecutionCoordinator:
         except Exception as exc:
             return ChunkExecutionResult(False,f'monitor failed: {exc}',result.attempt_id)
         if not isinstance(observed, HistoryResult) or observed.prompt_id != ref: return ChunkExecutionResult(False,'monitor reference mismatch',result.attempt_id)
+        return self.complete_submitted_attempt(project, execution, chunk, attempt, observed)
+
+    def complete_submitted_attempt(self, project, execution, chunk, attempt, observed):
+        ref = attempt.external_job_ref
+        if not isinstance(observed, HistoryResult) or observed.prompt_id != ref: return ChunkExecutionResult(False,'monitor reference mismatch',str(attempt.id))
         evidence=map_backend_evidence(execution=execution,project_id=project.id,execution_id=execution.id,chunk_id=chunk.id,attempt_id=attempt.id,job_ref=ref,source=observed)
-        if evidence.state is not BackendJobState.COMPLETED: return ChunkExecutionResult(False,'monitor not terminal success',result.attempt_id)
+        if evidence.state is not BackendJobState.COMPLETED: return ChunkExecutionResult(False,'monitor not terminal success',str(attempt.id))
         corr=self.correlator(observed,ref)
-        if getattr(corr,'status',None).value!='valid' or len(corr.descriptors)!=1: return ChunkExecutionResult(False,'output absent or ambiguous',result.attempt_id)
+        if getattr(corr,'status',None).value!='valid' or len(corr.descriptors)!=1: return ChunkExecutionResult(False,'output absent or ambiguous',str(attempt.id))
         evidence = replace(evidence, logical_outputs=tuple(corr.descriptors))
         physical=self.physical_validator(corr.descriptors[0],self.trusted_root)
         obs=map_verified_artifact_observation(evidence=evidence,physical=physical,project_id=project.id,execution_id=execution.id,chunk_id=chunk.id,attempt_id=attempt.id,job_ref=ref)
-        if obs is None: return ChunkExecutionResult(False,'physical/provenance validation failed',result.attempt_id)
+        if obs is None: return ChunkExecutionResult(False,'physical/provenance validation failed',str(attempt.id))
         # Persistence stores project-relative artifact references; physical validation
         # intentionally retains the absolute trusted-root path for extraction.
         try:
             relative_output = physical.resolved_path.resolve().relative_to(self.trusted_root.resolve()).as_posix()
         except (ValueError, OSError, RuntimeError):
-            return ChunkExecutionResult(False, 'physical output escapes trusted root', result.attempt_id)
+            return ChunkExecutionResult(False, 'physical output escapes trusted root', str(attempt.id))
         obs = replace(obs, output=OutputRef(relative_output))
         try:
             frame_path=self.trusted_root/'transitions'/f'{attempt.id}.png'; frame=self.extractor.extract_last_frame(physical.resolved_path,frame_path)
             if frame.frame_index != frame.frame_count-1: raise ValueError('frame is not N-1')
-        except Exception as exc: return ChunkExecutionResult(False,f'extractor failed: {exc}',result.attempt_id)
+        except Exception as exc: return ChunkExecutionResult(False,f'extractor failed: {exc}',str(attempt.id))
         clone = _clone_execution(execution)
         cc=next(c for c in clone.chunks if str(c.id)==str(chunk.id)); aa=next(a for a in cc.attempts if str(a.id)==str(attempt.id)); cc.transition(Lifecycle.RUNNING); aa.transition(Lifecycle.RUNNING); aa.transition(Lifecycle.SUCCEEDED,output=obs.output,evidence=Evidence('correlated output, physical validation, decodable N-1 frame'))
         artifact=Artifact(project.id,clone.id,cc.id,aa.id,Phase.OUTPUT,obs.output)
         transition=TransitionFrame(project.id,clone.id,cc.id,aa.id,obs.output,frame.frame_index,frame.frame_count)
         cc.transition(Lifecycle.SUCCEEDED)
         try: self.repository.save(project,[clone],artifacts=[artifact],transitions=[transition])
-        except Exception as exc: return ChunkExecutionResult(False,f'persistence failed: {exc}',result.attempt_id)
+        except Exception as exc: return ChunkExecutionResult(False,f'persistence failed: {exc}',str(attempt.id))
         _copy_execution_state(execution, clone)
-        return ChunkExecutionResult(True,'completed',result.attempt_id,artifact,transition)
+        return ChunkExecutionResult(True,'completed',str(attempt.id),artifact,transition)
 
 
 def _clone_execution(execution: Execution) -> Execution:

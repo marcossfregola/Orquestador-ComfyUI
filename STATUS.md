@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-29
-**Fase:** F4 — Workflow Profile H3 (**CLOSED — APPROVED**); siguiente F5 (**NOT STARTED**)
-**Estado:** F3-1 checkpointed (`14f8b025...`); F3-2 checkpointed (`bba0e191...`); F3-3 implementado/corregido; F3-4 **CLOSED — APROBADA CON OBSERVACIONES** (baseline `bb58d6b...`); F3-5 corregido e implementado. F3-5 está **COMPLETED** y F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**, con cierre respaldado por la auditoría global independiente 096 y el proceso de auditoría documental final. F4 está **CLOSED — APPROVED**; F5 está **NOT STARTED**.
+**Última actualización:** 2026-08-30
+**Fase:** F5 — robust chunk completion (**CLOSED — APPROVED**); siguiente F6 (**NOT STARTED**)
+**Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED** (cierre documental 2026-08-30).
 
 ## Fotografía viva
 
@@ -57,6 +57,10 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 
 **HISTORICAL SPIKE:** la interrupción running mediante `/interrupt` es sólo evidencia histórica. F3-4 final es pending-only LIVE VALIDATED en ComfyUI 0.33.0 aislado: un único `POST /queue` dirigido, sin `/interrupt` ni clear; confirmación backend sola no equivale a `Lifecycle.CANCELLED`.
 
+## Cierre F5 (2026-08-30)
+
+F5 **CLOSED — APPROVED**; Slices 1, 2, 3 y 4A completadas/auditadas. Slice4A 13/13; todos F5 39/39; regresión 390/390 en dos corridas consecutivas independientes, ambas OK. A–L explícitos; A/B/C/H/I/L usan SQLiteProjectRepository real con close + nueva instancia + reopen; A/B verifican OUTPUT Artifact + TransitionFrame N-1. No hubo ComfyUI real, FFmpeg real donde hubo fakes, ni validación visual/UX. ResourceWarnings históricos no son failures. F6 **NOT STARTED**.
+
 ## Pendiente para fases posteriores
 
 - Recovery/retry ante crash, cierre, reinicio y jobs huérfanos.
@@ -72,10 +76,10 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 (Histórico F1) El trabajo técnico y la documentación del spike cumplieron su criterio de cierre. No autoriza implementación productiva ni adelanta F2–F4.
 # F3 closure status
 
-F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED and LIVE VALIDATED with pending-only targeted delete. F3-6 validates caller-supplied trusted root with containment/path-escape protections. F3-7 live validation completed health, submit, production WS, execution_success, exact history, deterministic logical descriptor and physical file. Final `ArtifactObservation` seam is fail-closed; durable completion/artifact persistence remains F5. F4/H3 bindings are **CLOSED — APPROVED** after durable canonical-fixture and suite validation; F5 is **NOT STARTED**.
+F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED and LIVE VALIDATED with pending-only targeted delete. F3-6 validates caller-supplied trusted root with containment/path-escape protections. F3-7 live validation completed health, submit, production WS, execution_success, exact history, deterministic logical descriptor and physical file. Final `ArtifactObservation` seam is fail-closed; durable completion/artifact persistence was closed in F5. F4/H3 bindings are **CLOSED — APPROVED** after durable canonical-fixture and suite validation; F5 is **CLOSED — APPROVED** (Slice4A completada, auditada y aprobada).
 ### F3-5 application bridge
 
-Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 is CLOSED; durable completion/artifact persistence remains F5.
-F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings están **CLOSED — APPROVED**; F5 permanece **NOT STARTED**.
+Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 is CLOSED; durable completion/artifact persistence was closed in F5.
+F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings están **CLOSED — APPROVED**; F5 está **CLOSED — APPROVED** (Slice4A completada, auditada y aprobada). F6 es la siguiente etapa y está **NOT STARTED**.
 
-Mapper output→`ArtifactObservation` implementado, probado y fail-closed. Persistencia durable sigue en F5.
+Mapper output→`ArtifactObservation` implementado, probado y fail-closed. La persistencia durable de completion/artifact quedó cerrada en F5.

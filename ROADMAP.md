@@ -32,13 +32,13 @@ Implementar health, submit, seguimiento, history, outputs, errores, reconexión 
 
 **Estado:** **COMPLETED/CLOSED — LIVE VALIDATED**. Auditoría global independiente 096 no encontró bloqueadores técnicos; sólo requirió sincronización documental.
 
-La integración output→`ArtifactObservation` está implementada, side-effect free y fail-closed; completion/artifact durable permanece en F5. F3 está **CLOSED / COMPLETED; LIVE VALIDATED**.
+La integración output→`ArtifactObservation` está implementada, side-effect free y fail-closed; completion/artifact durable quedó cerrada en F5. F3 está **CLOSED / COMPLETED; LIVE VALIDATED**.
 
 ## F4 — Workflow Profile / bindings MiniMax H3
 
 Definir y probar el contrato versionado del workflow H3 real, sus bindings y su validación de compatibilidad.
 
-**Estado:** **CLOSED — APPROVED** (cierre técnico de F4); F5 **IN PROGRESS — Slice 3 implemented/locally tested**.
+**Estado:** **CLOSED — APPROVED** (cierre técnico de F4); F5 **CLOSED — APPROVED** (2026-08-30).
 
 ## F5 — Pipeline robusto de un chunk
 
@@ -50,7 +50,7 @@ Decisiones aprobadas para F5: el timeout de orquestación se configura por Attem
 
 Aceptación F5: un chunk exitoso deja durablemente Attempt, job observado, output correlacionado de forma determinista, validación física, frame N-1 y completion; cada fallo elegible consume como máximo el retry único y preserva ambos Attempts; timeout, ambigüedad o `RUNNING` no producen `COMPLETADO` ni resubmit; las decisiones ambiguas son `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`; y ningún artefacto parcial se elimina.
 
-**Estado:** **IN PROGRESS — Slice 3 implemented/locally tested**.
+**Estado:** **CLOSED — APPROVED** (2026-08-30). Slices 1, 2, 3 y 4A completadas/auditadas; F6 queda próximo y NOT STARTED.
 
 ## F6 — Recovery/retry real del pipeline y checkpoints
 
@@ -78,4 +78,4 @@ Las etapas anteriores pueden haber usado harnesses técnicos descartables o una 
 
 Ejecutar E2E, escenarios de fallo y recovery, continuidad visual, UX, rendimiento, instalación cuando corresponda y cierre formal del primer release.
 
-F5: IN PROGRESS. Slice3 single-chunk completion + N-1 extraction implementado y probado localmente. Slice4 deadline/retry/fail-closed policy: PENDING. F6/F7/F8 y GUI no iniciados.
+F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6/F7/F8 y GUI no iniciados.

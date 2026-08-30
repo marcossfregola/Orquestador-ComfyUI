@@ -87,7 +87,7 @@ El chaining real probado fue de dos chunks y la continuidad visual fue validada 
 
 ## Estado de implementación F2
 
-F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 está **IN PROGRESS — Slice 3 implemented/locally tested**.
+F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 está **CLOSED — APPROVED**; F6 es la siguiente etapa, no iniciada.
 
 ## Qué permanece abierto tras F2
 
@@ -95,13 +95,13 @@ F3-3 devuelve todos los descriptores lógicos validados; la selección del artef
 
 ## F3 — adaptador genérico CLOSED / live validated
 
-Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration son F5 (**IN PROGRESS**).
+Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration de F5 están **CLOSED — APPROVED**.
 
 La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**; lo que permanece futuro es la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, concurrencia segura, chaining largo, ensamblado productivo y librerías externas. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
 
-F3-1, F3-2 y F3-3 están checkpointed. F3-4 está corregida e implementada; la validación física de outputs y el mapper a `ArtifactObservation` están técnicamente completos. La persistencia durable de completion/artifact sigue siendo F5.
+F3-1, F3-2 y F3-3 están checkpointed. F3-4 está corregida e implementada; la validación física de outputs y el mapper a `ArtifactObservation` están técnicamente completos. La persistencia durable de completion/artifact quedó cerrada en F5.
 
-F3 añade un mapper puro y fail-closed de evidencia lógica correlacionada más validación física a `ArtifactObservation`; no persiste ni muta dominio. Completion/artifact durable es F5 y `CONFIRMED` de cancelación no establece `Lifecycle.CANCELLED`.
+F3 añade un mapper puro y fail-closed de evidencia lógica correlacionada más validación física a `ArtifactObservation`; no persiste ni muta dominio. Completion/artifact durable quedó cerrado en F5 y `CONFIRMED` de cancelación no establece `Lifecycle.CANCELLED`.
 # F3 HTTP adapter contract
 
 The ComfyUI adapter validates endpoint, prompt identifiers, client_id, queue/history evidence, and HTTP/JSON error taxonomy fail-closed. BackendJobRef instances supplied to history are reused by identity.
@@ -118,6 +118,10 @@ F5 coordina únicamente un chunk: preflight → Attempt durable → submit → m
 
 La única elegibilidad de retry automático es exhaustiva: (a) un estado terminal backend explícito `FAILED` sin output verificado, o (b) un fallo pre-submit con evidencia determinista de que el backend no aceptó el trabajo. Nunca es elegible `RUNNING`, `UNKNOWN`, timeout de orquestación, evidencia ambigua/contradictoria, aceptación de submit incierta, pérdida de evidencia, mismatch de procedencia/path, estado u output corrupto, ni cualquier caso en que pueda existir ya un job. El retry elegible crea exactamente un nuevo Attempt append-only y preserva toda la evidencia previa; no hay un tercer intento automático. Las condiciones ambiguas se deciden con estados existentes `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, según corresponda, sin crear estados persistidos nuevos. La cancelación de una generación running no pertenece a F5 y conserva el contrato F3 pending-only. Los outputs parciales e intermedios se mantienen como evidencia. Chaining multi-chunk, ensamblado, GUI, F6+ y crash-recovery real quedan fuera.
 
-## F5 Slice 3 (IN PROGRESS)
+## F5 — CIERRE DOCUMENTAL (2026-08-30)
 
-La coordinación de un chunk único persiste el `BackendJobRef`, exige history terminal SUCCESS correlacionado, valida el artefacto físico y extrae exactamente el frame N-1 con commit tardío. Slice1 (timeout) y Slice2 (pre-submit/job ref durable) están implementados; Slice4 (deadline/retry/política fail-closed) queda PENDING.
+F5 está **CLOSED — APPROVED**. Slices 1, 2, 3 y 4A completadas/auditadas. F6 es la siguiente etapa, no iniciada.
+
+El timeout `orchestration_timeout_seconds` se resuelve antes de Attempt/submit, precedencia proyecto → ejecución → chunk; `WorkflowProfileRef` no aporta defaults. Ausente/default 1800 s; sólo `int` Python real >0, demás tipos producen `DomainError`. Deadline monotónico/polling positivo, separado de HTTP 10.0/WS 5.0; clock congelado termina fail-closed. Máximo un retry automático total (dos Attempts/dos submits), siempre nuevos; sólo FAILED terminal inequívoco. FAILED debe persistir antes del segundo o BLOCKED; segundo save fallido BLOCKED, sin tercer intento. RUNNING/QUEUED/NOT_FOUND/UNKNOWN, timeout, excepciones, submit incierto, output/provenance/physical/FFmpeg/extractor/completion fallidos o persistencia incierta no reintentan. Éxito reutiliza `complete_submitted_attempt`/Slice3 sin segundo submit; Artifact OUTPUT y TransitionFrame durables commit-late, extracción N-1 con `shell=False`. UI, multi-chunk, assembly, running cancellation y F6 quedan fuera.
+
+La coordinación de un chunk único persiste el `BackendJobRef`, exige history terminal SUCCESS correlacionado, valida el artefacto físico y extrae exactamente el frame N-1 con commit tardío. Slice1 (timeout), Slice2 (pre-submit/job ref durable) y Slice4A (deadline/retry/política fail-closed) están completadas, auditadas y aprobadas.
