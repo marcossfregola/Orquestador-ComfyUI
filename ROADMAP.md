@@ -50,13 +50,17 @@ Decisiones aprobadas para F5: el timeout de orquestación se configura por Attem
 
 Aceptación F5: un chunk exitoso deja durablemente Attempt, job observado, output correlacionado de forma determinista, validación física, frame N-1 y completion; cada fallo elegible consume como máximo el retry único y preserva ambos Attempts; timeout, ambigüedad o `RUNNING` no producen `COMPLETADO` ni resubmit; las decisiones ambiguas son `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`; y ningún artefacto parcial se elimina.
 
-**Estado:** **CLOSED — APPROVED** (2026-08-30). Slices 1, 2, 3 y 4A completadas/auditadas; F6 queda próximo y NOT STARTED.
+**Estado:** **CLOSED — APPROVED** (2026-08-30). Slices 1, 2, 3 y 4A completadas/auditadas; F6 queda cerrado en la sección siguiente.
 
-## F6 — Recovery/retry real del pipeline y checkpoints
+## F6 — Recovery/retry durable de un chunk y checkpoints
 
-Probar crash, cierre, reinicio, errores, outputs incompletos, reconciliación y nuevos intentos del pipeline existente.
+Cerrar la recuperación/reanudación durable de un único chunk: reapertura desde SQLite, reconciliación con una observación fresca del backend, recuperación de intentos existentes, completion verificable, errores durables y un retry controlado.
 
-F6 valida recovery de un pipeline/chunk. No declara validado el recovery multi-chunk de una cadena.
+El contrato implementado espera estados `QUEUED`/`RUNNING`, completa sólo con `HistoryResult` y output/evidencia verificables, y ante `FAILED` crea como máximo un segundo Attempt preservando el primero. El presupuesto agotado, `CANCELLED`, desconocido, ambiguo o con procedencia inconsistente queda fail-closed para revisión manual. La reapertura y los resumes repetidos son idempotentes; el frame de transición usa la semántica N-1 y el artefacto `OUTPUT` queda durable.
+
+F6 se considera completada únicamente cuando la suite enfocada, la regresión oficial y la auditoría documental/del diff terminan correctamente. La evidencia de cierre es local y con backend simulado/inyectado; no declara una nueva generación E2E contra ComfyUI ni validación visual.
+
+**Estado:** **CLOSED — APPROVED** (2026-08-30). Suite F6 **28/28 OK**; regresión oficial **418/418 OK**. El recovery/chaining multi-chunk permanece explícitamente fuera de F6 y corresponde a F7.
 
 ## F7 — Chaining 2–3 chunks + recovery de cadena
 
@@ -78,4 +82,4 @@ Las etapas anteriores pueden haber usado harnesses técnicos descartables o una 
 
 Ejecutar E2E, escenarios de fallo y recovery, continuidad visual, UX, rendimiento, instalación cuando corresponda y cierre formal del primer release.
 
-F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6/F7/F8 y GUI no iniciados.
+F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7/F8 y GUI no iniciados.

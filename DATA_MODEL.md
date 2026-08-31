@@ -1,6 +1,6 @@
 # Modelo de dominio
 
-Este documento define semántica, relaciones, invariantes y estados conceptuales; la sección de estado F2 documenta las clases y el schema que ya fueron implementados.
+Este documento define semántica, relaciones, invariantes y estados conceptuales; las secciones de estado F2, F5 y F6 documentan las clases y el schema que ya fueron implementados.
 
 ## Conceptos centrales
 
@@ -104,7 +104,7 @@ Corrección F5: `orchestration_timeout_seconds` (defaults JSON) es entero, bool 
 
 ### Estado F5 (2026-08-30)
 
-F5 **CLOSED — APPROVED**: Slices 1, 2, 3 y 4A completadas/auditadas. F6 **NOT STARTED**; no schema migration nueva.
+F5 **CLOSED — APPROVED**: Slices 1, 2, 3 y 4A completadas/auditadas. F6 **CLOSED — APPROVED** para recovery/retry durable de un chunk; no schema migration nueva.
 
 ## Checkpoints y recovery conceptual
 
@@ -121,7 +121,7 @@ Al volver tras cierre, crash o reinicio:
 5. conservar todo lo encontrado;
 6. continuar desde el checkpoint seguro, esperar/validar el output pendiente o crear un nuevo Intento con causa explícita.
 
-La política concreta de integración con ComfyUI, ensamblado productivo y recuperación contra backend queda abierta para fases posteriores.
+F6 concreta esta frontera para un chunk individual mediante estado durable y una observación fresca del backend; la recuperación de una cadena multi-chunk, el chaining automático y el ensamblado productivo quedan abiertos para F7/F8.
 
 ## Estado implementado de F2
 
@@ -135,8 +135,22 @@ La implementación usa SQLite schema v1 en una ruta de base de datos contenida d
 
 La reconciliación implementada es pura y agnóstica del backend: recibe evidencia observada de backend, artefactos y transiciones y devuelve un plan determinista de decisión/acción, sin escrituras ocultas. Gana el primer gap no resuelto; preserva chunks completos; cada retry crea otro Intento. RUNNING con el mismo job ref activo produce WAIT; evidencia desconocida o discordante produce review/block. Una finalización externa verificada dentro de una ventana de crash sólo propone una acción explícita de reconciliación. Un frame de transición ausente o corrupto exige recovery específico de transición. El punto seguro avanza sólo con output durable requerido y evidencia de transición verificada; COMPLETE requiere que toda la cadena sea segura.
 
+## Estado implementado de F6 — recovery durable de un chunk (2026-08-30)
+
+F6 usa el schema SQLite v1 existente; no agrega tablas ni migraciones nuevas. La frontera ejecutable es `ResumeExecutionUseCase` y la frontera de planificación sigue siendo `RecoverExecutionUseCase`.
+
+- **Execution:** se reabre desde SQLite con su `id`, `project_id`, defaults, estado y chunks; sólo se promueve a `SUCCEEDED` cuando el agregado durable y sus outputs cumplen la evidencia requerida.
+- **Chunk:** conserva orden, estado, `execution_id`, defaults e historial de intentos. F6 valida una ejecución de un chunk; no encadena ni propaga automáticamente al siguiente.
+- **Attempt:** es append-only por retry, con `number`, estado, output, evidence, `error_id` y `external_job_ref`. El primer Attempt permanece intacto cuando se crea el segundo y no se crea un tercero al agotar el presupuesto actual.
+- **`external_job_ref`:** referencia opaca durable del job externo, asignada una vez al Attempt y usada para la observación fresca tras reopen; no existe una columna `prompt_id` separada.
+- **Error durable:** `Attempt.error` se guarda en `errors` y su `error_id` se actualiza en la fila del Attempt; al reabrir se valida la propiedad `(project, execution, chunk, attempt)` y se recuperan código, mensaje e ID.
+- **Output/evidence:** el output correlacionado y la evidencia de backend/validación se guardan en el Attempt; el completion exige referencia exacta, output único, validación física y frame decodificable.
+- **Artifact:** el completion de un chunk exitoso persiste el `Artifact` de fase `OUTPUT` con la procedencia de proyecto, ejecución, chunk y Attempt y un path relativo seguro. El caso F6 validado conserva exactamente un artefacto de salida.
+- **TransitionFrame:** se persiste con `source_output`, `source_attempt_id`, `source_frame_index` y `frame_count`; el índice debe ser `frame_count - 1` con `frame_count > 0`. Para el chunk único `target_chunk_id` es `NULL`; los enlaces futuros mantienen procedencia explícita.
+- **Recovery:** `QUEUED`/`RUNNING` espera sin mutar; `COMPLETED` sólo completa mediante `HistoryResult` y el coordinador existente; `FAILED` terminal puede consumir el retry único. Desconocido, cancelado, ambiguo, mismatch de procedencia o evidencia incompleta termina en revisión/bloqueo fail-closed. Un agregado ya completo se reabre y resumes repetidos sin duplicar intentos, artefactos ni transiciones.
+
 ## Límites posteriores a F2
 
-ComfyUI querying pertenece al adaptador F3; las operaciones FFmpeg/FFprobe y el ensamblado permanecen en fronteras posteriores. F2 no implementa recovery real contra ComfyUI, bindings/profile H3, GUI, orquestación productiva, chaining largo, ensamblado productivo ni validación visual universal.
+ComfyUI querying pertenece al adaptador F3; F6 consume una observación backend inyectada/reconciliable sin afirmar una nueva ejecución real. Las operaciones FFmpeg/FFprobe y el ensamblado permanecen en fronteras posteriores. F7 cubre recovery/chaining multi-chunk; GUI y validación visual universal siguen fuera de alcance.
 
 `TransitionFrame.target_chunk_id` es nullable para el checkpoint del chunk único; los enlaces con target mantienen validación de procedencia y schema v1.

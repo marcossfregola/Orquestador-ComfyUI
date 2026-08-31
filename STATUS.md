@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-08-30
-**Fase:** F5 — robust chunk completion (**CLOSED — APPROVED**); siguiente F6 (**NOT STARTED**)
-**Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED** (cierre documental 2026-08-30).
+**Fase:** F6 — durable single-chunk recovery/retry (**CLOSED — APPROVED**); siguiente F7 (**NOT STARTED**)
+**Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED**; F6 **CLOSED — APPROVED** (2026-08-30).
 
 ## Fotografía viva
 
@@ -15,6 +15,7 @@
 - F3-3 implementa correlación lógica genérica sobre `HistoryResult`; el mapper F3 integra validación física explícita y observación de artefacto.
 - F2 incluye modelo ejecutable backend-agnóstico, persistencia SQLite v1, historial append-only, validación de grafo/procedencia y reconciliación pura determinista. No incluye adaptador ComfyUI, FFmpeg productivo, bindings/profile H3, GUI, orquestación productiva ni validación visual.
 - F3: **CLOSED / COMPLETED — LIVE VALIDATED**. Auditoría global independiente 096: cero bloqueadores técnicos; sólo sincronización documental.
+- F6: recovery/reanudación durable de un chunk implementado con `ResumeExecutionUseCase`, persistencia SQLite v1, observación fresca por `Attempt.external_job_ref`, retry único y completion durable. El cierre de esta fase se documenta abajo; no implica E2E nuevo contra ComfyUI.
 
 F3 Unidad 1 (corrección R3): adaptador HTTP y contrato fail-closed implementados; focused suite 38/38 verde. Evidencia live separada en COMFYUI_INTEGRATION.md.
 
@@ -59,17 +60,25 @@ La evidencia operativa de F1 y el estado Git posterior a esta consolidación se 
 
 ## Cierre F5 (2026-08-30)
 
-F5 **CLOSED — APPROVED**; Slices 1, 2, 3 y 4A completadas/auditadas. Slice4A 13/13; todos F5 39/39; regresión 390/390 en dos corridas consecutivas independientes, ambas OK. A–L explícitos; A/B/C/H/I/L usan SQLiteProjectRepository real con close + nueva instancia + reopen; A/B verifican OUTPUT Artifact + TransitionFrame N-1. No hubo ComfyUI real, FFmpeg real donde hubo fakes, ni validación visual/UX. ResourceWarnings históricos no son failures. F6 **NOT STARTED**.
+F5 **CLOSED — APPROVED**; Slices 1, 2, 3 y 4A completadas/auditadas. Slice4A 13/13; todos F5 39/39; regresión 390/390 en dos corridas consecutivas independientes, ambas OK. A–L explícitos; A/B/C/H/I/L usan SQLiteProjectRepository real con close + nueva instancia + reopen; A/B verifican OUTPUT Artifact + TransitionFrame N-1. No hubo ComfyUI real, FFmpeg real donde hubo fakes, ni validación visual/UX. ResourceWarnings históricos no son failures. F6 se valida y cierra en la sección siguiente.
+
+## Cierre F6 (2026-08-30)
+
+F6 **CLOSED — APPROVED** después de pasar la suite enfocada `python -B -m unittest tests.test_f6_recover_execution -v` (**28/28 OK**) y la regresión oficial `python -B -m unittest discover -s tests` (**418/418 OK**). La regresión emitió `ResourceWarning` de conexiones/archivos sin cerrar en pruebas existentes, pero no tuvo failures, errors ni skips; se conservan como warnings y no se ocultan.
+
+Implementado: reapertura SQLite y reconciliación; recuperación de `Attempt` y `external_job_ref`; estados backend `QUEUED`, `RUNNING`, `COMPLETED` y `FAILED`; persistencia durable del error; retry único con segundo Attempt y sin Attempt 3; preservación de IDs/referencias; output/evidence, `Artifact` `OUTPUT`, `TransitionFrame` N-1; y resumes repetidos idempotentes con comportamiento fail-closed ante inconsistencias.
+
+Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. Recovery/chaining multi-chunk, propagación automática de frames, ensamblado y F7 quedan diferidos.
 
 ## Pendiente para fases posteriores
 
-- Recovery/retry ante crash, cierre, reinicio y jobs huérfanos.
-- Recovery/orquestación contra backend, crash/retry y reconciliación de jobs huérfanos.
+- Recovery/retry multi-chunk, recuperación de cadena y propagación entre chunks (F7).
+- Recovery/orquestación E2E contra ComfyUI real y jobs huérfanos más allá del contrato durable de un chunk.
 - Semántica de cancelación a nivel de pipeline/dominio, concurrencia segura y comportamiento de reconexión; la cancelación backend pending-only de F3-4 está cerrada y live validada.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F4: implementación del perfil H3, bindings centralizados, artefactos canónicos sanitizados y fixture durable versionado completados; **CLOSED — APPROVED**. La validación estática contra bytes canónicos y las suites de cierre quedaron en verde; no se afirma una nueva ejecución de generación ni validación visual.
-- F6/F7/F8/F9: recovery, chaining largo, ensamblado productivo y GUI.
+- F7/F8/F9: recovery de cadena, chaining largo, ensamblado productivo y GUI.
 
 ## Criterio de cierre
 
@@ -80,6 +89,6 @@ F3-1/F3-2/F3-3 remain checkpointed. F3-4 is CLOSED and LIVE VALIDATED with pendi
 ### F3-5 application bridge
 
 Implemented the generic ComfyUI backend-job application/reconciliation bridge. It durably binds the existing `BackendJobRef`, maps queue/history/observation evidence conservatively, invokes pure F2 reconciliation, and applies only explicit actions. Backend cancellation evidence never directly changes domain lifecycle. Correlated output descriptors are mapped only when physical validation succeeds; no persistence or lifecycle mutation occurs. F3 is CLOSED; durable completion/artifact persistence was closed in F5.
-F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings están **CLOSED — APPROVED**; F5 está **CLOSED — APPROVED** (Slice4A completada, auditada y aprobada). F6 es la siguiente etapa y está **NOT STARTED**.
+F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings están **CLOSED — APPROVED**; F5 está **CLOSED — APPROVED** (Slice4A completada, auditada y aprobada); F6 está **CLOSED — APPROVED** para recovery durable de un chunk.
 
 Mapper output→`ArtifactObservation` implementado, probado y fail-closed. La persistencia durable de completion/artifact quedó cerrada en F5.

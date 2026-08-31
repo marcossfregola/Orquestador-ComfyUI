@@ -67,6 +67,10 @@ class ChunkExecutionCoordinator:
         artifact=Artifact(project.id,clone.id,cc.id,aa.id,Phase.OUTPUT,obs.output)
         transition=TransitionFrame(project.id,clone.id,cc.id,aa.id,obs.output,frame.frame_index,frame.frame_count)
         cc.transition(Lifecycle.SUCCEEDED)
+        if clone.chunks and all(x.state is Lifecycle.SUCCEEDED for x in clone.chunks):
+            # Promote execution only when its durable lifecycle is already RUNNING;
+            # legacy F5 callers may persist a PENDING execution alongside completed chunk data.
+            if clone.state is Lifecycle.RUNNING: clone.transition(Lifecycle.SUCCEEDED)
         try: self.repository.save(project,[clone],artifacts=[artifact],transitions=[transition])
         except Exception as exc: return ChunkExecutionResult(False,f'persistence failed: {exc}',str(attempt.id))
         _copy_execution_state(execution, clone)

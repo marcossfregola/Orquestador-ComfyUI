@@ -101,7 +101,7 @@ No se debe afirmar “funciona” sin indicar qué se ejecutó, contra qué ento
 | pending-delete B por POST `/queue` 200, history `{}`, sin output; interrupt A; queue vacía; repo intacto | DEMONSTRATED | F3/F6 definen semántica productiva |
 | concat `-c copy` y seam visual | DEMONSTRATED sólo para ese caso | F8/F10 validan generalización |
 | automatización visual como integración | DISCARDED | — |
-| **FUTURE:** cancelación productiva de dominio, crash/orphan recovery contra backend, retry del pipeline, chaining largo, concurrencia, GUI | FUTURE / NOT STARTED | F6/F7/F8/F9 |
+| **FUTURE:** cancelación productiva de dominio, recovery/chaining multi-chunk contra backend, concurrencia, GUI | FUTURE / NOT STARTED | F7/F8/F9 |
 
 ## Estado de F1
 
@@ -109,7 +109,7 @@ F1 produjo evidencia experimental reproducible, no implementó producto ni convi
 
 ## F3 closure evidence
 
-La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4 está **CLOSED — APPROVED** con validación estática, fixture canónico durable y suites de cierre en verde; F5 está **CLOSED — APPROVED** con Slice 4A completada, auditada y aprobada; F6 no está iniciada. No se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
+La suite externa final quedó **322/322 verde** tras la corrección manual sólo de tests. Las auditorías READ_ONLY independientes 095/096 inspeccionaron repositorio y cobertura final; 096 encontró únicamente documentación stale y ningún bloqueador técnico. F3 está cerrada: live validation completó WS/history/output/physical path y cancelación pending-only segura. F4 está **CLOSED — APPROVED** con validación estática, fixture canónico durable y suites de cierre en verde; F5 está **CLOSED — APPROVED** con Slice 4A completada, auditada y aprobada; F6 está **CLOSED — APPROVED** para recovery durable de un chunk. No se afirma E2E H3/chunk no ejecutado. Automated tests, live execution evidence y human visual validation son categorías distintas; la continuidad visual de video no aplica al cierre F3.
 
 ## Criterios de avance
 
@@ -158,6 +158,24 @@ Resultado observado en esta ronda: **351 tests, OK**. Las tres ejecuciones usaro
 
 ## F5 — cierre de evidencia (2026-08-30)
 
-F5 **CLOSED — APPROVED**. Slice4A 13/13; todos F5 39/39; regresión completa 390/390, dos corridas consecutivas independientes, ambas OK. A–L explícitos; A/B/C/H/I/L usan SQLiteProjectRepository real con close + nueva instancia + reopen; A/B verifican OUTPUT Artifact + TransitionFrame N-1. diff-check limpio salvo warnings de line endings; ResourceWarnings históricos no son failures. No ComfyUI real, ni FFmpeg real donde hubo fakes, ni validación visual/UX. F6 **NOT STARTED**.
+F5 **CLOSED — APPROVED**. Slice4A 13/13; todos F5 39/39; regresión completa 390/390, dos corridas consecutivas independientes, ambas OK. A–L explícitos; A/B/C/H/I/L usan SQLiteProjectRepository real con close + nueva instancia + reopen; A/B verifican OUTPUT Artifact + TransitionFrame N-1. diff-check limpio salvo warnings de line endings; ResourceWarnings históricos no son failures. No ComfyUI real, ni FFmpeg real donde hubo fakes, ni validación visual/UX. F6 se documenta a continuación.
 
 Las pruebas contractuales cubren submit único, history terminal correlacionado, correlación/validación física, persistencia tardía, TransitionFrame nullable y FFprobe/FFmpeg shell-free con N-1. G está cubierto por `test_final_save_failure_does_not_mutate_in_memory` con SQLite real y reapertura; I por `test_happy_path_durable_sqlite_reopen_preserves_output_and_transition` (artefacto previo + output); J por `test_transition_frame_target_none_and_second_chunk_reload` con la fila durable completa y `first_frame` del target; K por `tests/test_f5_video_adapter.py` (destino existente, args exactos y `shell=False`). A–K explícito se considera sustentado por estos contratos y los focused F2/F3/F5 suites. Verificación local: discovery **377 tests, OK**, dos ejecuciones consecutivas. No hay claim de ComfyUI vivo ni visual.
+
+## F6 — Recovery/retry durable de un chunk (2026-08-30)
+
+La validación enfocada reproducible es:
+
+`python -B -m unittest tests.test_f6_recover_execution -v`
+
+Desde PowerShell, ejecutar en la raíz del repositorio. La convención de imports del repo la aporta `tests/__init__.py`; si el entorno no la hereda, se puede fijar explícitamente `$env:PYTHONPATH = (Resolve-Path .\src).Path`. Las pruebas que requieren filesystem aceptan un directorio temporal fresco mediante `$env:ORQ_TEST_TMP`; no se deben reutilizar bases SQLite de corridas anteriores.
+
+La suite F6 (**28 tests, OK**) comprueba con SQLite real save → close → nueva instancia → reopen, reconciliación y observación fresca de `external_job_ref`, estados `QUEUED`/`RUNNING`/`COMPLETED`/`FAILED`, error durable, retry controlado, Attempt 1 preservado, creación durable de Attempt 2, ausencia de Attempt 3, IDs/referencias, output/evidence, un `Artifact` `OUTPUT`, un `TransitionFrame` N-1, snapshots antes/después de reopen y repeated resume idempotente. Los casos ambiguos, cancelados, desconocidos o con procedencia inválida deben quedar fail-closed. No hay mutaciones directas de producción para fabricar el resultado; las asignaciones directas de fixtures sólo preparan estados de prueba.
+
+La regresión completa oficial conserva el comando:
+
+`python -B -m unittest discover -s tests`
+
+El cierre F6 observado con ese comando fue **418 tests, OK**. En este host hubo `ResourceWarning` de conexiones/archivos sin cerrar provenientes de pruebas existentes; se informan como warnings y no como éxito silencioso. La suite completa requiere que el directorio temporal que usan las pruebas F5 (`C:\Temp\orq-f5-final-tests`) sea escribible en Windows; un `PermissionError` allí es ambiental y debe resolverse en el entorno, no relajando assertions.
+
+F6 no ejecuta una nueva generación contra ComfyUI ni validación visual. La recuperación completa de una cadena, la propagación automática del último frame, el ensamblado y F7 siguen fuera de alcance.
