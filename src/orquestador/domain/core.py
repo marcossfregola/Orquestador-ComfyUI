@@ -83,6 +83,16 @@ class Chunk:
   if target not in allowed.get(self.state,set()): raise DomainError(f'illegal chunk transition {self.state}->{target}')
   if target is Lifecycle.SUCCEEDED and not any(a.state is Lifecycle.SUCCEEDED and a.output and a.evidence for a in self.attempts): raise DomainError('chunk success requires successful attempt evidence')
   self.state=target
+ def reopen_for_retry(self):
+  """Explicitly re-enter execution for an already-bound retry attempt."""
+  if self.state is not Lifecycle.FAILED or len(self.attempts) != 2:
+   raise DomainError('retry reopening requires a failed chunk with exactly two attempts')
+  first, latest = self.attempts
+  if first.number != 1 or latest.number != 2 or first.state is not Lifecycle.FAILED:
+   raise DomainError('retry reopening requires ordered failed attempts 1 and 2')
+  if latest.state is not Lifecycle.PENDING or latest.external_job_ref is None:
+   raise DomainError('retry reopening requires a bound pending attempt 2')
+  self.state = Lifecycle.PENDING
  def effective_parameters(self,project,execution_defaults): return _map({**project.defaults,**dict(execution_defaults),**self.defaults})
 @dataclass
 class Execution:

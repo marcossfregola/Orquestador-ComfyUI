@@ -68,6 +68,13 @@ Usar último frame → siguiente `first_frame`, avanzar automáticamente, recupe
 
 Aquí se valida por primera vez el recovery multi-chunk completo.
 
+Implementación F7: `ChainExecutionUseCase` compone el coordinador F5, enlaza cada
+`TransitionFrame` al chunk inmediato siguiente y persiste el checkpoint antes de
+continuar. Reanudar reutiliza chunks y artefactos ya exitosos; no se elimina evidencia.
+El ensamblado final y la UI permanecen fuera de alcance.
+
+**Estado:** **CLOSED — APPROVED** (cierre 2026-08-31). Auditoría independiente final `orquestador-f7-final-audit-017`: F7 19/19, F6 28/28, F5 21/21, corrupción F2 17/17, regresión oficial 437/437 y `git diff --check` PASS.
+
 ## F8 — Ensamblado final
 
 Verificar compatibilidad, concat/re-encode y preservación de todos los chunks e intermedios; crear el final como artefacto adicional.
@@ -82,4 +89,4 @@ Las etapas anteriores pueden haber usado harnesses técnicos descartables o una 
 
 Ejecutar E2E, escenarios de fallo y recovery, continuidad visual, UX, rendimiento, instalación cuando corresponda y cierre formal del primer release.
 
-F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7/F8 y GUI no iniciados.
+F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7: **CLOSED — APPROVED**. F8/GUI no iniciados.

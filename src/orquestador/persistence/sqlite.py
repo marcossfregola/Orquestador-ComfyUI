@@ -74,7 +74,14 @@ class SQLiteProjectRepository:
       self.db.execute('INSERT INTO attempts(id,chunk_id,number,state,output,evidence,error_id,output_artifact_id,external_job_ref) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,output=COALESCE(attempts.output,excluded.output),evidence=COALESCE(attempts.evidence,excluded.evidence),error_id=excluded.error_id,external_job_ref=COALESCE(attempts.external_job_ref,excluded.external_job_ref)',(str(a.id),str(c.id),a.number,a.state.value,a.output.uri if a.output else None,a.evidence.detail if a.evidence else None,str(a.error.id) if a.error else None,None,str(a.external_job_ref) if a.external_job_ref else None))
       if a.error:self.db.execute('INSERT OR IGNORE INTO errors VALUES(?,?,?,?,?,?,?)',(str(a.error.id),str(p.id),str(e.id),str(c.id),str(a.id),a.error.code,a.error.message))
    for a in artifacts:self.db.execute('INSERT OR IGNORE INTO artifacts VALUES(?,?,?,?,?,?,?,?)',(str(a.id),str(a.project_id),str(a.execution_id),str(a.chunk_id),str(a.attempt_id),a.phase.value,a.output.uri,_safe(self.root,a.output.uri)))
-   for t in transitions:self.db.execute('INSERT OR REPLACE INTO transitions VALUES(?,?,?,?,?,?,?,?)',(str(t.project_id),str(t.execution_id),str(t.target_chunk_id) if t.target_chunk_id is not None else None,str(t.source_chunk_id),str(t.source_attempt_id),t.source_output.uri,t.source_frame_index,t.frame_count))
+   transition_keys={(str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)) for t in transitions}
+   has_null={(str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)) for t in transitions if t.target_chunk_id is None}
+   for t in transitions:
+    # F5 may have persisted a provisional NULL target; F7 upgrades that
+    # checkpoint atomically to the immediately-following chunk link.
+    if t.target_chunk_id is not None and (str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)) not in has_null:
+     self.db.execute('DELETE FROM transitions WHERE execution_id=? AND source_chunk_id=? AND source_attempt_id=? AND target_chunk_id IS NULL',(str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)))
+    self.db.execute('INSERT OR REPLACE INTO transitions VALUES(?,?,?,?,?,?,?,?)',(str(t.project_id),str(t.execution_id),str(t.target_chunk_id) if t.target_chunk_id is not None else None,str(t.source_chunk_id),str(t.source_attempt_id),t.source_output.uri,t.source_frame_index,t.frame_count))
    self.db.execute('COMMIT')
   except PersistenceError:
    if self.db.in_transaction:self.db.execute('ROLLBACK')
@@ -127,4 +134,21 @@ class SQLiteProjectRepository:
  def load_transitions(self, execution_id):
   """Read durable transition frames without exposing storage details to application code."""
   rows=self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count FROM transitions WHERE execution_id=? ORDER BY frame_index',(str(execution_id),)).fetchall()
-  return [TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt) if tgt is not None else None) for pr,ex,tgt,src,sa,out,idx,count in rows]
+  result=[]
+  for pr,ex,tgt,src,sa,out,idx,count in rows:
+   if ex != str(execution_id): raise PersistenceDataError('transition execution mismatch')
+   src_row=self.db.execute('SELECT execution_id,ord FROM chunks WHERE id=?',(src,)).fetchone()
+   att=self.db.execute('SELECT chunk_id,state,output FROM attempts WHERE id=?',(sa,)).fetchone()
+   if not src_row or src_row[0]!=ex or not att or att[0]!=src or att[1] != Lifecycle.SUCCEEDED.value or att[2] != out:
+    raise PersistenceDataError('invalid transition source provenance')
+   if tgt is not None:
+    trg=self.db.execute('SELECT execution_id,ord FROM chunks WHERE id=?',(tgt,)).fetchone()
+    if not trg or trg[0]!=ex or trg[1] != src_row[1]+1: raise PersistenceDataError('invalid transition target provenance')
+   try: safe=_safe(self.root,out)
+   except PersistenceError as exc: raise PersistenceDataError(str(exc)) from exc
+   # F5 provisional fixtures may not yet have an artifact row; once an
+   # artifact is recorded, its durable file must exist and remain contained.
+   ar=self.db.execute('SELECT path FROM artifacts WHERE execution_id=? AND chunk_id=? AND attempt_id=? AND output=?',(ex,src,sa,out)).fetchone()
+   if ar is not None and ar[0] != safe: raise PersistenceDataError('transition artifact path mismatch')
+   result.append(TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt) if tgt is not None else None))
+  return result

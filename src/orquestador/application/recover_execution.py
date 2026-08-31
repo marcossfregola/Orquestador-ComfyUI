@@ -114,6 +114,14 @@ class ResumeExecutionUseCase:
             state=source.state
         else:
             ev=map_backend_evidence(execution=e,project_id=str(project_id),execution_id=str(e.id),chunk_id=str(c.id),attempt_id=str(a.id),job_ref=ref,source=source); state=ev.state
+        # Crash-safe retry re-entry: a bound attempt 2 may survive while the
+        # chunk is still FAILED. Reopen through the narrow domain contract.
+        if c.state is Lifecycle.FAILED and a.number == 2:
+            try:
+                c.reopen_for_retry()
+                self.repository.save(project, [e])
+            except DomainError as exc:
+                return self._manual(e,c,a,str(exc))
         if state in (BackendJobState.QUEUED,BackendJobState.RUNNING): return RecoveryExecutionResult(RecoveryOutcome.WAIT,str(e.id),str(c.id),str(a.id))
         if state in (BackendJobState.UNKNOWN,BackendJobState.CANCELLED): return self._manual(e,c,a,f'backend state {state.value}')
         if state is BackendJobState.COMPLETED:
@@ -130,7 +138,17 @@ class ResumeExecutionUseCase:
             self.repository.save(project,[clone]); _copy_execution_state(e,clone); a=next(x for x in c.attempts if str(x.id)==str(a.id))
         result=self.submitter.submit(project,e,c.id,prompt)
         if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None: return self._manual(e,c,a,result.outcome.value)
-        a2=next(x for x in c.attempts if str(x.id)==str(result.attempt_id)); src2=self.backend.observe(result.job_ref)
+        # A retry reopens the failed chunk before completion orchestration; the
+        # coordinator requires the aggregate to be RUNNING when it promotes the
+        # newly submitted attempt.
+        a2=next(x for x in c.attempts if str(x.id)==str(result.attempt_id))
+        if c.state is Lifecycle.FAILED:
+            try:
+                c.reopen_for_retry()
+            except DomainError as exc:
+                return self._manual(e,c,a2,str(exc))
+            self.repository.save(project, [e])
+        src2=self.backend.observe(result.job_ref)
         if isinstance(src2,BackendJobObservation):
             if (src2.project_id,src2.execution_id,src2.chunk_id,src2.attempt_id,src2.external_job_ref) != (str(project_id),str(e.id),str(c.id),str(a2.id),result.job_ref):
                 return self._manual(e,c,a2,'retry backend observation provenance mismatch')

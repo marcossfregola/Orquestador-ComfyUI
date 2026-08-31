@@ -5,3 +5,5 @@ __all__ = ["BackendEvidence", "CancellationEvidence", "SubmitOutcome", "SubmitAt
 __all__ += ["ChunkExecutionCoordinator", "ChunkExecutionResult"]
 from .robust_chunk_execution import RobustChunkExecutionCoordinator, RobustChunkExecutionUseCase, RobustChunkExecutionResult, RobustOutcome
 __all__ += ["RobustChunkExecutionCoordinator", "RobustChunkExecutionUseCase", "RobustChunkExecutionResult", "RobustOutcome"]
+from .chain_execution import ChainExecutionUseCase, ChainExecutionResult, ChainOutcome
+__all__ += ["ChainExecutionUseCase", "ChainExecutionResult", "ChainOutcome"]

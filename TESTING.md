@@ -179,3 +179,14 @@ La regresión completa oficial conserva el comando:
 El cierre F6 observado con ese comando fue **418 tests, OK**. En este host hubo `ResourceWarning` de conexiones/archivos sin cerrar provenientes de pruebas existentes; se informan como warnings y no como éxito silencioso. La suite completa requiere que el directorio temporal que usan las pruebas F5 (`C:\Temp\orq-f5-final-tests`) sea escribible en Windows; un `PermissionError` allí es ambiental y debe resolverse en el entorno, no relajando assertions.
 
 F6 no ejecuta una nueva generación contra ComfyUI ni validación visual. La recuperación completa de una cadena, la propagación automática del último frame, el ensamblado y F7 siguen fuera de alcance.
+
+## F7 — chaining y recovery de cadena
+
+`ChainExecutionUseCase` se valida con coordinador y repositorio inyectados:
+cadenas de 2–3 chunks, propagación N-1, checkpoint antes de avanzar,
+reanudación sin regenerar chunks exitosos y preservación de intentos/artefactos.
+La validación es determinista y no implica ComfyUI vivo ni validación visual.
+
+### Cierre oficial F7 (2026-08-31)
+
+Auditoría independiente final `orquestador-f7-final-audit-017` aprobada. Resultados: F7 **19/19 PASS**, F6 **28/28 PASS**, F5 **21/21 PASS**, corrupción F2 **17/17 PASS**, suite oficial completa (`python -B -m unittest discover -s tests`) **437/437 PASS** y `git diff --check` **PASS**. Esta evidencia cubre validación determinista de aplicación/SQLite; no se ejecutó nueva generación E2E contra ComfyUI ni validación visual.

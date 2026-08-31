@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-08-30
-**Fase:** F6 — durable single-chunk recovery/retry (**CLOSED — APPROVED**); siguiente F7 (**NOT STARTED**)
-**Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED**; F6 **CLOSED — APPROVED** (2026-08-30).
+**Última actualización:** 2026-08-31
+**Fase:** F7 — chaining/recovery de cadena (**CLOSED — APPROVED**, 2026-08-31); F8 **NOT STARTED**
+**Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED**; F6 **CLOSED — APPROVED** (2026-08-30); F7 **CLOSED — APPROVED** (2026-08-31).
 
 ## Fotografía viva
 
@@ -68,17 +68,17 @@ F6 **CLOSED — APPROVED** después de pasar la suite enfocada `python -B -m uni
 
 Implementado: reapertura SQLite y reconciliación; recuperación de `Attempt` y `external_job_ref`; estados backend `QUEUED`, `RUNNING`, `COMPLETED` y `FAILED`; persistencia durable del error; retry único con segundo Attempt y sin Attempt 3; preservación de IDs/referencias; output/evidence, `Artifact` `OUTPUT`, `TransitionFrame` N-1; y resumes repetidos idempotentes con comportamiento fail-closed ante inconsistencias.
 
-Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. Recovery/chaining multi-chunk, propagación automática de frames, ensamblado y F7 quedan diferidos.
+Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. El ensamblado y la recuperación/orquestación E2E contra ComfyUI real quedan fuera del cierre F7; F8/F9 siguen diferidos.
 
 ## Pendiente para fases posteriores
 
-- Recovery/retry multi-chunk, recuperación de cadena y propagación entre chunks (F7).
+- Recovery/retry multi-chunk, recuperación de cadena y propagación entre chunks: **F7 CLOSED — APPROVED** (2026-08-31).
 - Recovery/orquestación E2E contra ComfyUI real y jobs huérfanos más allá del contrato durable de un chunk.
 - Semántica de cancelación a nivel de pipeline/dominio, concurrencia segura y comportamiento de reconexión; la cancelación backend pending-only de F3-4 está cerrada y live validada.
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F4: implementación del perfil H3, bindings centralizados, artefactos canónicos sanitizados y fixture durable versionado completados; **CLOSED — APPROVED**. La validación estática contra bytes canónicos y las suites de cierre quedaron en verde; no se afirma una nueva ejecución de generación ni validación visual.
-- F7/F8/F9: recovery de cadena, chaining largo, ensamblado productivo y GUI.
+- F8/F9: ensamblado productivo y GUI. La validación backend-real/E2E y visual permanece fuera de F7.
 
 ## Criterio de cierre
 
@@ -92,3 +92,10 @@ Implemented the generic ComfyUI backend-job application/reconciliation bridge. I
 F3-6: implementación completa y live validada; F3-7 real WS/history/output physical path validation completada. F3 global está CLOSED; F4/H3 bindings están **CLOSED — APPROVED**; F5 está **CLOSED — APPROVED** (Slice4A completada, auditada y aprobada); F6 está **CLOSED — APPROVED** para recovery durable de un chunk.
 
 Mapper output→`ArtifactObservation` implementado, probado y fail-closed. La persistencia durable de completion/artifact quedó cerrada en F5.
+
+## F7 — implementación técnica (2026-08-31)
+
+`ChainExecutionUseCase` implementa chaining durable de dos o tres chunks,
+propagando el frame N-1 como `first_frame` y persistiendo cada checkpoint antes
+del siguiente submit. Los chunks exitosos y sus artefactos se preservan al
+reanudar. Estado: **CLOSED — APPROVED** (2026-08-31). Auditoría independiente `orquestador-f7-final-audit-017`: F7 19/19, F6 28/28, F5 21/21, corrupción F2 17/17 y regresión oficial 437/437; `git diff --check` PASS. No se ejecutó nueva generación E2E contra ComfyUI ni validación visual.
