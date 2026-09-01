@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-08-31
-**Fase:** F7 — chaining/recovery de cadena (**CLOSED — APPROVED**, 2026-08-31); F8 **NOT STARTED**
+**Fase:** F8 — ensamblado final **CLOSED — APPROVED** (evidencia `orquestador-f8-evidence-audit-037`); F9 **NOT STARTED**
 **Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED**; F6 **CLOSED — APPROVED** (2026-08-30); F7 **CLOSED — APPROVED** (2026-08-31).
 
 ## Fotografía viva
@@ -68,7 +68,7 @@ F6 **CLOSED — APPROVED** después de pasar la suite enfocada `python -B -m uni
 
 Implementado: reapertura SQLite y reconciliación; recuperación de `Attempt` y `external_job_ref`; estados backend `QUEUED`, `RUNNING`, `COMPLETED` y `FAILED`; persistencia durable del error; retry único con segundo Attempt y sin Attempt 3; preservación de IDs/referencias; output/evidence, `Artifact` `OUTPUT`, `TransitionFrame` N-1; y resumes repetidos idempotentes con comportamiento fail-closed ante inconsistencias.
 
-Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. El ensamblado y la recuperación/orquestación E2E contra ComfyUI real quedan fuera del cierre F7; F8/F9 siguen diferidos.
+Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. El ensamblado y la recuperación/orquestación E2E contra ComfyUI real quedan fuera del cierre F7; F8 se cerró posteriormente y F9 sigue NOT STARTED.
 
 ## Pendiente para fases posteriores
 
@@ -78,7 +78,13 @@ Probado automáticamente con SQLite real (save → close → nueva instancia →
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F4: implementación del perfil H3, bindings centralizados, artefactos canónicos sanitizados y fixture durable versionado completados; **CLOSED — APPROVED**. La validación estática contra bytes canónicos y las suites de cierre quedaron en verde; no se afirma una nueva ejecución de generación ni validación visual.
-- F8/F9: ensamblado productivo y GUI. La validación backend-real/E2E y visual permanece fuera de F7.
+- F9: GUI. La validación backend-real/E2E y visual permanece fuera de F8.
+
+## F8 — ensamblado final
+
+Implementados `FFmpegAssemblyAdapter` y `AssembleExecutionUseCase`. Contrato: >=2 chunks, destino MP4, `-c copy` sólo para firmas compatibles, fallback explícito `reencode`, FFprobe final antes de publicación create-if-absent sin overwrite, y preservación de chunks/intermedios.
+
+Auditoría aprobada `orquestador-f8-evidence-audit-037`: FFmpeg/FFprobe reales 8.1.1; concat copy PASS a `out copy's file.mp4` (2640 bytes, ffprobe válido) y reencode PASS a `out reencode's file.mp4` (1875 bytes, ffprobe válido), incluyendo nombres con espacios y apóstrofes. Se verificaron hashes fuente sin cambios, destino existente preservado, carrera de destino sin overwrite, fallo de probe pre-publicación sin destino, rechazo de destinos unsupported/suffixless, limpieza de temporales propios con sentinel preservado; focused F8 **6/6 PASS**, suite completa **443/443 PASS**, compileall PASS y `git diff --check` PASS. No se realizó validación visual humana ni E2E de ComfyUI; no eran requeridos para esta slice técnica.
 
 ## Criterio de cierre
 

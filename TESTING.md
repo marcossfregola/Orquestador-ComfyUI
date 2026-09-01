@@ -101,7 +101,7 @@ No se debe afirmar “funciona” sin indicar qué se ejecutó, contra qué ento
 | pending-delete B por POST `/queue` 200, history `{}`, sin output; interrupt A; queue vacía; repo intacto | DEMONSTRATED | F3/F6 definen semántica productiva |
 | concat `-c copy` y seam visual | DEMONSTRATED sólo para ese caso | F8/F10 validan generalización |
 | automatización visual como integración | DISCARDED | — |
-| **FUTURE:** cancelación productiva de dominio, recovery/chaining multi-chunk contra backend, concurrencia, GUI | FUTURE / NOT STARTED | F7/F8/F9 |
+| **FUTURE:** cancelación productiva de dominio, recovery/chaining multi-chunk contra backend, concurrencia, GUI | FUTURE / NOT STARTED | F9/F10 |
 
 ## Estado de F1
 
@@ -190,3 +190,14 @@ La validación es determinista y no implica ComfyUI vivo ni validación visual.
 ### Cierre oficial F7 (2026-08-31)
 
 Auditoría independiente final `orquestador-f7-final-audit-017` aprobada. Resultados: F7 **19/19 PASS**, F6 **28/28 PASS**, F5 **21/21 PASS**, corrupción F2 **17/17 PASS**, suite oficial completa (`python -B -m unittest discover -s tests`) **437/437 PASS** y `git diff --check` **PASS**. Esta evidencia cubre validación determinista de aplicación/SQLite; no se ejecutó nueva generación E2E contra ComfyUI ni validación visual.
+## F8 — ensamblado final
+
+`python -B -m unittest tests.test_f8_assembly -v` cubre concat compatible, incompatibilidad, contención,
+destino existente/carrera, validación final fallida sin publicación, sufijo `.mp4` explícito, temporales únicos y
+lista concat con escapes de apóstrofes. FFprobe valida el temporal antes de enlazar; la publicación es create-if-absent
+sin validación post-publicación falible. La integración FFmpeg real se mantiene como evidencia externa de laboratorio;
+Contrato F8: >=2 chunks, MP4, copy sólo con firmas compatibles, fallback explícito de reencode, FFprobe final antes de publicar y preservación de chunks/intermedios.
+
+Auditoría aprobada `orquestador-f8-evidence-audit-037`: FFmpeg y FFprobe reales 8.1.1; copy PASS a `out copy's file.mp4` (2640 bytes, ffprobe válido) y reencode PASS a `out reencode's file.mp4` (1875 bytes, ffprobe válido), con nombres con espacios y apóstrofes. Fuente sin cambios; destino existente y carrera preservados sin overwrite; probe pre-publicación fallido sin destino; destinos unsupported/suffixless rechazados; temporales propios limpiados y sentinel preservado. F8 focused **6/6 PASS**, suite completa **443/443 PASS**, compileall PASS y `git diff --check` PASS. No hubo validación visual humana ni E2E ComfyUI; no eran requeridos para esta slice técnica.
+
+F8: **CLOSED — APPROVED**. F9: **NOT STARTED**.
