@@ -7,7 +7,8 @@ from ..domain.core import (Artifact, Attempt, BackendJobRef, Chunk, Evidence,
 from ..domain.recovery import BackendJobState
 from ..adapters.http import HistoryResult
 from ..adapters.outputs import correlate_outputs
-from ..adapters.physical_outputs import validate_physical_output
+from ..adapters.savevideo import resolve_savevideo_output
+from ..adapters.physical_outputs import validate_physical_output, import_project_output
 from .bridge import SubmitOutcome, map_backend_evidence, map_verified_artifact_observation
 
 @dataclass(frozen=True)
@@ -19,14 +20,16 @@ class ChunkExecutionResult:
     transition: TransitionFrame|None = None
 
 class ChunkExecutionCoordinator:
-    def __init__(self, repository, submitter, monitor, *, extractor, trusted_root, correlator=correlate_outputs, physical_validator=validate_physical_output):
+    def __init__(self, repository, submitter, monitor, *, extractor, trusted_root, comfyui_output_root=None, correlator=resolve_savevideo_output, physical_validator=validate_physical_output, importer=import_project_output):
         self.repository,self.submitter,self.monitor=repository,submitter,monitor
-        self.extractor,self.trusted_root,self.correlator,self.physical_validator=extractor,Path(trusted_root),correlator,physical_validator
+        self.extractor,self.trusted_root,self.comfyui_output_root,self.correlator,self.physical_validator,self.importer=extractor,Path(trusted_root),Path(comfyui_output_root or trusted_root),correlator,physical_validator,importer
     def execute(self, project, execution, chunk_id, prompt, **submit_kwargs):
         chunk=next((c for c in execution.chunks if str(c.id)==str(chunk_id)),None)
         if chunk is None: return ChunkExecutionResult(False,'chunk identity mismatch','')
         result=self.submitter.submit(project,execution,chunk_id,prompt,**submit_kwargs)
-        if result.outcome is not SubmitOutcome.SUCCEEDED or not isinstance(result.job_ref, BackendJobRef): return ChunkExecutionResult(False,result.outcome.value,result.attempt_id)
+        if result.outcome is not SubmitOutcome.SUCCEEDED or not isinstance(result.job_ref, BackendJobRef):
+            reason = result.error if result.error else result.outcome.value
+            return ChunkExecutionResult(False, reason, result.attempt_id)
         attempt=next((a for a in chunk.attempts if str(a.id)==result.attempt_id), None)
         if attempt is None or attempt.external_job_ref != result.job_ref: return ChunkExecutionResult(False,'attempt/reference mismatch',result.attempt_id)
         ref=result.job_ref
@@ -48,18 +51,18 @@ class ChunkExecutionCoordinator:
         corr=self.correlator(observed,ref)
         if getattr(corr,'status',None).value!='valid' or len(corr.descriptors)!=1: return ChunkExecutionResult(False,'output absent or ambiguous',str(attempt.id))
         evidence = replace(evidence, logical_outputs=tuple(corr.descriptors))
-        physical=self.physical_validator(corr.descriptors[0],self.trusted_root)
+        physical=self.physical_validator(corr.descriptors[0],self.comfyui_output_root)
         obs=map_verified_artifact_observation(evidence=evidence,physical=physical,project_id=project.id,execution_id=execution.id,chunk_id=chunk.id,attempt_id=attempt.id,job_ref=ref)
         if obs is None: return ChunkExecutionResult(False,'physical/provenance validation failed',str(attempt.id))
-        # Persistence stores project-relative artifact references; physical validation
-        # intentionally retains the absolute trusted-root path for extraction.
+        # Import before extraction so recovery no longer depends on ComfyUI storage.
         try:
-            relative_output = physical.resolved_path.resolve().relative_to(self.trusted_root.resolve()).as_posix()
+            relative_output = (Path(corr.descriptors[0].subfolder) / corr.descriptors[0].filename).as_posix()
+            imported = self.importer(physical.resolved_path, self.trusted_root, relative_output)
         except (ValueError, OSError, RuntimeError):
             return ChunkExecutionResult(False, 'physical output escapes trusted root', str(attempt.id))
         obs = replace(obs, output=OutputRef(relative_output))
         try:
-            frame_path=self.trusted_root/'transitions'/f'{attempt.id}.png'; frame=self.extractor.extract_last_frame(physical.resolved_path,frame_path)
+            frame_path=self.trusted_root/'transitions'/f'{attempt.id}.png'; frame=self.extractor.extract_last_frame(imported,frame_path)
             if frame.frame_index != frame.frame_count-1: raise ValueError('frame is not N-1')
         except Exception as exc: return ChunkExecutionResult(False,f'extractor failed: {exc}',str(attempt.id))
         clone = _clone_execution(execution)

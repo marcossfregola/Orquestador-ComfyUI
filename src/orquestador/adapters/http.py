@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
 import socket
+import mimetypes, uuid
 from urllib.request import Request, urlopen
 from urllib.parse import quote, urlsplit
 
@@ -16,8 +17,8 @@ class ComfyUITransportError(ComfyUIError): pass
 class ComfyUITimeoutError(ComfyUITransportError): pass
 class ComfyUIProtocolError(ComfyUIError): pass
 class ComfyUIServerError(ComfyUIError):
-    def __init__(self, message: str, status: int | None = None):
-        super().__init__(message); self.status = status
+    def __init__(self, message: str, status: int | None = None, body: str | None = None):
+        super().__init__(message); self.status = status; self.body = body
 class ComfyUIRejectedError(ComfyUIServerError): pass
 
 class QueueState(str, Enum): RUNNING='running'; PENDING='pending'; EMPTY='empty'; UNKNOWN='unknown'
@@ -51,8 +52,9 @@ class ComfyUIClient:
         except HTTPError as exc:
             try: detail = exc.read().decode('utf-8', 'replace')
             except Exception: detail = str(exc)
-            if 400 <= exc.code < 500: raise ComfyUIRejectedError(f'ComfyUI rejected request ({exc.code}): {detail}', exc.code) from exc
-            raise ComfyUIServerError(f'ComfyUI server error ({exc.code}): {detail}', exc.code) from exc
+            detail = detail[:4096]
+            if 400 <= exc.code < 600: raise ComfyUIRejectedError(f'ComfyUI rejected request ({exc.code}): {detail}', exc.code, detail) from exc
+            raise ComfyUIServerError(f'ComfyUI server error ({exc.code}): {detail}', exc.code, detail) from exc
         except URLError as exc:
             reason = getattr(exc, 'reason', None)
             if isinstance(reason, (TimeoutError, socket.timeout)):
@@ -72,12 +74,47 @@ class ComfyUIClient:
 
     def submit(self, prompt: Mapping[str, Any], client_id: str | None = None) -> BackendJobRef:
         if client_id is not None and (not isinstance(client_id, str) or not client_id.strip()): raise ComfyUIProtocolError('client_id must be a nonblank string')
-        payload = dict(prompt)
+        payload = {'prompt': dict(prompt)}
         if client_id is not None: payload['client_id'] = client_id.strip()
         value = self._request('POST', '/prompt', payload)
         if not isinstance(value, dict) or not isinstance(value.get('prompt_id'), str) or not value['prompt_id'].strip():
             raise ComfyUIProtocolError('submit response missing nonblank prompt_id')
         return BackendJobRef(value['prompt_id'])
+
+    def upload_image(self, path, *, subfolder='orquestador/transitions', overwrite=False, requested_filename=None):
+        """Upload a transition image using ComfyUI's native multipart route."""
+        if overwrite is True: raise ComfyUIProtocolError('overwrite must be false')
+        from pathlib import Path
+        p=Path(path)
+        if not p.is_file(): raise ComfyUIProtocolError('upload file is missing')
+        boundary='----Orquestador'+uuid.uuid4().hex
+        name=requested_filename or p.name
+        if not isinstance(name,str) or not name or '/' in name or '\\' in name: raise ComfyUIProtocolError('invalid requested filename')
+        fields=[('type','input'),('subfolder',str(subfolder)),('overwrite','false')]
+        body=bytearray()
+        for k,v in fields:
+            body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+        data=p.read_bytes(); ctype=mimetypes.guess_type(name)[0] or 'application/octet-stream'
+        body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{name}"\r\nContent-Type: {ctype}\r\n\r\n'.encode()); body.extend(data); body.extend(f'\r\n--{boundary}--\r\n'.encode())
+        req=Request(self.endpoint+'/upload/image',data=bytes(body),method='POST',headers={'Accept':'application/json','Content-Type':f'multipart/form-data; boundary={boundary}'})
+        try:
+            with urlopen(req,timeout=self.timeout) as response: raw=response.read(4097)
+        except (TimeoutError,socket.timeout) as exc: raise ComfyUITimeoutError(str(exc)) from exc
+        except HTTPError as exc:
+            detail=exc.read().decode('utf-8','replace')[:4096]
+            raise ComfyUIRejectedError(f'ComfyUI rejected request ({exc.code}): {detail}',exc.code,detail) from exc
+        except URLError as exc: raise ComfyUITransportError(str(exc)) from exc
+        except OSError as exc: raise ComfyUITransportError(str(exc)) from exc
+        if len(raw) > 4096: raise ComfyUIProtocolError('upload response too large')
+        try: value=json.loads(raw.decode('utf-8'))
+        except Exception as exc: raise ComfyUIProtocolError('upload response was not valid JSON') from exc
+        if not isinstance(value,dict) or value.get('type')!='input' or not isinstance(value.get('name'),str) or not value['name'].strip() or not isinstance(value.get('subfolder',''),str): raise ComfyUIProtocolError('malformed upload response')
+        from ..domain.core import MaterializedInputRef
+        try: MaterializedInputRef('input',value.get('subfolder',''),value['name'],'0'*64)
+        except Exception as exc: raise ComfyUIProtocolError('unsafe upload reference') from exc
+        ref=(value['subfolder']+'/' if value['subfolder'] else '')+value['name']
+        if ref.startswith(('/','\\')) or '..' in ref.split('/') or ':' in ref: raise ComfyUIProtocolError('unsafe upload reference')
+        return value
 
     @staticmethod
     def _ids(items: Any) -> tuple[BackendJobRef, ...] | None:

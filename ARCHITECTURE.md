@@ -97,7 +97,7 @@ F3-3 devuelve todos los descriptores lógicos validados; la selección del artef
 
 Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration de F5 están **CLOSED — APPROVED**.
 
-La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**; lo que permanece futuro es la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, concurrencia segura, chaining largo, ensamblado productivo y librerías externas. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
+La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**. En el alcance histórico de F3 permanecían futuras la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, concurrencia segura, chaining largo, ensamblado productivo y librerías externas; F6–F10 cubrieron después las fronteras de recovery y chaining que corresponden a este repositorio. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
 
 F3-1, F3-2 y F3-3 están checkpointed. F3-4 está corregida e implementada; la validación física de outputs y el mapper a `ArtifactObservation` están técnicamente completos. La persistencia durable de completion/artifact quedó cerrada en F5.
 
@@ -109,6 +109,16 @@ The ComfyUI adapter validates endpoint, prompt identifiers, client_id, queue/his
 
 Cancellation is isolated in `adapters.cancellation`: pending queue deletion plus fresh queue/history verification is the only production-safe operation. The F1 “basic interruption” result is historical spike evidence only. Running targets return `RUNNING_INTERRUPT_UNSAFE`; native `/interrupt` is non-atomic on ComfyUI 0.33.0 and is not called by F3-4. No domain or persistence transition occurs.
 La frontera `orquestador.adapters.physical_outputs` mantiene separada la evidencia física de la correlación lógica: requiere raíz explícita y no tiene efectos de dominio.
+
+## F10 — composición real de la cadena (2026-09-01)
+
+La raíz de composición conserva la dirección **UI → aplicación → dominio**: `GuiFacade` delega `prepare` en `PrepareGuiUseCase` y `start_chain` en `StartGuiChainUseCase`; éste materializa los siete inputs estáticos, usa el perfil H3 y delega la ejecución en `ChainExecutionUseCase`. El coordinador real de cadena usa `RobustChunkExecutionCoordinator` para observar el mismo job hasta evidencia terminal o bloquear fail-closed; `ResumeExecutionUseCase` reutiliza el `external_job_ref` durable para completar después de un cierre o deadline, sin resubmit.
+
+La transición no vuelve a usar el MP4 fuente como input: `ChunkExecutionCoordinator` extrae el frame N-1 bajo la raíz confiable del proyecto y la composición lo sube como PNG con `overwrite=false`. La referencia efectiva se valida y persiste como `MaterializedInputRef` antes de bindear `node 114.image` del chunk siguiente; `node 129.first_frame` continúa siendo la conexión canónica `["119", 0]`. Esta frontera fue ejercitada en un E2E real de dos chunks y quedó durable tras reopen. La validación visual humana de esta corrida fue realizada y aprobó la continuidad (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); esa aprobación corresponde a este E2E y no es una garantía general.
+
+La corrección F10 conserva esa frontera y el grafo existente: `node 114 → node 127 (ImageCropV2, bounding box completo 16384×16384) → node 119 (ImageScaleToTotalPixels) → node 120 (GetImageSize) → node 129`. El cambio elimina el default implícito 512×512 que recortaba la transición; no modifica la ruta de las seis referencias ni agrega nodos o enlaces. `configure_fast_e2e` es una opción explícita de desarrollo/prueba aplicada a una copia del prompt en `StartGuiChainUseCase`; nunca se guarda en defaults ni altera el camino normal.
+
+El E2E FAST confirmó que node 127 recibe y devuelve la transición completa pixel a pixel. El frame 0 que produce H3 sigue siendo distinto (aunque con dimensiones iguales): la alteración generativa residual se acepta como limitación conocida del backend H3, no como defecto pendiente del Orquestador. La arquitectura queda técnicamente corregida en C y la continuidad visual fue aprobada humanamente (`VISUAL_CONTINUITY=APPROVED`).
 
 ## F5 — Contrato de orquestación de un chunk
 

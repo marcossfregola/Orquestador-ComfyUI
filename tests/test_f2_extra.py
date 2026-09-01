@@ -43,7 +43,7 @@ class Extra(unittest.TestCase):
   p,e,c,a=self.base(); c2=Chunk(ChunkId('c2'),1); e.add_chunk(c2); ar=Artifact(p.id,e.id,c2.id,a.id,Phase.OUTPUT,OutputRef('x')); r=SQLiteProjectRepository(tempfile.mkdtemp()); self.assertRaises(PersistenceError,r.save,p,[e],[ar])
  def test_schema_version(self):
   with tempfile.TemporaryDirectory() as d:
-   r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('select version from schema_version').fetchone()[0],1); r.close()
+   r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('select version from schema_version').fetchone()[0],2); self.assertEqual(len(list(r.db.execute('pragma table_info(transitions)'))),12); r.close()
  def test_fk_enabled(self):
   with tempfile.TemporaryDirectory() as d:
    r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('pragma foreign_keys').fetchone()[0],1); r.close()

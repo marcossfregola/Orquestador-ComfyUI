@@ -65,9 +65,28 @@ class TestH3(unittest.TestCase):
  def test_template_and_bindings_are_centralized(self):
   t=load_api_template(); b=bind_inputs(t,prompt='x',references=['a']*6,length=20)
   self.assertEqual(b['129']['inputs']['prompt'],'x'); self.assertEqual(b['129']['inputs']['length'],20)
-  self.assertEqual(b['129']['inputs']['ref_images.ref_image_5'],'a')
+  self.assertEqual(b['129']['inputs']['ref_images.ref_image_5'],['160',0])
+ def test_first_frame_crop_preserves_full_source(self):
+  t=load_api_template()
+  self.assertEqual(t['127']['inputs']['crop_region'],dict(h3.NO_CROP_BOUNDING_BOX))
+  self.assertEqual(t['127']['inputs']['image'],['114',0])
+  self.assertEqual(t['119']['inputs']['image'],['127',0])
+ def test_fast_e2e_is_explicit_nonpersistent_copy(self):
+  t=load_api_template(); fast=configure_fast_e2e(t)
+  self.assertEqual((t['119']['inputs']['megapixels'],t['129']['inputs']['length'],t['146']['inputs']['steps']),(0.6,294,20))
+  self.assertEqual((fast['119']['inputs']['megapixels'],fast['129']['inputs']['length'],fast['146']['inputs']['steps']),(0.09,56,4))
+  self.assertEqual(fast['127']['inputs']['crop_region'],dict(h3.NO_CROP_BOUNDING_BOX))
+  self.assertEqual(fast['129']['inputs']['first_frame'],['119',0])
+  self.assertEqual(fast['92']['inputs']['video'],['148',0])
+  self.assertEqual(t['119']['inputs']['megapixels'],0.6)
  def test_binding_rejects_unknown_and_wrong_reference_count(self):
   t=load_api_template()
   with self.assertRaises(WorkflowProfileError): bind_inputs(t,wat=False)
   with self.assertRaises(WorkflowProfileError): bind_inputs(t,references=['a'])
+ def test_immutable_existing_node_link_rejected_as_canonical_mismatch(self):
+  t=load_api_template()
+  t['147']['inputs']['samples']=['143',1]
+  with self.assertRaises(IncompatibleWorkflowError) as ctx: h3._validate_api_template(t)
+  self.assertEqual(ctx.exception.code,'template.topology')
+  self.assertIn('canonical link mismatch',str(ctx.exception))
 if __name__=='__main__': unittest.main()

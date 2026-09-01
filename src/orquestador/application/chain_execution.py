@@ -7,7 +7,7 @@ details remain behind their existing ports.
 from dataclasses import dataclass, replace
 from enum import Enum
 
-from ..domain.core import Lifecycle
+from ..domain.core import Lifecycle, MaterializedInputRef
 from .chunk_execution import ChunkExecutionResult
 from .robust_chunk_execution import RobustChunkExecutionCoordinator
 
@@ -38,7 +38,7 @@ class ChainExecutionUseCase:
         self.coordinator = coordinator
         self.recovery = recovery
 
-    def run(self, project, execution, prompts):
+    def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None):
         if len(execution.chunks) < 2 or len(execution.chunks) > 3:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason="F7 supports two or three chunks")
         if execution.state is Lifecycle.PENDING:
@@ -54,6 +54,21 @@ class ChainExecutionUseCase:
             if chunk.state is Lifecycle.SUCCEEDED:
                 if index < len(execution.chunks)-1:
                     links=[t for t in durable if t.target_chunk_id == execution.chunks[index+1].id]
+                    if not links:
+                        # A recovery completion may have persisted the F5
+                        # provisional NULL-target transition before the chain
+                        # process was interrupted.  Promote that one durable
+                        # checkpoint to the immediate next chunk without
+                        # resubmitting the already successful source job.
+                        provisional=[t for t in durable
+                                     if t.target_chunk_id is None
+                                     and t.source_chunk_id == chunk.id]
+                        if len(provisional) == 1:
+                            linked=replace(provisional[0], target_chunk_id=execution.chunks[index+1].id)
+                            execution.link_transition(execution.chunks[index+1], linked)
+                            self.repository.save(project, [execution], transitions=(linked,))
+                            durable=tuple(self.repository.load_transitions(execution.id))
+                            links=[t for t in durable if t.target_chunk_id == execution.chunks[index+1].id]
                     if len(links)!=1 or links[0].source_chunk_id != chunk.id:
                         return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index, 'missing or inconsistent continuity link')
                 continue
@@ -72,8 +87,27 @@ class ChainExecutionUseCase:
                     return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'invalid source artifact path')
             prompt = prompts(index, chunk) if callable(prompts) else prompts[index]
             if index:
-                try: prompt = dict(prompt, first_frame=transition.source_output.uri)
-                except Exception: return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'invalid prompt binding')
+                try:
+                    materialized = transition.materialized_ref
+                    if materialized is None:
+                        if transition_materializer is None:
+                            return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'transition materializer required')
+                        materialized = transition_materializer(transition)
+                        if isinstance(materialized, MaterializedInputRef):
+                            # Persist the effective ComfyUI input reference
+                            # before submitting the next chunk.  A reopened
+                            # chain can then reuse it without a duplicate upload.
+                            transition = replace(transition, materialized_ref=materialized)
+                            execution.link_transition(execution.chunks[index], transition)
+                            self.repository.save(project, [execution], transitions=(transition,))
+                            durable = tuple(self.repository.load_transitions(execution.id))
+                    if hasattr(materialized,'load_image_value'): materialized = materialized.load_image_value
+                    if not isinstance(materialized,str) or not materialized.strip(): raise ValueError('empty materialized reference')
+                    prompt = (transition_rebinder(prompt, materialized)
+                              if transition_rebinder is not None
+                              else dict(prompt, first_frame=materialized))
+                except Exception:
+                    return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'invalid prompt binding')
             if chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING) and self.recovery is None:
                 return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'recovery required')
             runner = self.recovery if chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING) else self.coordinator

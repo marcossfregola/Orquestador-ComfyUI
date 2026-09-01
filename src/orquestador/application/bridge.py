@@ -7,7 +7,8 @@ from enum import Enum
 from typing import Any
 from ..domain.core import BackendJobRef, Execution, Project, OutputRef
 from ..domain.recovery import Action, ArtifactObservation, BackendJobObservation, BackendJobState, ReconciliationResult, reconcile
-from ..adapters.http import HistoryResult, HistoryState, QueueSnapshot, QueueState
+from ..adapters.http import (HistoryResult, HistoryState, QueueSnapshot, QueueState,
+    ComfyUIRejectedError, ComfyUIProtocolError, ComfyUITransportError)
 from ..adapters.events import ObservationEvent, ObservationKind
 from ..adapters.outputs import OutputCorrelationResult, OutputCorrelationStatus, OutputDescriptor
 from ..adapters.cancellation import CancellationResult
@@ -26,6 +27,8 @@ class SubmitOutcome(str, Enum):
     INVALID_REF = 'invalid_ref'
     AMBIGUOUS = 'ambiguous'
     BIND_FAILED = 'bind_failed'
+    REJECTED = 'rejected'
+    PROTOCOL_FAILED = 'protocol_failed'
 
 @dataclass(frozen=True)
 class SubmitAttemptResult:
@@ -50,8 +53,16 @@ class SubmitAttemptUseCase:
         self.repository.save(project, [execution])
         try:
             ref = self.client.submit(prompt, client_id=client_id)
+        except ComfyUIRejectedError as exc:
+            detail = getattr(exc, 'body', None) or str(exc)
+            detail = f"rejected status={exc.status} body={detail[:4096]} type={type(exc).__name__} message={exc}"
+            return SubmitAttemptResult(SubmitOutcome.REJECTED, str(attempt.id), error=detail)
+        except ComfyUIProtocolError as exc:
+            return SubmitAttemptResult(SubmitOutcome.PROTOCOL_FAILED, str(attempt.id), error=f"protocol_failure type={type(exc).__name__} message={str(exc)[:4096]}")
+        except ComfyUITransportError as exc:
+            return SubmitAttemptResult(SubmitOutcome.AMBIGUOUS, str(attempt.id), error=f"ambiguous_transport type={type(exc).__name__} message={str(exc)[:4096]}")
         except Exception as exc:
-            return SubmitAttemptResult(SubmitOutcome.AMBIGUOUS, str(attempt.id), error=str(exc))
+            return SubmitAttemptResult(SubmitOutcome.AMBIGUOUS, str(attempt.id), error=f"ambiguous_transport type={type(exc).__name__} message={str(exc)[:4096]}")
         if not isinstance(ref, BackendJobRef) or not ref.value.strip():
             return SubmitAttemptResult(SubmitOutcome.INVALID_REF, str(attempt.id), error='invalid backend job reference')
         try:

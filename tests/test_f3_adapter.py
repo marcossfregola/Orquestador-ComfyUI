@@ -3,13 +3,15 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from orquestador.adapters import (ComfyUIClient, ComfyUIProtocolError, ComfyUIRejectedError, ComfyUIServerError, ComfyUITimeoutError, ComfyUITransportError, QueueState, HistoryState, BackendJobRef)
 class H(BaseHTTPRequestHandler):
  response=({},200)
+ last_request=None
  def do_GET(self): self.go()
  def do_POST(self): self.go()
  def go(self):
   length_header=self.headers.get('Content-Length')
   try: length=int(length_header) if length_header is not None else 0
   except (TypeError,ValueError): length=0
-  if length > 0: self.rfile.read(length)
+  raw_request=self.rfile.read(length) if length > 0 else b''
+  H.last_request=(self.command,self.path,dict(self.headers),raw_request)
   b,s=self.response; raw=json.dumps(b).encode(); self.send_response(s); self.send_header('Content-Length',str(len(raw))); self.send_header('Connection','close'); self.end_headers(); self.wfile.write(raw)
   self.close_connection=True
  def log_message(self,*a): pass
@@ -21,7 +23,7 @@ class AdapterTests(unittest.TestCase):
  def tearDownClass(c):
   c.s.shutdown(); c.s.server_close(); c.thread.join(timeout=5)
   if c.thread.is_alive(): raise AssertionError('serve_forever thread did not terminate')
- def setUp(self): self.c=ComfyUIClient(self.base,.2)
+ def setUp(self): self.c=ComfyUIClient(self.base,.2); H.last_request=None
  def put(self,b,s=200): H.response=(b,s)
  def test_valid_endpoint_schemes(self): ComfyUIClient('https://example.com/base/')
  def test_invalid_endpoint_scheme(self):
@@ -36,6 +38,16 @@ class AdapterTests(unittest.TestCase):
  def test_health_empty_system(self): self.put({'system':{}}); self.assertRaises(ComfyUIProtocolError,self.c.health)
  def test_health_malformed_object(self): self.put({}); self.assertRaises(ComfyUIProtocolError,self.c.health)
  def test_submit_success(self): self.put({'prompt_id':'abc'}); self.assertEqual(self.c.submit({}).value,'abc')
+ def test_submit_posts_root_prompt_envelope_without_mutation(self):
+  graph={'1':{'class_type':'LoadImage','inputs':{'seed':7}}}; original=json.loads(json.dumps(graph)); self.put({'prompt_id':'abc'})
+  self.assertEqual(self.c.submit(graph).value,'abc'); self.assertEqual(graph,original)
+  method,path,headers,body=H.last_request; self.assertEqual((method,path),('POST','/prompt')); self.assertEqual(headers.get('Content-Type'),'application/json'); self.assertEqual(json.loads(body),{'prompt':graph})
+ def test_submit_client_id_is_sibling_root_key(self):
+  graph={'1':{'inputs':{}}}; self.put({'prompt_id':'abc'}); self.c.submit(graph,' x ')
+  self.assertEqual(json.loads(H.last_request[3]),{'prompt':graph,'client_id':'x'})
+ def test_submit_without_client_id_omits_key(self):
+  graph={'1':{}}; self.put({'prompt_id':'abc'}); self.c.submit(graph)
+  self.assertEqual(json.loads(H.last_request[3]),{'prompt':graph})
  def test_backend_ref_reuse_identity(self): r=BackendJobRef('abc'); self.put({'abc':{'status':{'status_str':'running'}}}); self.assertIs(self.c.history(r).prompt_id,r)
  def test_backend_job_ref_accepts_valid_string(self):
   value='abc'; ref=BackendJobRef(value); self.assertIs(ref.value,value)

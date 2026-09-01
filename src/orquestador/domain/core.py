@@ -3,6 +3,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any,Mapping
 from uuid import uuid4
+import re, os
 class DomainError(ValueError): pass
 @dataclass(frozen=True)
 class EntityId:
@@ -32,6 +33,17 @@ class Phase(str,Enum): PREPARE='prepare'; EXECUTE='execute'; ASSEMBLE='assemble'
 @dataclass(frozen=True)
 class InputRef: uri:str
 @dataclass(frozen=True)
+class MaterializedInputRef:
+ type:str; subfolder:str; name:str; source_sha256:str
+ def __post_init__(self):
+  if self.type != 'input': raise DomainError('materialized ref type must be input')
+  if not isinstance(self.name,str) or not self.name or self.name in {'.','..'} or '/' in self.name or '\\' in self.name or os.path.isabs(self.name) or os.path.splitdrive(self.name)[0] or any(ord(c)<32 or ord(c)==127 for c in self.name): raise DomainError('invalid materialized name')
+  if not isinstance(self.subfolder,str) or self.subfolder.startswith(('/','\\')) or os.path.isabs(self.subfolder) or os.path.splitdrive(self.subfolder)[0] or '\\' in self.subfolder or any(x in {'','..'} for x in self.subfolder.split('/')): raise DomainError('invalid materialized subfolder')
+  if not isinstance(self.source_sha256,str) or not re.fullmatch(r'[0-9a-fA-F]{64}', self.source_sha256): raise DomainError('invalid source sha256')
+  object.__setattr__(self,'source_sha256',self.source_sha256.lower())
+ @property
+ def load_image_value(self): return f'{self.subfolder}/{self.name}' if self.subfolder else self.name
+@dataclass(frozen=True)
 class OutputRef: uri:str
 @dataclass(frozen=True)
 class WorkflowProfileRef: value:str
@@ -46,6 +58,7 @@ class Artifact:
 class TransitionFrame:
  project_id:ProjectId; execution_id:ExecutionId; source_chunk_id:ChunkId; source_attempt_id:AttemptId; source_output:OutputRef; source_frame_index:int; frame_count:int|None=None
  target_chunk_id:ChunkId|None=None
+ materialized_ref:MaterializedInputRef|None=None
  def __post_init__(self):
   if self.source_frame_index<0 or (self.frame_count is not None and (self.frame_count<=0 or self.source_frame_index!=self.frame_count-1)): raise DomainError('transition frame must be source frame N-1')
 def _map(v): return MappingProxyType(dict(v))

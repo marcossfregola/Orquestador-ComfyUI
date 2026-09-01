@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import hashlib
+import shutil
 
 from .outputs import OutputDescriptor
 
@@ -24,6 +26,42 @@ class PhysicalOutputEvidence:
     trusted_root: Path
     resolved_path: Path | None = None
     reason: str | None = None
+
+def import_project_output(source: str | Path, project_root: str | Path, relative_uri: str) -> Path:
+    """Idempotently import a validated external output into project storage."""
+    root = Path(project_root).resolve(strict=True)
+    destination = (root / relative_uri).resolve(strict=False)
+    if not _contained(root, destination) or destination == root:
+        raise ValueError("project output escapes project root")
+    source_path = Path(source).resolve(strict=True)
+    if not source_path.is_file():
+        raise ValueError("source output is not a file")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if not destination.is_file():
+            raise ValueError("project output collision is not a file")
+        if _sha256(source_path) != _sha256(destination):
+            raise ValueError("project output collision has different content")
+        return destination
+    temp = destination.with_name(destination.name + ".importing")
+    if temp.exists():
+        raise ValueError("project output import is already in progress")
+    try:
+        shutil.copy2(source_path, temp)
+        if _sha256(source_path) != _sha256(temp):
+            raise ValueError("imported output integrity mismatch")
+        temp.replace(destination)
+    finally:
+        if temp.exists():
+            temp.unlink()
+    return destination
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _contained(root: Path, candidate: Path) -> bool:

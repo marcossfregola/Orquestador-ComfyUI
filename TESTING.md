@@ -200,6 +200,31 @@ Contrato F8: >=2 chunks, MP4, copy sólo con firmas compatibles, fallback explí
 
 Auditoría aprobada `orquestador-f8-evidence-audit-037`: FFmpeg y FFprobe reales 8.1.1; copy PASS a `out copy's file.mp4` (2640 bytes, ffprobe válido) y reencode PASS a `out reencode's file.mp4` (1875 bytes, ffprobe válido), con nombres con espacios y apóstrofes. Fuente sin cambios; destino existente y carrera preservados sin overwrite; probe pre-publicación fallido sin destino; destinos unsupported/suffixless rechazados; temporales propios limpiados y sentinel preservado. F8 focused **6/6 PASS**, suite completa **443/443 PASS**, compileall PASS y `git diff --check` PASS. No hubo validación visual humana ni E2E ComfyUI; no eran requeridos para esta slice técnica.
 
-F8: **CLOSED — APPROVED**. F9: **CLOSED — APPROVED WITH OBSERVATIONS**. F10: **NOT STARTED**.
+**Histórico del cierre F9:** F8: **CLOSED — APPROVED**. F9: **CLOSED — APPROVED WITH OBSERVATIONS**. En esa captura F10: **NOT STARTED**.
 
-Auditoría independiente 056: composición **12/12**, otras F9 **5/5**, frontera histórica **3/3**, F6/F7 **47/47**, F5/F8 **51/51**, discovery completa **460/460**; syntax check, `git diff --check` y harness temporal externo PASS. No se realizó validación visual humana ni E2E real de ComfyUI; quedan para F10.
+Auditoría independiente 056: composición **12/12**, otras F9 **5/5**, frontera histórica **3/3**, F6/F7 **47/47**, F5/F8 **51/51**, discovery completa **460/460**; syntax check, `git diff --check` y harness temporal externo PASS. En esa captura no se había realizado validación visual humana ni E2E real de ComfyUI; quedaban para F10.
+
+## F10 — E2E real y regresión final (2026-09-01)
+
+La validación real se ejecutó con el camino público/composed `facade.prepare` → `facade.start_chain` contra ComfyUI local `0.33.0`. El runtime y la evidencia están fuera del repositorio, en `C:\Codex\Orquestador-ComfyUI-F10-runtime\codex-local-final-f10\e2e-20260901T184920Z-8ee4f1e6`. Se verificaron dos chunks reales, exactamente siete uploads estáticos con `overwrite=false`, cero placeholders, un submit por chunk, history terminal, SaveVideo node 92, contención/importación, SHA-256, FFprobe, extracción N-1, upload y persistencia de transición, y reopen/recovery sin resubmit.
+
+Comandos y resultados finales:
+
+- `python -B -m unittest tests.test_f10_gui_preparation tests.test_f7_chain_execution -v` → **Ran 32 tests — OK**.
+- `python -B -m unittest discover -s tests` → **Ran 478 tests — OK**.
+
+La suite completa sólo emitió `ResourceWarning` históricos de recursos no cerrados y el aviso de fuentes de Qt; no hubo failures, errors ni skips. Ambos jobs H3 superaron el límite de orquestación F5 de 1800 s y quedaron en estado fail-closed sin retry/resubmit; la recuperación posterior consumió los mismos `external_job_ref` una vez terminales. La validación visual humana posterior aprobó la continuidad (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`), y F10 queda cerrado.
+
+### F10 — corrección del seam y FAST E2E posterior
+
+La prueba de regresión del cambio mantiene el camino público `facade.prepare` → `facade.start_chain`, pero acepta el flag explícito `fast_e2e=True` sólo para desarrollo/prueba. `configure_fast_e2e` trabaja sobre una copia del prompt y aplica node 119 `megapixels=0.09`, node 129 `length=56` y node 146 `steps=4`; no escribe esos valores en `Execution.defaults` ni altera el perfil normal (0.6 MP, 294 frames, 20 steps). El node 127 usa el bounding box completo 16384×16384 para evitar el default implícito 512×512; la topología y la conexión `node 129.first_frame=["119",0]` no cambian.
+
+Resultados automáticos del cambio:
+
+- `python -B -m unittest tests.test_f4_workflow_profile tests.test_f10_gui_preparation` → **46/46 OK**.
+- `python -B -m unittest discover -s tests` → **481/481 OK**.
+- La suite completa sólo mostró `ResourceWarning` preexistentes; no hubo failures, errors ni skips.
+
+E2E FAST contra ComfyUI `0.33.0` en `127.0.0.1:8188`: 57,0 s, siete uploads estáticos `overwrite=false`, un upload de transición, dos submits, cero tercero, dos MP4 H.264 352×256 a 24 fps con 56 frames, persistencia/reopen `succeeded`. La evidencia está en `C:\Codex\Orquestador-ComfyUI-F10-runtime\seam-fast-e2e\fast-20260901T223000Z`. `node127` del segundo graph coincide pixel a pixel con `TRANSITION_INPUT.png`; el frame 0 del MP4 no coincide exactamente (PSNR 29,846985 dB, MSE 67,356863, diferencia media 6,431763, dimensiones iguales). La entrada no presenta el crop anterior; la diferencia restante se clasifica como comportamiento D del modelo H3 y queda aceptada como limitación conocida del backend, no como defecto pendiente del Orquestador. La continuidad visual fue aprobada (`VISUAL_CONTINUITY=APPROVED`).
+
+El control `codec-baseline-frame0.png` (56 frames idénticos codificados localmente con H.264) dio PSNR 40,894518 dB y diferencia media 1,772694; por eso la diferencia FAST no se atribuye sólo a la serialización H.264.

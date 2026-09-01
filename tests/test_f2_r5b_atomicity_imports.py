@@ -12,6 +12,12 @@ class MigrationAtomicityTests(unittest.TestCase):
     def test_ordered_injected_migration_commits(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             repo = SQLiteProjectRepository(d)
+            repo.db.execute("ALTER TABLE transitions RENAME TO transitions_v2")
+            repo.db.execute("CREATE TABLE transitions(project_id TEXT,execution_id TEXT,target_chunk_id TEXT PRIMARY KEY,source_chunk_id TEXT,source_attempt_id TEXT,source_output TEXT,frame_index INTEGER,frame_count INTEGER)")
+            repo.db.execute("INSERT INTO transitions SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count FROM transitions_v2")
+            repo.db.execute("DROP TABLE transitions_v2")
+            repo.db.execute("UPDATE schema_version SET version=1")
+            repo.db.commit()
             repo._run_migrations({2: lambda conn: conn.execute("CREATE TABLE future_marker(value TEXT)")}, target_version=2)
             self.assertEqual(repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 2)
             self.assertIsNotNone(repo.db.execute("SELECT 1 FROM sqlite_master WHERE name='future_marker'").fetchone())
@@ -20,6 +26,12 @@ class MigrationAtomicityTests(unittest.TestCase):
     def test_failing_future_migration_rolls_back_everything(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             repo = SQLiteProjectRepository(d)
+            repo.db.execute("ALTER TABLE transitions RENAME TO transitions_v2")
+            repo.db.execute("CREATE TABLE transitions(project_id TEXT,execution_id TEXT,target_chunk_id TEXT PRIMARY KEY,source_chunk_id TEXT,source_attempt_id TEXT,source_output TEXT,frame_index INTEGER,frame_count INTEGER)")
+            repo.db.execute("INSERT INTO transitions SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count FROM transitions_v2")
+            repo.db.execute("DROP TABLE transitions_v2")
+            repo.db.execute("UPDATE schema_version SET version=1")
+            repo.db.commit()
             repo.db.execute("INSERT INTO projects VALUES ('sentinel','{}')")
             repo.db.commit()
 
@@ -39,7 +51,7 @@ class MigrationAtomicityTests(unittest.TestCase):
             repo.close()
             repo = None
             reopened = SQLiteProjectRepository(d)
-            self.assertEqual(reopened.db.execute("SELECT version FROM schema_version").fetchone()[0], 1)
+            self.assertEqual(reopened.db.execute("SELECT version FROM schema_version").fetchone()[0], 2)
             self.assertEqual(reopened.db.execute("SELECT defaults FROM projects WHERE id='sentinel'").fetchone()[0], "{}")
             reopened.close()
 

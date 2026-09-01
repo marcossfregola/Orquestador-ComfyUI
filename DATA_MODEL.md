@@ -1,6 +1,6 @@
 # Modelo de dominio
 
-Este documento define semántica, relaciones, invariantes y estados conceptuales; las secciones de estado F2, F5 y F6 documentan las clases y el schema que ya fueron implementados.
+Este documento define semántica, relaciones, invariantes y estados conceptuales; las secciones de estado F2, F5, F6 y F10 documentan las clases y el schema que ya fueron implementados.
 
 ## Conceptos centrales
 
@@ -131,7 +131,7 @@ El punto seguro se deriva del agregado durable y de los artefactos verificados r
 
 ### Persistencia F2
 
-La implementación usa SQLite schema v1 en una ruta de base de datos contenida dentro del proyecto. Activa FK, inicializa y guarda atómicamente, rechaza versiones futuras y dispone de runner de migraciones; el rollback está probado mediante una migración sintética sólo de test (no se declara migración productiva v2). Usa JSON canónico donde corresponde, mantiene Attempts/Artifacts/Errors append-only, protege stale/conflict, no reemplaza silenciosamente una DB corrupta o no-SQLite y valida en carga el grafo y la procedencia. Las rutas de artefactos propios son relativas al proyecto. `WorkflowProfileRef` y `BackendJobRef` se persisten con las semánticas opacas indicadas arriba.
+La implementación usa SQLite versionado en una ruta de base de datos contenida dentro del proyecto (schema actual v2). Activa FK, inicializa y guarda atómicamente, rechaza versiones futuras y dispone de runner de migraciones; v2 añade de forma compatible los campos opcionales de materialización de `TransitionFrame`. Usa JSON canónico donde corresponde, mantiene Attempts/Artifacts/Errors append-only, protege stale/conflict, no reemplaza silenciosamente una DB corrupta o no-SQLite y valida en carga el grafo y la procedencia. Las rutas de artefactos propios son relativas al proyecto. `WorkflowProfileRef` y `BackendJobRef` se persisten con las semánticas opacas indicadas arriba.
 
 La reconciliación implementada es pura y agnóstica del backend: recibe evidencia observada de backend, artefactos y transiciones y devuelve un plan determinista de decisión/acción, sin escrituras ocultas. Gana el primer gap no resuelto; preserva chunks completos; cada retry crea otro Intento. RUNNING con el mismo job ref activo produce WAIT; evidencia desconocida o discordante produce review/block. Una finalización externa verificada dentro de una ventana de crash sólo propone una acción explícita de reconciliación. Un frame de transición ausente o corrupto exige recovery específico de transición. El punto seguro avanza sólo con output durable requerido y evidencia de transición verificada; COMPLETE requiere que toda la cadena sea segura.
 
@@ -153,4 +153,10 @@ F6 usa el schema SQLite v1 existente; no agrega tablas ni migraciones nuevas. La
 
 ComfyUI querying pertenece al adaptador F3; F6 consume una observación backend inyectada/reconciliable sin afirmar una nueva ejecución real. Las operaciones FFmpeg/FFprobe y el ensamblado permanecen en fronteras posteriores. F7 cubre recovery/chaining multi-chunk; GUI y validación visual universal siguen fuera de alcance.
 
-`TransitionFrame.target_chunk_id` es nullable para el checkpoint del chunk único; los enlaces con target mantienen validación de procedencia y schema v1.
+`TransitionFrame.target_chunk_id` es nullable para el checkpoint del chunk único; los enlaces con target mantienen validación de procedencia y schema v2 (compatible con filas sin materialización).
+
+## Estado implementado de F10 — materialización de transición (2026-09-01)
+
+`MaterializedInputRef` es la referencia efectiva que ComfyUI devuelve para un input subido: `type="input"`, `subfolder`, `name` y `source_sha256`. `TransitionFrame.materialized_ref` es opcional para conservar esa referencia junto con el frame N-1 y su procedencia; se valida que el nombre/subcarpeta no permitan escapes y que el hash sea SHA-256 hexadecimal. La persistencia schema v2 guarda esos cuatro campos sin convertir el path absoluto del backend en autoridad durable.
+
+En el E2E real de dos chunks, el frame `293/294` de chunk 0 se persistió con hash `ff3326b0fd903e2f6680d3985ea5afc17f4199533b20f8843faeeaeb49da0978` y referencia `orquestador/transitions/transition-52b5ac2a-0d2e-4e54-bc7c-2a79314f87e8-ff3326b0fd903e2f.png`. Tras cerrar/reabrir, esa referencia se reutilizó para bindear chunk 1 sin reupload; los dos chunks, dos artefactos y dos transiciones quedaron durables y la ejecución terminó `succeeded`.

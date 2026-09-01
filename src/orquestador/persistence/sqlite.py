@@ -2,7 +2,7 @@
 import json, os, sqlite3
 from pathlib import Path
 from orquestador.domain import *
-SCHEMA_VERSION=1
+SCHEMA_VERSION=2
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -20,7 +20,7 @@ def _safe(root,v):
 _NEXT={Lifecycle.PENDING:{Lifecycle.RUNNING,Lifecycle.CANCELLED},Lifecycle.RUNNING:{Lifecycle.SUCCEEDED,Lifecycle.FAILED,Lifecycle.CANCELLED}}
 def _legal(a,b): return a==b or (a is Lifecycle.UNKNOWN and b is not Lifecycle.PENDING) or b in _NEXT.get(a,set())
 class SQLiteProjectRepository:
- migrations={}
+ migrations={2: lambda db: [db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL') for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256')]}
  def __init__(self,project_root,db_name='orquestador.sqlite3'):
   self.root=Path(project_root).resolve(); self.root.mkdir(parents=True,exist_ok=True); self.path=self.root/_safe(self.root,db_name); self.path.parent.mkdir(parents=True,exist_ok=True)
   try:self.db=sqlite3.connect(self.path,isolation_level=None)
@@ -52,6 +52,12 @@ class SQLiteProjectRepository:
   except sqlite3.DatabaseError as e: raise PersistenceDataError(str(e))
   if not v:raise PersistenceDataError('missing schema version')
   if v[0]>SCHEMA_VERSION:raise UnsupportedSchemaVersion(v[0])
+  if v[0] < SCHEMA_VERSION: self._run_migrations()
+  # Repair/complete v2 columns for databases marked current but created by
+  # older fixtures; this is idempotent and preserves all legacy rows.
+  cols={r[1] for r in self.db.execute('PRAGMA table_info(transitions)')}
+  for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256'):
+   if c not in cols: self.db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL')
  def close(self):self.db.close()
  def save(self,p,es,artifacts=(),errors=(),transitions=()):
   try:
@@ -81,7 +87,8 @@ class SQLiteProjectRepository:
     # checkpoint atomically to the immediately-following chunk link.
     if t.target_chunk_id is not None and (str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)) not in has_null:
      self.db.execute('DELETE FROM transitions WHERE execution_id=? AND source_chunk_id=? AND source_attempt_id=? AND target_chunk_id IS NULL',(str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)))
-    self.db.execute('INSERT OR REPLACE INTO transitions VALUES(?,?,?,?,?,?,?,?)',(str(t.project_id),str(t.execution_id),str(t.target_chunk_id) if t.target_chunk_id is not None else None,str(t.source_chunk_id),str(t.source_attempt_id),t.source_output.uri,t.source_frame_index,t.frame_count))
+    m=getattr(t,'materialized_ref',None)
+    self.db.execute('INSERT OR REPLACE INTO transitions(project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(str(t.project_id),str(t.execution_id),str(t.target_chunk_id) if t.target_chunk_id is not None else None,str(t.source_chunk_id),str(t.source_attempt_id),t.source_output.uri,t.source_frame_index,t.frame_count, getattr(m,'type',None),getattr(m,'subfolder',None),getattr(m,'name',None),getattr(m,'source_sha256',None)))
    self.db.execute('COMMIT')
   except PersistenceError:
    if self.db.in_transaction:self.db.execute('ROLLBACK')
@@ -121,7 +128,7 @@ class SQLiteProjectRepository:
    if oaid:
     own=am.get(aid); ar=arts.get(oaid)
     if not ar or ar is not own: raise PersistenceDataError('attempt artifact ownership mismatch')
-  for pr,ex,tgt,src,sa,out,idx,count in self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count FROM transitions'):
+  for pr,ex,tgt,src,sa,out,idx,count,mtype,msub,mname,msha in self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions'):
    if pr!=str(pid) or src not in cm or ex!=cm[src][0].id.value:raise PersistenceDataError('transition ownership')
    _,sc=cm[src]; own=am.get(sa)
    if tgt is not None:
@@ -129,13 +136,19 @@ class SQLiteProjectRepository:
     _,tc=cm[tgt]
     if tc.order!=sc.order+1: raise PersistenceDataError('invalid transition provenance')
    if not own or own[1].id.value!=src or own[2].output is None or own[2].output.uri!=out or idx<0 or (count is not None and idx!=count-1):raise PersistenceDataError('invalid transition provenance')
-   if tgt is not None: tc.first_frame=TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt))
+   vals=(mtype,msub,mname,msha)
+   if all(v is None for v in vals): mref=None
+   elif any(v is None for v in vals): raise PersistenceDataError('partial materialized reference')
+   else:
+    try: mref=MaterializedInputRef(mtype,msub,mname,msha)
+    except Exception as exc: raise PersistenceDataError('invalid materialized reference') from exc
+   if tgt is not None: tc.first_frame=TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt),mref)
   return p,es
  def load_transitions(self, execution_id):
   """Read durable transition frames without exposing storage details to application code."""
-  rows=self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count FROM transitions WHERE execution_id=? ORDER BY frame_index',(str(execution_id),)).fetchall()
+  rows=self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions WHERE execution_id=? ORDER BY frame_index',(str(execution_id),)).fetchall()
   result=[]
-  for pr,ex,tgt,src,sa,out,idx,count in rows:
+  for pr,ex,tgt,src,sa,out,idx,count,mtype,msub,mname,msha in rows:
    if ex != str(execution_id): raise PersistenceDataError('transition execution mismatch')
    src_row=self.db.execute('SELECT execution_id,ord FROM chunks WHERE id=?',(src,)).fetchone()
    att=self.db.execute('SELECT chunk_id,state,output FROM attempts WHERE id=?',(sa,)).fetchone()
@@ -150,5 +163,11 @@ class SQLiteProjectRepository:
    # artifact is recorded, its durable file must exist and remain contained.
    ar=self.db.execute('SELECT path FROM artifacts WHERE execution_id=? AND chunk_id=? AND attempt_id=? AND output=?',(ex,src,sa,out)).fetchone()
    if ar is not None and ar[0] != safe: raise PersistenceDataError('transition artifact path mismatch')
-   result.append(TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt) if tgt is not None else None))
+   vals=(mtype,msub,mname,msha)
+   if all(v is None for v in vals): mref=None
+   elif any(v is None for v in vals): raise PersistenceDataError('partial materialized reference')
+   else:
+    try: mref=MaterializedInputRef(mtype,msub,mname,msha)
+    except Exception as exc: raise PersistenceDataError('invalid materialized reference') from exc
+   result.append(TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt) if tgt is not None else None,mref))
   return result

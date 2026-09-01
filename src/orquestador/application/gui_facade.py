@@ -31,6 +31,10 @@ class GuiFacade:
         try:
             value=fn(*args, **kwargs); snap=self._to_snapshot(value)
             ok=getattr(value,"success",True) is not False
+            outcome=getattr(value,"outcome",None)
+            if outcome is not None:
+                outcome_value=getattr(outcome,"value",outcome)
+                ok = ok and outcome_value in {"complete", "completed"}
             return OperationResult(ok,snap,"" if ok else getattr(value,"reason","operation failed"),value)
         except Exception as exc: return OperationResult(False, self.refresh(), str(exc), exc)
     def prepare(self,*a,**k): return self._call("prepare",*a,**k)

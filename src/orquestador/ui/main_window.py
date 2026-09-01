@@ -8,14 +8,20 @@ class MainWindow(QMainWindow):
         super().__init__(); self.facade=facade; self._thread=None; self._busy=False
         root=QWidget(); self.setCentralWidget(root); lay=QVBoxLayout(root)
         lay.addWidget(QLabel("Project / execution preparation")); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setPlaceholderText("Project id"); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setPlaceholderText("Execution id"); row.addWidget(self.execution); self.initial=QLineEdit(); self.initial.setPlaceholderText("Initial image path"); row.addWidget(self.initial); self.preflight=QPushButton("Preflight"); row.addWidget(self.preflight); lay.addLayout(row)
-        self.references=QListWidget(); self.references.setObjectName("h3ReferenceSlots"); lay.addWidget(QLabel("H3 reference slots")); lay.addWidget(self.references)
+        self.references=QListWidget(); self.references.setObjectName("h3ReferenceSlots"); lay.addWidget(QLabel("H3 reference slots (six paths, comma-separated)")); self.reference_input=QLineEdit(); self.reference_input.setObjectName("h3ReferenceInput"); lay.addWidget(self.reference_input); lay.addWidget(self.references)
         self.prompts=QTextEdit(); self.prompts.setPlaceholderText("One prompt per chunk (bounded by prepared execution)"); self.prompts.setObjectName("chunkPrompts"); lay.addWidget(self.prompts)
         self.parameters=QLabel("Supported parameters: provided by profile"); self.parameters.setObjectName("supportedParameters"); lay.addWidget(self.parameters)
         acts=QHBoxLayout(); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.start,self.resume,self.retry,self.cancel,self.assemble)]; lay.addLayout(acts)
         self.status=QLabel("Ready"); lay.addWidget(self.status); self.chunks=QListWidget(); lay.addWidget(self.chunks); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
-        self.preflight.clicked.connect(lambda:self._run(self.facade.preflight)); self.start.clicked.connect(lambda:self._run(self.facade.start_chain)); self.resume.clicked.connect(lambda:self._run(self.facade.resume_execution)); self.retry.clicked.connect(lambda:self._run(self.facade.retry_execution)); self.cancel.clicked.connect(lambda:self._run(self.facade.cancel_pending)); self.assemble.clicked.connect(self._assemble)
+        self.preflight.clicked.connect(self._prepare); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(lambda:self._run(lambda:self.facade.resume_execution(self.project.text().strip(), self.execution.text().strip()))); self.retry.clicked.connect(lambda:self._run(lambda:self.facade.retry_execution(self.project.text().strip(), self.execution.text().strip()))); self.cancel.clicked.connect(lambda:self._run(lambda:self.facade.cancel_pending(self.project.text().strip(), self.execution.text().strip()))); self.assemble.clicked.connect(self._assemble)
         self.refresh()
     def refresh(self): self.render(self.facade.refresh())
+    def _inputs(self):
+        prompts=[x.strip() for x in self.prompts.toPlainText().splitlines() if x.strip()]
+        refs=[x.strip() for x in self.reference_input.text().split(',') if x.strip()] or [self.references.item(i).text() for i in range(self.references.count())]
+        return dict(project_id=self.project.text(), execution_id=self.execution.text(), initial_image=self.initial.text(), prompts=prompts, references=refs)
+    def _prepare(self): self._run(lambda:self.facade.prepare(**self._inputs()))
+    def _start_chain(self): self._run(lambda:self.facade.start_chain(**self._inputs()))
     def render(self,s):
         self.status.setText(s.state + (": "+"; ".join(s.errors) if s.errors else "")); self.chunks.clear(); [self.chunks.addItem(f"Chunk {c.order}: {c.state}" + (f" [{c.attempt_ref}]" if c.attempt_ref else "") + (f" error={c.error}" if c.error else "") + (f" output={c.output}" if c.output else "") + (f" transition={c.transition}" if c.transition else "")) for c in s.chunks]; self.references.clear(); self.references.addItems(list(s.reference_slots)); self.parameters.setText("Supported parameters: " + (", ".join(s.supported_parameters) if s.supported_parameters else "none reported")); self.cancel.setEnabled(s.can_cancel and not self._busy); self.retry.setEnabled(s.can_retry and not self._busy)
     def _run(self,op):

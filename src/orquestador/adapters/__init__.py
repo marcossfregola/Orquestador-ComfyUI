@@ -4,6 +4,7 @@ from .http import (ComfyUIClient, ComfyUIError, ComfyUITransportError, ComfyUITi
 from ..domain.core import BackendJobRef
 from .events import ObservationKind, ObservationIssueKind, ObservationEvent, WebSocketTransport, WebSocketClientTransport, ComfyUIObservation
 from .outputs import OutputCorrelationStatus, OutputDescriptor, OutputCorrelationResult, correlate_outputs
+from .savevideo import resolve_savevideo_output, resolve_savevideo_outputs
 from .physical_outputs import PhysicalOutputStatus, PhysicalOutputEvidence, validate_physical_output
 from .cancellation import CancellationClassification, CancellationState, CancellationAction, CancellationIssueKind, CancellationPhase, CancellationIssue, CancellationPreflight, CancellationResult, ComfyUICancellationAdapter
 
@@ -14,6 +15,8 @@ __all__ = [
     'BackendJobRef',
     'ObservationKind', 'ObservationIssueKind', 'ObservationEvent', 'WebSocketTransport', 'WebSocketClientTransport', 'ComfyUIObservation',
     'OutputCorrelationStatus', 'OutputDescriptor', 'OutputCorrelationResult', 'correlate_outputs',
+    'resolve_savevideo_output',
+    'resolve_savevideo_outputs',
     'PhysicalOutputStatus', 'PhysicalOutputEvidence', 'validate_physical_output',
     'CancellationClassification', 'CancellationState', 'CancellationAction', 'CancellationIssueKind', 'CancellationPhase', 'CancellationIssue', 'CancellationPreflight', 'CancellationResult', 'ComfyUICancellationAdapter',
 ]

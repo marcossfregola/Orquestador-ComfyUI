@@ -174,3 +174,33 @@ F5 está **CLOSED — APPROVED** (2026-08-30): Slices 1, 2, 3 y 4A completadas/a
 `ResumeExecutionUseCase` reabre el agregado desde SQLite y usa el `Attempt.external_job_ref` durable para una observación fresca. `QUEUED` y `RUNNING` esperan sin resubmit; `COMPLETED` sólo se acepta con `HistoryResult` cuyo `prompt_id` coincide exactamente y delega el output/evidence, el `Artifact` `OUTPUT` y el `TransitionFrame` N-1 al coordinador de completion existente. Un `FAILED` terminal explícito puede persistir el error y consumir un único retry, creando un segundo Attempt y preservando el primero; un tercer Attempt, un `CANCELLED`, un estado desconocido, un mismatch de procedencia o evidencia incompleta quedan bloqueados para revisión manual. Los resumes de un agregado ya completo son idempotentes.
 
 Esta frontera es backend-agnóstica y reconciliable: las pruebas usan SQLite real y observaciones inyectadas/mocks. F6 no modifica el protocolo de ComfyUI ni declara una nueva ejecución live, chaining multi-chunk, propagación automática de `first_frame` ni ensamblado; esos comportamientos pertenecen a F7/F8.
+
+## F10 — evidencia live de la cadena pública (2026-09-01)
+
+La corrida real usó `facade.prepare` y el camino compuesto `facade.start_chain` contra `http://127.0.0.1:8188` (ComfyUI core `0.33.0`). El runtime de evidencia es `C:\Codex\Orquestador-ComfyUI-F10-runtime\codex-local-final-f10\e2e-20260901T184920Z-8ee4f1e6`; la queue estaba vacía antes de comenzar. Los siete archivos declarados por F10 existían bajo el input root real y se subieron exactamente una vez cada uno, con `overwrite=false`:
+
+| slot | referencia efectiva |
+|---|---|
+| initial | `orquestador/static/initial-9c5b54673dfd0cf7.png` |
+| ref 1 | `orquestador/static/ref-1-3ba7d5a1389d1be4.jpg` |
+| ref 2 | `orquestador/static/ref-2-37803ec8fd58b35f.jpg` |
+| ref 3 | `orquestador/static/ref-3-0e4d603306e24883.jpg` |
+| ref 4 | `orquestador/static/ref-4-fa1dfd29e6f6b6af.jpg` |
+| ref 5 | `orquestador/static/ref-5-cfb5642a9a1e4433.jpg` |
+| ref 6 | `orquestador/static/ref-6-1c15b866fc10e8b1.jpg` |
+
+El graph capturado antes de cada `/prompt` confirmó para chunk 0 `node 114.image = initial`, las seis referencias en `130/131/132/150/151/152`, `129.first_frame = ["119", 0]`, prompt no vacío y cero placeholders. Para chunk 1 confirmó `node 114.image = orquestador/transitions/transition-52b5ac2a-0d2e-4e54-bc7c-2a79314f87e8-ff3326b0fd903e2f.png`, las mismas seis referencias, el mismo `129.first_frame` canónico y cero placeholders. Los prompt IDs fueron `abea6078-1983-4dc7-80bd-70f25f920ed2` y `a3a2510f-a9ac-45e8-b5e1-e57c58d7a0f8`, un submit aceptado por chunk.
+
+Los histories terminales resolvieron SaveVideo node 92 con `images: [{filename, subfolder: "video", type: "output"}]` y `animated: [true]`; la metadata auxiliar no se interpretó como descriptor. Los MP4 fuente fueron `C:\Users\Marcos Casa\AppData\Local\Comfy-Desktop\ComfyUI-Shared\output\video\MiniMax_H3_00254_.mp4` y `MiniMax_H3_00255_.mp4`, y se importaron sin overwrite bajo el proyecto de evidencia. FFprobe validó en ambos H.264, 800×800, 24 fps, 294 frames y 12.25 s; cada SHA-256 fuente coincidió con el importado.
+
+El frame exacto `N-1` de chunk 0 es `...\transitions\52b5ac2a-0d2e-4e54-bc7c-2a79314f87e8.png`, índice `293/294`, SHA-256 `ff3326b0fd903e2f6680d3985ea5afc17f4199533b20f8843faeeaeb49da0978`; se subió una vez como la referencia efectiva indicada arriba y quedó persistido en `MaterializedInputRef`. Ambos jobs superaron el deadline de orquestación 1800 s, pero el contrato mantuvo sus IDs y la recuperación pública completó los mismos intentos sin tercer submit. Reopen terminó `succeeded`, con dos artefactos y dos transiciones. La validación visual humana posterior aprobó la continuidad (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`).
+
+### F10 — diagnóstico C/D y validación FAST posterior
+
+El diagnóstico del seam del run anterior es reproducible: el preview de ComfyUI node 127 era exactamente el recorte superior izquierdo 512×512 de la transición 800×800. La implementación de `ImageCropV2` usa `{x:0,y:0,width:512,height:512}` cuando recibe `crop_region={}`; node 119 (`megapixels=0.6`, `nearest-exact`, `resolution_steps=32`) lo reescalaba a 800×800. Eso explica el zoom/reencuadre y confirma causa C de pipeline. El perfil ahora fija sólo node 127 a `{x:0,y:0,width:16384,height:16384}`; el bounding box excedente se recorta a los límites reales de la imagen, por lo que conserva toda la entrada sin introducir una dimensión fija.
+
+La ejecución FAST de control se hizo por `facade.prepare` y `facade.start_chain(..., fast_e2e=True)` en el runtime `C:\Codex\Orquestador-ComfyUI-F10-runtime\seam-fast-e2e\fast-20260901T223000Z`. El flag no se persiste. Los graphs capturados muestran node 127 completo, node 119 `0.09` MP, node 129 `length=56`, node 146 `steps=4`, `node 129.first_frame=["119",0]` y SaveVideo node 92 sin cambios. Se subieron exactamente siete estáticos, más una transición PNG; hubo exactamente dos jobs y no hubo tercero. Ambos resultados son H.264, 352×256, 24 fps, 56 frames y 2,333 s; estado durable `succeeded` tras reopen.
+
+La evidencia `seam-comparison.json` contiene `TRANSITION_INPUT.png`, `CHUNK1_FRAME0.png`, `CHUNK1_FRAME1.png`, frames 2–4, preview node 127, histories, hashes y métricas. `node127_vs_transition` es `pixel_identical=true` (352×256); el frame 55 exacto de chunk 0 coincide byte/pixel a pixel con `TRANSITION_INPUT.png`. `transition_vs_chunk1[0]` mantiene dimensiones pero no identidad pixel: PSNR 29,846985 dB, MSE 67,356863 y diferencia media 6,431763. Con la entrada ya idéntica, la alteración residual es causa D del modelo H3 y queda aceptada como limitación conocida del backend, no como defecto pendiente del Orquestador; la continuidad visual fue aprobada (`VISUAL_CONTINUITY=APPROVED`).
+
+El control local `codec-baseline-frame0.png`, codificando 56 copias de la transición con H.264 y decodificando el primer frame, obtuvo PSNR 40,894518 dB y diferencia media 1,772694. La diferencia adicional del output H3 excede el error esperado del codec y mantiene la clasificación D con una base separada de la compresión.

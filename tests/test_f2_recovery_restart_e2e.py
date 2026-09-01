@@ -88,7 +88,7 @@ class RecoveryRestartE2E(unittest.TestCase):
 
     def test_13_corrupt_provenance_load_fails_before_reconcile(self):
         with tempfile.TemporaryDirectory() as d:
-            p,e=self.base(); self.r=SQLiteProjectRepository(d); self.r.save(p,[e]); self.r.db.execute("PRAGMA foreign_keys=OFF"); self.r.db.execute("INSERT INTO transitions VALUES ('p','e','c1','c1','bad','o',0,1)"); self.r.close(); self.r=SQLiteProjectRepository(d); self.assertRaises(PersistenceDataError,self.r.load,p.id)
+            p,e=self.base(); self.r=SQLiteProjectRepository(d); self.r.save(p,[e]); self.r.db.execute("PRAGMA foreign_keys=OFF"); self.r.db.execute("INSERT INTO transitions (project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", ('p','e','c1','c1','bad','o',0,1,None,None,None,None)); self.r.close(); self.r=SQLiteProjectRepository(d); self.assertRaises(PersistenceDataError,self.r.load,p.id)
 
     def test_14_restart_reconcile_idempotent_and_pure(self):
         with tempfile.TemporaryDirectory() as d:

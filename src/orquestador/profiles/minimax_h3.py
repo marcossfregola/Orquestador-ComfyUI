@@ -10,11 +10,17 @@ class MalformedWorkflowError(WorkflowProfileError): pass
 class IncompatibleWorkflowError(MalformedWorkflowError): pass
 class WorkflowHashMismatchError(IncompatibleWorkflowError): pass
 H3_CANONICAL_SHA256='3070EB659A0BDBEB3D8392B0D203F6B4B86409709A20143280473A12C44BA4A7'
-H3_API_TEMPLATE_SHA256='CDD5C56963BC3CA626ADA678AA9FE6F73046B238BF9D9C8BBE80E3D9173496B9'
+H3_API_TEMPLATE_SHA256='4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25'
 H3_PROFILE=WorkflowProfile('minimax-h3-ui','1.0.0')
+H3_MAX_RESOLUTION=16384
+NO_CROP_BOUNDING_BOX=MappingProxyType({'x':0,'y':0,'width':H3_MAX_RESOLUTION,'height':H3_MAX_RESOLUTION})
+# Explicitly opt-in development/test profile.  It is applied to a copied API
+# prompt at start time and is never persisted as an execution/user default.
+FAST_E2E_CONFIG=MappingProxyType({'length':56,'megapixels':0.09,'steps':4})
 _T={92:'SaveVideo',114:'LoadImage',119:'ImageScaleToTotalPixels',120:'GetImageSize',127:'ImageCropV2',129:'MiniMaxH3HybridRefAndKeyframe',136:'CLIPLoader',137:'VAELoader',138:'VAELoader',139:'UNETLoader',142:'BasicGuider',143:'SamplerCustomAdvanced',144:'RandomNoise',145:'KSamplerSelect',146:'BasicScheduler',147:'VAEDecode',148:'CreateVideo',**{i:'LoadImage' for i in(130,131,132,150,151,152)},**{i:'ImageCropV2' for i in(133,134,135,153,154,155)},**{i:'ImageScaleToMaxDimension' for i in range(156,162)}}
 H3_NODE_TYPES=MappingProxyType(_T); REQUIRED_REFS=tuple(f'ref_images.ref_image_{i}' for i in range(7))
-H3_BINDINGS=MappingProxyType({'prompt':(129,'prompt'),'first_frame':(129,'first_frame'),'width':(129,'width'),'height':(129,'height'),'length':(129,'length'),'ref_image_size':(129,'ref_image_size'),'also_ref_first_frame':(129,'also_ref_first_frame'),'fps':(148,'fps'),'output':(92,'video'),'ref_images':tuple((129,f'ref_images.ref_image_{i}') for i in range(6))})
+_API_LINKS=MappingProxyType({'92.video':['148',0],'119.image':['127',0],'120.image':['119',0],'127.image':['114',0],'129.width':['120',0],'129.height':['120',1],'129.clip':['136',0],'129.vae':['137',0],'129.audio_vae':['138',0],'129.first_frame':['119',0],**{f'129.ref_images.ref_image_{i}':[str(x),0] for i,x in enumerate((156,157,158,159,161,160))},'133.image':['130',0],'134.image':['131',0],'135.image':['132',0],'142.model':['139',0],'142.conditioning':['129',0],'143.noise':['144',0],'143.guider':['142',0],'143.sampler':['145',0],'143.sigmas':['146',0],'143.latent_image':['129',1],'146.model':['139',0],'147.samples':['143',0],'147.vae':['137',0],'148.images':['147',0],'153.image':['150',0],'154.image':['151',0],'155.image':['152',0],'156.image':['133',0],'157.image':['134',0],'158.image':['135',0],'159.image':['153',0],'160.image':['155',0],'161.image':['154',0]})
+H3_BINDINGS=MappingProxyType({'prompt':(129,'prompt'),'first_frame':(114,'image'),'width':(129,'width'),'height':(129,'height'),'length':(129,'length'),'ref_image_size':(129,'ref_image_size'),'also_ref_first_frame':(129,'also_ref_first_frame'),'fps':(148,'fps'),'output':(92,'video'),'ref_images':tuple((n,'image') for n in (130,131,132,150,151,152))})
 _L=((314,114,0,127,0,'IMAGE'),(315,127,0,119,0,'IMAGE'),(251,119,0,120,0,'IMAGE'),(259,119,0,129,3,'IMAGE'),(263,120,0,129,15,'INT'),(264,120,1,129,16,'INT'),(301,133,0,156,0,'IMAGE'),(302,156,0,129,5,'IMAGE'),(303,134,0,157,0,'IMAGE'),(304,157,0,129,6,'IMAGE'),(305,135,0,158,0,'IMAGE'),(306,158,0,129,7,'IMAGE'),(307,153,0,159,0,'IMAGE'),(310,159,0,129,8,'IMAGE'),(308,154,0,161,0,'IMAGE'),(311,161,0,129,9,'IMAGE'),(309,155,0,160,0,'IMAGE'),(312,160,0,129,10,'IMAGE'),(271,136,0,129,0,'CLIP'),(275,137,0,129,1,'VAE'),(274,138,0,129,2,'VAE'),(281,139,0,142,0,'MODEL'),(282,129,0,142,1,'CONDITIONING'),(283,142,0,143,1,'GUIDER'),(284,144,0,143,0,'NOISE'),(285,145,0,143,2,'SAMPLER'),(286,139,0,146,0,'MODEL'),(287,146,0,143,3,'SIGMAS'),(288,129,1,143,4,'LATENT'),(289,143,0,147,0,'LATENT'),(291,137,0,147,1,'VAE'),(292,147,0,148,0,'IMAGE'),(293,148,0,92,0,'VIDEO'))
 @dataclass(frozen=True,slots=True)
 class CompatibilityReport: profile:WorkflowProfile; sha256:str; node_ids:tuple; link_ids:tuple
@@ -65,19 +71,75 @@ def validate_static_compatibility(raw, expected_sha256=H3_CANONICAL_SHA256):
  except Exception as e: raise MalformedWorkflowError('invalid workflow JSON','workflow.invalid_json') from e
  return validate_ui_workflow_structure(d, verified_sha256=digest)
 
-def _validate_api_template(d):
- if not isinstance(d,dict) or set(d)!= {'129','148','92'}: raise IncompatibleWorkflowError('API template node set mismatch','template.shape')
- expected={ '129':'MiniMaxH3HybridRefAndKeyframe','148':'CreateVideo','92':'SaveVideo' }
- for k,cls in expected.items():
-  n=d.get(k)
+_BOUND_MUTABLE_KEYS=frozenset({'114.image',*(f'{n}.image' for n in (130,131,132,150,151,152)),'129.prompt','129.width','129.height','129.length','129.ref_image_size','129.also_ref_first_frame','148.fps'})
+
+def _validate_api_template(d, *, bound=False):
+ if not isinstance(d,dict) or set(d)!=set(map(str,H3_NODE_TYPES)): raise IncompatibleWorkflowError('API template node set mismatch','template.shape')
+ for k,cls in H3_NODE_TYPES.items():
+  n=d.get(str(k))
   if not isinstance(n,dict) or n.get('class_type')!=cls or not isinstance(n.get('inputs'),dict): raise IncompatibleWorkflowError('API template class/input mismatch','template.class')
  ins=d['129']['inputs']; req={'prompt','first_frame','width','height','length','ref_image_size','also_ref_first_frame','clip','vae','audio_vae',*(f'ref_images.ref_image_{i}' for i in range(6))}
- if set(ins)!=req: raise IncompatibleWorkflowError('API template input set mismatch','template.inputs')
- if d['148']['inputs'].get('images')!=['147',0] or d['148']['inputs'].get('fps') is None or d['148']['inputs'].get('bit_depth') is None: raise IncompatibleWorkflowError('CreateVideo structure mismatch','template.create_video')
- save=d['92']['inputs']
- if save.get('video')!=['148',0] or not all(k in save for k in ('filename_prefix','format','codec')): raise IncompatibleWorkflowError('SaveVideo structure mismatch','template.save_video')
- if not all(isinstance(ins[x],(str,int,bool,list)) for x in req): raise IncompatibleWorkflowError('API template input shape mismatch','template.input_shape')
+ if not req.issubset(ins): raise IncompatibleWorkflowError('API template input set mismatch','template.inputs')
+ if d['127']['inputs'].get('crop_region') != dict(NO_CROP_BOUNDING_BOX):
+  raise IncompatibleWorkflowError('first-frame crop must preserve the full image','template.first_frame_crop')
+ if d['148']['inputs'].get('images')!=['147',0] or d['92']['inputs'].get('video')!=['148',0]: raise IncompatibleWorkflowError('API chain mismatch','template.chain')
+ # Every canonical link must resolve locally; only [node_id, slot] pairs are links.
+ for consumer_id,node in d.items():
+  for input_name,value in node['inputs'].items():
+   if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and type(value[1]) is int and value[0] in d:
+    source=value[0]; slot=value[1]
+    if slot < 0: raise IncompatibleWorkflowError(f'invalid link: {consumer_id}.{input_name} -> {source}[{slot}]','template.link')
+   elif isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and type(value[1]) is int and value[0] not in d:
+    raise IncompatibleWorkflowError(f'dangling link: {consumer_id}.{input_name} -> {value[0]}[{value[1]}]','template.dangling_link',{'consumer':consumer_id,'input':input_name,'source':value[0]})
+   key=f'{consumer_id}.{input_name}'
+   if key in _API_LINKS and value != _API_LINKS[key] and not (bound and key in _BOUND_MUTABLE_KEYS): raise IncompatibleWorkflowError(f'canonical link mismatch: {key}','template.topology')
+ present={f'{i}.{k}' for i,n in d.items() for k,v in n['inputs'].items() if isinstance(v,list) and len(v)==2 and isinstance(v[0],str) and type(v[1]) is int}
+ expected_links=set(_API_LINKS)
+ if bound:
+  expected_links={k for k in expected_links if not (k in _BOUND_MUTABLE_KEYS and d[k.split('.',1)[0]]['inputs'][k.split('.',1)[1]] != _API_LINKS[k])}
+ if present != expected_links: raise IncompatibleWorkflowError('canonical link set mismatch','template.topology')
+ # Recursive closure from SaveVideo, fail-closed on malformed link shape.
+ seen=set(); stack=['92']
+ if bound:
+  for key in _BOUND_MUTABLE_KEYS:
+   if key in _API_LINKS:
+    node_id,input_name=key.split('.',1)
+    if d[node_id]['inputs'].get(input_name)!=_API_LINKS[key]:
+     stack.append(_API_LINKS[key][0])
+ while stack:
+  current=stack.pop()
+  if current in seen: continue
+  seen.add(current)
+  for name,value in d[current]['inputs'].items():
+   if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and type(value[1]) is int:
+    if value[0] not in d: raise IncompatibleWorkflowError(f'dangling link: {current}.{name} -> {value[0]}[{value[1]}]','template.dangling_link')
+    stack.append(value[0])
+ if seen != set(d): raise IncompatibleWorkflowError('API graph is not closed from output 92','template.closure')
+ if bound:
+  def _placeholders(value, path=''):
+   if isinstance(value,str) and '__ORQ_' in value: return [(path,value)]
+   if isinstance(value,dict):
+    out=[]
+    for k,v in value.items(): out.extend(_placeholders(v,f'{path}.{k}' if path else str(k)))
+    return out
+   if isinstance(value,list):
+    out=[]
+    for i,v in enumerate(value): out.extend(_placeholders(v,f'{path}[{i}]'))
+    return out
+   return []
+  leftovers=[x for x in _placeholders(d) if x[1] != '__ORQ_FIRST_FRAME__']
+  if leftovers: raise WorkflowProfileError('unbound ORQ placeholders','binding.placeholders',{'placeholders':tuple(x[0] for x in leftovers)})
  return d
+
+def configure_fast_e2e(api_prompt):
+ """Return a non-persistent, explicitly opt-in fast development prompt."""
+ _validate_api_template(api_prompt)
+ out=json.loads(json.dumps(api_prompt))
+ out['119']['inputs']['megapixels']=FAST_E2E_CONFIG['megapixels']
+ out['129']['inputs']['length']=FAST_E2E_CONFIG['length']
+ out['146']['inputs']['steps']=FAST_E2E_CONFIG['steps']
+ _validate_api_template(out)
+ return out
 
 def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, **values):
  """Return a copy of the API prompt with only declared H3 inputs overridden."""
@@ -89,10 +151,26 @@ def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, *
  for k,v in values.items():
   if k not in allowed: raise WorkflowProfileError(f'unsupported H3 binding: {k}','binding.unsupported')
   if k=='fps': out['148']['inputs']['fps']=v
+  elif k=='first_frame': out['114']['inputs']['image']=v
   else: ins[k]=v
  if references is not None:
   if not isinstance(references,(list,tuple)) or len(references)!=6: raise WorkflowProfileError('exactly six reference images required','binding.references')
-  for i,v in enumerate(references): ins[f'ref_images.ref_image_{i}']=v
+  for i,v in enumerate(references): out[str((130,131,132,150,151,152)[i])]['inputs']['image']=v
+ _validate_api_template(out, bound=True)
+ return out
+
+def rebind_first_frame(bound_prompt, first_frame):
+ """Copy an H3 API prompt and replace its authoritative first-frame input."""
+ _validate_api_template(bound_prompt, bound=True)
+ if not isinstance(first_frame, str) or not first_frame.strip():
+  raise WorkflowProfileError('first_frame must be a nonblank path','binding.first_frame')
+ out=json.loads(json.dumps(bound_prompt))
+ node_id, input_name = H3_BINDINGS['first_frame']
+ node=out.get(str(node_id))
+ if not isinstance(node,dict) or not isinstance(node.get('inputs'),dict) or input_name not in node['inputs']:
+  raise IncompatibleWorkflowError('authoritative first_frame binding missing','binding.first_frame')
+ node['inputs'][input_name]=first_frame
+ _validate_api_template(out, bound=True)
  return out
 
 def load_api_template(path=None):

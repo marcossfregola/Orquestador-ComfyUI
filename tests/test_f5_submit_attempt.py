@@ -4,6 +4,7 @@ from pathlib import Path
 from orquestador.domain import Project, ProjectId, Execution, ExecutionId, Chunk, ChunkId, BackendJobRef, Lifecycle, OutputRef, Evidence
 from orquestador.application import SubmitAttemptUseCase, SubmitOutcome, ComfyUIJobBridge
 from orquestador.persistence.sqlite import SQLiteProjectRepository, PersistenceError
+from orquestador.adapters.http import ComfyUIRejectedError, ComfyUIProtocolError
 
 class FakeClient:
     def __init__(self, result=None, error=None): self.result, self.error, self.calls, self.seen = result, error, 0, None
@@ -21,6 +22,14 @@ class PreSubmitFailure:
 class SubmitAttemptTests(unittest.TestCase):
     def make(self, repo):
         p=Project(ProjectId('p')); e=Execution(p.id,ExecutionId('e')); c=Chunk(ChunkId('c')); e.add_chunk(c); return p,e,c
+
+    def test_structured_rejection_and_protocol_are_precise_and_durable(self):
+        for error, outcome, marker in ((ComfyUIRejectedError('bad', 422, '{"error":"x"}'), SubmitOutcome.REJECTED, 'status=422'), (ComfyUIProtocolError('missing prompt_id'), SubmitOutcome.PROTOCOL_FAILED, 'protocol_failure')):
+            with tempfile.TemporaryDirectory() as d:
+                r=SQLiteProjectRepository(d); p,e,c=self.make(r); cl=FakeClient(error=error)
+                x=SubmitAttemptUseCase(r,cl).submit(p,e,'c',{'observe':lambda:None})
+                self.assertEqual(x.outcome,outcome); self.assertIn(marker,x.error); self.assertEqual(cl.calls,1)
+                self.assertIsNone(r.load('p')[1][0].chunks[0].attempts[0].external_job_ref); r.close()
     def test_durable_before_submit_and_reload(self):
         with tempfile.TemporaryDirectory() as d:
             r=SQLiteProjectRepository(d); p,e,c=self.make(r); client=FakeClient(BackendJobRef('j'))

@@ -93,10 +93,26 @@ Las etapas anteriores pueden haber usado harnesses técnicos descartables o una 
 
 F9 entrega una GUI PySide6 lanzable con raíz de composición/entrypoint, fachada de aplicación, workers en segundo plano y preparación de inputs. La fachada conecta start/resume/recover/retry/cancel/assemble con los casos de uso existentes; expone snapshot durable y capability flags, falla cerradamente ante configuración o selección ambigua y no inventa ETA ni progreso. Retry conserva Attempt 1 fallido, crea como máximo Attempt 2 y respeta presupuesto. Assembly pasa por la frontera F8 y cancelación resuelve un único target durable fallando cerradamente si no es seguro. Widgets no acceden directamente a persistencia, ComfyUI ni FFmpeg; el cableado queda en la raíz de composición.
 
-Invocación verificada: `python -m orquestador --project-root <absolute-directory> [--comfyui-endpoint <url>] [--workflow-template <absolute-file>] [--ffmpeg <command>] [--ffprobe <command>]`; `--project-root` es obligatorio y absoluto. Evidencia: composición 12/12; F9 restante 5/5; frontera histórica 3/3; F6/F7 47/47; F5/F8 51/51; completa 460/460; syntax/diff/temp harness PASS. **HUMAN VISUAL VALIDATION NOT PERFORMED** y **REAL COMFYUI E2E NOT PERFORMED**; corresponden a F10.
+Invocación verificada: `python -m orquestador --project-root <absolute-directory> [--comfyui-endpoint <url>] [--workflow-template <absolute-file>] [--ffmpeg <command>] [--ffprobe <command>]`; `--project-root` es obligatorio y absoluto. Evidencia de cierre F9 en ese checkpoint: composición 12/12; F9 restante 5/5; frontera histórica 3/3; F6/F7 47/47; F5/F8 51/51; completa 460/460; syntax/diff/temp harness PASS. En ese momento **HUMAN VISUAL VALIDATION NOT PERFORMED** y **REAL COMFYUI E2E NOT PERFORMED**; la evidencia actual de F10 queda registrada abajo.
 
 ## F10 — Validación real y cierre
 
 Ejecutar E2E, escenarios de fallo y recovery, continuidad visual, UX, rendimiento, instalación cuando corresponda y cierre formal del primer release.
 
-F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7: **CLOSED — APPROVED**. F8: **CLOSED — APPROVED**. F9: **CLOSED — APPROVED WITH OBSERVATIONS**. F10: **NOT STARTED**.
+F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7: **CLOSED — APPROVED**. F8: **CLOSED — APPROVED**. F9: **CLOSED — APPROVED WITH OBSERVATIONS**. F10: **CLOSED — APPROVED** (2026-09-01; `HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`).
+
+### Evidencia técnica F10 (2026-09-01)
+
+Se ejecutó el camino público/composed `facade.prepare` → `facade.start_chain` con dos chunks contra ComfyUI real `0.33.0` en `127.0.0.1:8188`. La corrida y sus capturas están en `C:\Codex\Orquestador-ComfyUI-F10-runtime\codex-local-final-f10\e2e-20260901T184920Z-8ee4f1e6`. Se materializaron exactamente siete inputs estáticos, todos con `overwrite=false`; el chunk 0 usó el initial efectivo `orquestador/static/initial-9c5b54673dfd0cf7.png`, y el chunk 1 reutilizó las seis referencias y recibió la transición efectiva `orquestador/transitions/transition-52b5ac2a-0d2e-4e54-bc7c-2a79314f87e8-ff3326b0fd903e2f.png`.
+
+Los prompt IDs fueron `abea6078-1983-4dc7-80bd-70f25f920ed2` y `a3a2510f-a9ac-45e8-b5e1-e57c58d7a0f8`, cada uno con un único submit. Ambos histories terminaron `success` y resolvieron el descriptor real de SaveVideo node 92 (`images[{filename,subfolder,type=output}]`). Los MP4 se importaron bajo el proyecto sin escapar de la raíz, conservaron SHA-256 fuente/importado, y FFprobe confirmó H.264 800×800, 24 fps y 294 frames. El frame de transición es exactamente N-1 (`293/294`), se persistió con `MaterializedInputRef` y se reusó tras reopen.
+
+La generación H3 superó el deadline de orquestación configurado de 1800 s en ambos chunks; el contrato fail-closed mantuvo cada `external_job_ref` y no reintentó ni reenvió. La recuperación pública observó esos mismos IDs una vez terminales, completó/importó ambos chunks y el reopen final quedó `succeeded`: exactamente dos jobs aceptados, cero tercero y ningún reupload estático innecesario. El ensamblado no pertenece al alcance decisivo de F10 en las autoridades vigentes: `ASSEMBLY_STATUS=NOT_APPLICABLE_TO_F10`. La validación visual humana posterior aprobó la continuidad; F11 no se inició.
+
+### Corrección de seam y prueba FAST (posterior)
+
+El run anterior mostró causa C: `ImageCropV2` node 127 interpretaba `crop_region={}` como 512×512 desde `(0,0)` antes de reescalar en node 119. El perfil mantiene la topología y usa un bounding box explícito 16384×16384 para conservar el frame completo. El E2E FAST de control (`C:\Codex\Orquestador-ComfyUI-F10-runtime\seam-fast-e2e\fast-20260901T223000Z`) ejecutó el mismo camino público con `fast_e2e=True` sin persistir cambios: 0.09 MP, 56 frames y 4 steps, frente a los defaults normales 0.6 MP, 294 frames y 20 steps. Terminó en 57,0 s, con 7 uploads estáticos + 1 transición, 2 submits exactos y estado durable `succeeded`.
+
+La comparación guardada demuestra node 127 pixel-idéntico a `TRANSITION_INPUT.png` y el frame N-1 de chunk 0 byte/pixel idéntico a esa transición. El frame 0 de chunk 1 conserva 352×256 pero no es pixel-idéntico (PSNR 29,846985 dB; MSE 67,356863; media absoluta 6,431763). La causa C de pipeline quedó corregida; la diferencia D del modelo queda aceptada como limitación conocida del backend H3, no como defecto pendiente del Orquestador. La continuidad visual fue aprobada (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`) y F11 permanece sin iniciar.
+
+El control de codec separado dio PSNR 40,894518 dB y media absoluta 1,772694, por debajo de la diferencia observada en el frame 0; la clasificación D no depende sólo del round-trip H.264.
