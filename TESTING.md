@@ -200,4 +200,6 @@ Contrato F8: >=2 chunks, MP4, copy sólo con firmas compatibles, fallback explí
 
 Auditoría aprobada `orquestador-f8-evidence-audit-037`: FFmpeg y FFprobe reales 8.1.1; copy PASS a `out copy's file.mp4` (2640 bytes, ffprobe válido) y reencode PASS a `out reencode's file.mp4` (1875 bytes, ffprobe válido), con nombres con espacios y apóstrofes. Fuente sin cambios; destino existente y carrera preservados sin overwrite; probe pre-publicación fallido sin destino; destinos unsupported/suffixless rechazados; temporales propios limpiados y sentinel preservado. F8 focused **6/6 PASS**, suite completa **443/443 PASS**, compileall PASS y `git diff --check` PASS. No hubo validación visual humana ni E2E ComfyUI; no eran requeridos para esta slice técnica.
 
-F8: **CLOSED — APPROVED**. F9: **NOT STARTED**.
+F8: **CLOSED — APPROVED**. F9: **CLOSED — APPROVED WITH OBSERVATIONS**. F10: **NOT STARTED**.
+
+Auditoría independiente 056: composición **12/12**, otras F9 **5/5**, frontera histórica **3/3**, F6/F7 **47/47**, F5/F8 **51/51**, discovery completa **460/460**; syntax check, `git diff --check` y harness temporal externo PASS. No se realizó validación visual humana ni E2E real de ComfyUI; quedan para F10.

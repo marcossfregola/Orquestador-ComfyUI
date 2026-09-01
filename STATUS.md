@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-08-31
-**Fase:** F8 — ensamblado final **CLOSED — APPROVED** (evidencia `orquestador-f8-evidence-audit-037`); F9 **NOT STARTED**
+**Fase:** F9 — GUI del primer release **CLOSED — APPROVED WITH OBSERVATIONS** (auditoría independiente 056); F10 **NOT STARTED**
 **Estado:** F3 overall **CLOSED / COMPLETED; LIVE VALIDATED**; F4 **CLOSED — APPROVED**; F5 **CLOSED — APPROVED**; F6 **CLOSED — APPROVED** (2026-08-30); F7 **CLOSED — APPROVED** (2026-08-31).
 
 ## Fotografía viva
@@ -68,7 +68,7 @@ F6 **CLOSED — APPROVED** después de pasar la suite enfocada `python -B -m uni
 
 Implementado: reapertura SQLite y reconciliación; recuperación de `Attempt` y `external_job_ref`; estados backend `QUEUED`, `RUNNING`, `COMPLETED` y `FAILED`; persistencia durable del error; retry único con segundo Attempt y sin Attempt 3; preservación de IDs/referencias; output/evidence, `Artifact` `OUTPUT`, `TransitionFrame` N-1; y resumes repetidos idempotentes con comportamiento fail-closed ante inconsistencias.
 
-Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. El ensamblado y la recuperación/orquestación E2E contra ComfyUI real quedan fuera del cierre F7; F8 se cerró posteriormente y F9 sigue NOT STARTED.
+Probado automáticamente con SQLite real (save → close → nueva instancia → reopen), mocks de backend y la frontera de completion F5. No se ejecutó una nueva generación ni un E2E real contra ComfyUI, y no hubo validación visual. El ensamblado y la recuperación/orquestación E2E contra ComfyUI real quedan fuera del cierre F7; F8 se cerró posteriormente y F9 se cerró documentalmente el 2026-08-31.
 
 ## Pendiente para fases posteriores
 
@@ -78,7 +78,7 @@ Probado automáticamente con SQLite real (save → close → nueva instancia →
 - Chaining de mayor longitud, ensamblado productivo y pruebas de fallo.
 - F2: **CLOSED — APPROVED** (cierre 2026-08-28).
 - F4: implementación del perfil H3, bindings centralizados, artefactos canónicos sanitizados y fixture durable versionado completados; **CLOSED — APPROVED**. La validación estática contra bytes canónicos y las suites de cierre quedaron en verde; no se afirma una nueva ejecución de generación ni validación visual.
-- F9: GUI. La validación backend-real/E2E y visual permanece fuera de F8.
+- F9: **CLOSED — APPROVED WITH OBSERVATIONS**. GUI PySide6 lanzable, composición/entrypoint, fachada, workers, snapshot durable/capabilities y acciones conectadas; retry conserva Attempt 1 y limita a Attempt 2; assembly cruza la frontera F8; cancelación fail-closed. Evidencia: composición 12/12, F9 restante 5/5, histórica 3/3, F6/F7 47/47, F5/F8 51/51, completa 460/460; syntax/diff/temp harness PASS. No se realizó validación visual humana ni E2E real de ComfyUI; F10 sigue NOT STARTED.
 
 ## F8 — ensamblado final
 

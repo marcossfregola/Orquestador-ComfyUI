@@ -89,8 +89,14 @@ Construir la UI de producto sobre el núcleo probado: preparación, preflight, e
 
 Las etapas anteriores pueden haber usado harnesses técnicos descartables o una cáscara mínima para probar threading, cancelación, progreso o integración desktop. Eso no invalida ni reemplaza la UI final.
 
+**Estado:** **CLOSED — APPROVED WITH OBSERVATIONS** (auditoría independiente 056; cierre documental 2026-08-31).
+
+F9 entrega una GUI PySide6 lanzable con raíz de composición/entrypoint, fachada de aplicación, workers en segundo plano y preparación de inputs. La fachada conecta start/resume/recover/retry/cancel/assemble con los casos de uso existentes; expone snapshot durable y capability flags, falla cerradamente ante configuración o selección ambigua y no inventa ETA ni progreso. Retry conserva Attempt 1 fallido, crea como máximo Attempt 2 y respeta presupuesto. Assembly pasa por la frontera F8 y cancelación resuelve un único target durable fallando cerradamente si no es seguro. Widgets no acceden directamente a persistencia, ComfyUI ni FFmpeg; el cableado queda en la raíz de composición.
+
+Invocación verificada: `python -m orquestador --project-root <absolute-directory> [--comfyui-endpoint <url>] [--workflow-template <absolute-file>] [--ffmpeg <command>] [--ffprobe <command>]`; `--project-root` es obligatorio y absoluto. Evidencia: composición 12/12; F9 restante 5/5; frontera histórica 3/3; F6/F7 47/47; F5/F8 51/51; completa 460/460; syntax/diff/temp harness PASS. **HUMAN VISUAL VALIDATION NOT PERFORMED** y **REAL COMFYUI E2E NOT PERFORMED**; corresponden a F10.
+
 ## F10 — Validación real y cierre
 
 Ejecutar E2E, escenarios de fallo y recovery, continuidad visual, UX, rendimiento, instalación cuando corresponda y cierre formal del primer release.
 
-F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7: **CLOSED — APPROVED**. F8: **CLOSED — APPROVED**. F9: **NOT STARTED**.
+F5: **CLOSED — APPROVED**. Slices 1–4A completadas/auditadas. F6: **CLOSED — APPROVED**. F7: **CLOSED — APPROVED**. F8: **CLOSED — APPROVED**. F9: **CLOSED — APPROVED WITH OBSERVATIONS**. F10: **NOT STARTED**.

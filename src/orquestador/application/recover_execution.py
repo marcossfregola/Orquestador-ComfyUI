@@ -181,3 +181,29 @@ class ResumeExecutionUseCase:
             expected_target = None if i == len(e.chunks)-1 else str(e.chunks[i+1].id)
             if (str(t.target_chunk_id) if t.target_chunk_id is not None else None) != expected_target: return False
         return True
+
+class RetryExecutionUseCase:
+    """Explicit retry seam enforcing the durable one-retry boundary.
+
+    The normal resume route reconciles active executions.  This route is only
+    entered for a durably failed execution/chunk with exactly Attempt 1
+    failed; it then delegates orchestration to the existing resume primitive.
+    """
+    def __init__(self, repository, resume):
+        self.repository, self.resume_usecase = repository, resume
+
+    def retry(self, project_id, execution_id=None, **kwargs):
+        project, executions = self.repository.load(project_id)
+        matches = [e for e in executions if execution_id is None or str(e.id) == str(execution_id)]
+        if len(matches) != 1:
+            raise ValueError("execution selection is ambiguous or missing")
+        execution = matches[0]
+        chunk = next((c for c in execution.chunks if c.state is Lifecycle.FAILED), None)
+        if execution.state is not Lifecycle.FAILED or chunk is None or len(chunk.attempts) != 1:
+            raise ValueError("retry requires a durably failed execution with exactly one failed attempt")
+        attempt = chunk.attempts[-1]
+        if attempt.state is not Lifecycle.FAILED:
+            raise ValueError("retry requires a failed Attempt 1")
+        # ResumeExecutionUseCase performs the existing F6 backend observation,
+        # durable Attempt 2 creation, budget enforcement, and completion flow.
+        return self.resume_usecase.resume(project_id, execution_id, **kwargs)
