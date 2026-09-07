@@ -136,9 +136,19 @@ Antes de modificar funcionalidad de producto:
 - identificar qué controles ya existen y cuáles faltan;
 - definir archivos afectados, pruebas y criterios de aceptación antes de implementar.
 
+Decisiones formalizadas para el diseño de F11:
+
+- existe un único contrato conceptual `GenerationConfig`, compartido por GUI, aplicación y profile/bindings; la GUI no mantiene una segunda lógica de defaults o validación;
+- se conserva la precedencia `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk, y cada ejecución guarda un snapshot durable de su configuración efectiva;
+- F11.1 exige imagen inicial, exactamente seis referencias H3, 2 o 3 chunks y un prompt no vacío por chunk;
+- F11.1 expone resolución mediante una única política de megapíxeles, además de `length`, `steps` y FPS; los destinos, defaults y la distinción externa/interna de `first_frame` son autoridad de [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md);
+- width/height siguen siendo derivados por el workflow y no se crea una política manual concurrente; la forma de scopes, snapshot y validación es autoridad de [DATA_MODEL.md](DATA_MODEL.md);
+- seed, sampler, scheduler, IA y demás backlog quedan fuera; `ref_image_size` y `also_ref_first_frame` usan defaults sin controles hasta F11.3;
+- los overrides por chunk sólo existen para parámetros autorizados explícitamente y no agregan complejidad innecesaria al primer video usable.
+
 **Criterio de cierre:** contrato de configuración explícito y reutilizable, sin segunda lógica paralela en la UI y sin cambios innecesarios del núcleo ya validado.
 
-**Estado:** **APPROVED / NOT STARTED**.
+**Estado:** **CLOSED — APPROVED** como decisión documental/contractual. La implementación de F11.1 permanece sin iniciar.
 
 ### F11.1 — Primera GUI realmente utilizable para generar
 
@@ -153,7 +163,7 @@ Exponer desde la aplicación Windows el conjunto mínimo que permita producir un
 - mostrar estado real `chunk X/N` y fase verificable;
 - obtener los chunks generados y poder crear el resultado final mediante la frontera F8 existente.
 
-Los parámetros todavía no expuestos usan defaults conocidos y validados; no se crean controles ficticios para bindings que H3 no soporte.
+La configuración de resolución usa exclusivamente megapíxeles del node 119; width y height son derivados por el workflow. Los parámetros todavía no expuestos usan defaults conocidos y validados; no se crean controles ficticios para bindings que H3 no soporte. F11.1 no agrega edición avanzada de overrides por chunk.
 
 **Criterio de cierre:** desde Windows, el usuario abre la aplicación, prepara únicamente desde la GUI una generación real de dos chunks, la ejecuta de inicio a fin contra ComfyUI, obtiene los outputs y el resultado final, sin consola ni edición manual de configuración. Requiere pruebas automáticas pertinentes, ejecución real, auditoría y validación humana.
 

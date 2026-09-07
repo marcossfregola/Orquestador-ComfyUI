@@ -120,6 +120,20 @@ La corrección F10 conserva esa frontera y el grafo existente: `node 114 → nod
 
 El E2E FAST confirmó que node 127 recibe y devuelve la transición completa pixel a pixel. El frame 0 que produce H3 sigue siendo distinto (aunque con dimensiones iguales): la alteración generativa residual se acepta como limitación conocida del backend H3, no como defecto pendiente del Orquestador. La arquitectura queda técnicamente corregida en C y la continuidad visual fue aprobada humanamente (`VISUAL_CONTINUITY=APPROVED`).
 
+## F11.0 — contrato único de configuración (diseño aprobado)
+
+F11 utiliza un único contrato conceptual de configuración de generación, `GenerationConfig`, compartido por la GUI y la aplicación. El flujo obligatorio es:
+
+```text
+GUI → GenerationConfig → casos de uso/aplicación → Workflow Profile/bindings H3 → adaptador ComfyUI
+```
+
+La GUI sólo captura y presenta valores del contrato. No duplica defaults, validación, herencia ni bindings, y no accede directamente a persistencia, ComfyUI ni FFmpeg. Los detalles de scopes y precedencia son autoridad de [DATA_MODEL.md](DATA_MODEL.md); los valores y destinos H3 son autoridad de [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md).
+
+Se conserva la precedencia `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk. La ejecución guarda un snapshot durable de la configuración elegida para esa corrida; el prompt pertenece al chunk y los overrides por chunk sólo pueden existir para parámetros autorizados explícitamente por el contrato. Editar el proyecto no reescribe una ejecución histórica.
+
+F11.0 queda cerrado como decisión documental y contractual. La implementación de la primera GUI utilizable pertenece exclusivamente a F11.1, que todavía no se inicia.
+
 ## F5 — Contrato de orquestación de un chunk
 
 Corrección contractual F5: `orchestration_timeout_seconds` se resuelve antes de cada Attempt desde defaults JSON (entero, bool inválido, `>0`, default 1800; merge proyecto→ejecución→chunk con override de chunk permitido); Attempt no tiene options. Timeout no-retryable fail-closed. `CANCELLED` nunca auto-retry F5 aunque F2 pueda clasificarlo `RETRY_CURRENT_CHUNK`/`CREATE_NEW_ATTEMPT`; no redefine F2/F6. `prompt_id` usa sólo `Attempt.external_job_ref`/`attempts.external_job_ref`, sin columna nueva: persistir sin ref→submit→validar BackendJobRef no vacío→asignar una vez→persistir inmediatamente. Incertidumbre nunca reenvía; job observado durable es ref persistida más evidencia correlacionada.

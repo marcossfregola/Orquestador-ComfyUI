@@ -49,12 +49,40 @@ El contrato observado del primer perfil H3 incluye, dentro del adaptador/profile
 - `LoadImage` node 114 → `ImageCropV2` 127 → `ImageScaleToTotalPixels` 119 → `GetImageSize` 120 → `MiniMaxH3HybridRefAndKeyframe` 129 `first_frame`;
 - `width` y `height` de H3 permanecen enlazados a las salidas 0 y 1 de node 120;
 - `ref_images.ref_image_0..5` son seis slots densos, ordenados y conectados a los escalados correspondientes;
-- `prompt`, `length`, FPS y `ref_image_size` se inyectan en sus inputs API reales; steps, seed, sampler y scheduler permanecen en nodos separados y no son bindings H3 del perfil F4;
+- `prompt`, `length`, FPS y `ref_image_size` se inyectan en sus inputs API reales; el baseline F4 no exponía `steps`, pero F11.0 lo promueve como binding público F11.1 hacia node 146 `steps`; seed, sampler y scheduler permanecen fuera de la superficie pública;
 - node 92 `SaveVideo` expone el descriptor `filename/subfolder/type` usado para resolver el output.
 
 Estos IDs y nombres son evidencia del profile H3 instalado; no deben filtrarse al dominio.
 
 Un cambio incompatible del workflow debe fallar durante preflight, antes de iniciar una sesión larga, con un error claro. La decisión de diseño F1 queda registrada: un Workflow Profile/manifest versionado y autocontenido, con bindings declarativos y validación de compatibilidad en preflight; los IDs de nodo y `class_type` quedan aislados detrás del profile/adapter; la correlación determinista de outputs usa `prompt_id`/history y el descriptor de `SaveVideo`. El esquema formal, las pruebas de compatibilidad y la implementación del profile F4 están **CLOSED — APPROVED**; la frontera del adaptador consumidor de ComfyUI permanece en F3.
+
+## Contrato H3 aprobado para F11.1
+
+F11.0 formaliza la superficie mínima que la GUI puede configurar. El contrato de aplicación debe traducir estos conceptos mediante el profile H3, sin exponer IDs de nodos a la UI:
+
+| Concepto | Destino efectivo | Alcance F11.1 |
+| --- | --- | --- |
+| `prompt` | node 129 `prompt` | Público |
+| `first_frame` externo | node 114 `image` | Público; lo materializa el Orquestador |
+| `ref_image_0..5` | nodes 130, 131, 132, 150, 151, 152 `image` | Público; exactamente seis |
+| `megapixels` | node 119 `megapixels` | Público como única política de resolución |
+| `length` | node 129 `length` | Público |
+| `steps` | node 146 `steps` | Público desde F11.1 |
+| `fps` | node 148 `fps` | Público |
+| `ref_image_size` | node 129 `ref_image_size` | Default, sin control hasta F11.3 |
+| `also_ref_first_frame` | node 129 `also_ref_first_frame` | Default, sin control hasta F11.3 |
+
+El profile mantiene además la ranura canónica `ref_image_6` sin conexión; no es una entrada de usuario y no amplía la cardinalidad de seis referencias de F11.1.
+
+La tabla fija el contrato de diseño, no afirma que F11.1 ya esté implementada: el código y el manifest H3 actuales no se modifican en F11.0. La incorporación efectiva de `steps` y cualquier corrección del descriptor de `first_frame` quedan para una implementación posterior controlada y sus pruebas.
+
+La resolución no admite dos políticas concurrentes: F11.1 configura `ImageScaleToTotalPixels` node 119 mediante `megapixels`; node 120 deriva width y height para H3. No se agregan controles de width/height manuales en paralelo.
+
+La distinción de `first_frame` es contractual: la entrada externa que recibe la ruta materializada es `LoadImage` node 114 `image`. La conexión `node 119 → node 129.first_frame` es parte de la topología interna canónica y debe mantenerse. El contrato y el manifest no deben presentar `129.first_frame` como el slot externo de escritura. La corrección efectiva de código/manifest queda para una implementación posterior controlada; esta sección fija el significado.
+
+Defaults normales vigentes para F11.1: `megapixels=0.6`, `length=294`, `steps=20`, `fps=24`, `ref_image_size="match"`, `also_ref_first_frame=false` y `orchestration_timeout_seconds=1800`. `fast_e2e` permanece sólo como opción de desarrollo y no es un preset de usuario ni se persiste.
+
+Seed, sampler, scheduler, IA y otros parámetros de backlog no se convierten en bindings públicos por este cambio. Los valores numéricos, tipos, límites, profile/version/hash, rutas y cardinalidad de referencias deben validarse durante preflight y fallar de forma explícita antes del submit.
 
 ## Bindings conceptuales
 
@@ -74,7 +102,7 @@ reference_1  -> node/input
 ...
 ```
 
-Los bindings definitivos y su validación productiva todavía requieren formalización; F1 verificó los nombres y enlaces del primer profile H3, seis referencias, uploads e inyección externa de imágenes.
+Los bindings mínimos de F11.1 y su semántica de resolución/`first_frame` quedan formalizados en la sección anterior. La exposición de bindings H3 adicionales requiere una decisión posterior de perfil y pertenece a F11.3 o más adelante.
 
 ## Preflight de integración
 

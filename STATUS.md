@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-07
-**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11 — GUI operativa incremental y configuración de generación **APPROVED / NOT STARTED**.
-**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11 aprobada como siguiente bloque, con F11.0 como próxima slice.
+**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11 — GUI operativa incremental y configuración de generación **APPROVED**; F11.0 **CLOSED — APPROVED (documental)**; F11.1 **APPROVED / NOT STARTED**.
+**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 cerrada como inspección/contrato, sin implementación de producto; F11.1 es la próxima slice.
 
 ## Fotografía viva
 
@@ -20,7 +20,7 @@ Objetivo de F11: convertir la GUI técnica existente en una interfaz Windows uti
 
 Orden aprobado:
 
-1. **F11.0 — Inspección y contrato único de configuración.**
+1. **F11.0 — Inspección y contrato único de configuración — CLOSED / APPROVED (documental).**
 2. **F11.1 — Primera GUI realmente utilizable para generar.**
 3. **F11.2 — Gestión visual de imagen inicial y referencias.**
 4. **F11.3 — Configuración H3 ampliada.**
@@ -30,7 +30,7 @@ Orden aprobado:
 
 Regla operativa: cada slice debe cerrarse con implementación, pruebas, evidencia, auditoría y validación humana cuando corresponda, dejando una aplicación utilizable antes de avanzar a la siguiente. No se implementan de entrada expansiones del backlog como IA, otros modelos, cloud, multi-GPU, timeline avanzado o plugin system.
 
-**Próximo trabajo:** F11.0. Todavía no se inició implementación de F11 ni se modificó código de producción para esta fase.
+**Próximo trabajo:** F11.1. F11.0 quedó cerrada documentalmente; todavía no se inició su implementación de producto ni se modificó código de producción para F11.
 
 ## Histórico F1–F10
 
@@ -57,7 +57,7 @@ Regla operativa: cada slice debe cerrarse con implementación, pruebas, evidenci
 - ComfyUI core validado: `0.33.0` en `127.0.0.1:8188`;
 - correlación determinista validada: `prompt_id → history → SaveVideo node 92 → archivo físico`;
 - H3 observado: `LoadImage114→ImageCropV2 127→ImageScaleToTotalPixels119→GetImageSize120→H3 129 first_frame`;
-- API F4 soporta prompt, first_frame, width, height, length, `ref_image_size`, `also_ref_first_frame` y FPS en node 148; `BasicScheduler` node 146 expone `steps`; seed/sampler/scheduler no son bindings públicos del perfil vigente.
+- El profile H3 soporta prompt, first_frame externo, length, `ref_image_size`, `also_ref_first_frame` y FPS; F11.0 formaliza `steps` de `BasicScheduler` node 146 como binding público de F11.1. Seed, sampler y scheduler permanecen fuera de la superficie pública vigente.
 
 La evidencia profunda se conserva en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md), [TESTING.md](TESTING.md), [DATA_MODEL.md](DATA_MODEL.md) y el historial Git. Este `STATUS.md` mantiene sólo la fotografía viva necesaria para retomar el proyecto sin reconstruir conversaciones.
 

@@ -30,6 +30,37 @@ La evidencia de F1 agrega una regla operativa al concepto: el frame de transici�
 
 Es una descripción versionada del workflow soportado y de los bindings necesarios para traducir conceptos del proyecto a inputs reales. MiniMax H3 es el primer perfil, no una limitación estructural del dominio.
 
+## Contrato único de configuración de generación (F11.0)
+
+F11 adopta un único contrato conceptual, `GenerationConfig`, que se serializa y valida antes de iniciar una generación. La forma mínima común es:
+
+```text
+profile_ref
+inputs.initial_image
+inputs.references[6]
+chunk_plan.count (2 | 3)
+chunk_plan.chunks[].prompt
+parameters.megapixels
+parameters.length
+parameters.steps
+parameters.fps
+parameters.ref_image_size
+parameters.also_ref_first_frame
+orchestration_timeout_seconds
+```
+
+El mismo contrato se interpreta por scope, sin crear una segunda semántica en los widgets:
+
+- **Proyecto:** defaults reutilizables y recursos de preparación.
+- **Ejecución:** snapshot durable de la configuración elegida, incluyendo inputs, cantidad de chunks, prompts y parámetros efectivos de esa corrida.
+- **Chunk:** prompt propio y sólo overrides de parámetros que hayan sido autorizados explícitamente.
+
+La resolución de valores sigue siendo `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk. La ejecución y cada intento conservan la configuración efectiva suficiente para reproducir qué se envió; una modificación posterior del proyecto no altera una ejecución histórica.
+
+Para F11.1 el contrato exige una imagen inicial, exactamente seis referencias H3, 2 o 3 chunks y un prompt no vacío por chunk. La resolución usa una única política basada en megapíxeles; width y height efectivos continúan siendo derivados por el workflow. `ref_image_size` y `also_ref_first_frame` conservan sus defaults sin controles gráficos hasta F11.3. Seed, sampler, scheduler, IA y demás parámetros de backlog no forman parte de la superficie pública F11.1.
+
+La validación contractual es fail-closed: `profile_ref` debe identificar una versión/hash compatible; las rutas de inputs deben ser relativas, contenidas, existentes y legibles; las referencias deben ser exactamente seis y los prompts no pueden estar vacíos; `chunk_plan.count` sólo admite 2 o 3. `megapixels` debe ser numérico finito y positivo, sujeto al límite del profile; `length`, `steps` y `fps` deben ser enteros positivos (un `bool` no es un entero válido) y respetar los límites declarados por el profile/backend. `ref_image_size` se valida contra los valores admitidos por H3, `also_ref_first_frame` es booleano y `orchestration_timeout_seconds` es un entero positivo con default 1800. Claves desconocidas, combinaciones de resolución con dos políticas simultáneas o cualquier path inseguro rechazan la configuración antes del submit.
+
 ## Conceptos relacionados
 
 - **Input:** recurso o valor que una fase consume, como imagen inicial, referencia, prompt o parámetro. Su procedencia, legibilidad y uso efectivo deben ser rastreables.
