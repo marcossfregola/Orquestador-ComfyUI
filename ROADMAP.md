@@ -1,6 +1,6 @@
 # Roadmap
 
-Este documento contiene únicamente trabajo decidido. El orden aprobado de F0–F10 sólo puede modificarse si evidencia posterior lo justifica y mediante una decisión formal aprobada que actualice los documentos autoridad correspondientes. Sin esa decisión, la secuencia y los límites de las etapas se conservan.
+Este documento contiene únicamente trabajo decidido. El orden aprobado de F0–F11 sólo puede modificarse si evidencia posterior lo justifica y mediante una decisión formal aprobada que actualice los documentos autoridad correspondientes. Sin esa decisión, la secuencia y los límites de las etapas se conservan.
 
 ## F0 — Fundación
 
@@ -116,3 +116,111 @@ El run anterior mostró causa C: `ImageCropV2` node 127 interpretaba `crop_regio
 La comparación guardada demuestra node 127 pixel-idéntico a `TRANSITION_INPUT.png` y el frame N-1 de chunk 0 byte/pixel idéntico a esa transición. El frame 0 de chunk 1 conserva 352×256 pero no es pixel-idéntico (PSNR 29,846985 dB; MSE 67,356863; media absoluta 6,431763). La causa C de pipeline quedó corregida; la diferencia D del modelo queda aceptada como limitación conocida del backend H3, no como defecto pendiente del Orquestador. La continuidad visual fue aprobada (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`) y F11 permanece sin iniciar.
 
 El control de codec separado dio PSNR 40,894518 dB y media absoluta 1,772694, por debajo de la diferencia observada en el frame 0; la clasificación D no depende sólo del round-trip H.264.
+
+## F11 — GUI operativa incremental y configuración de generación
+
+Convertir la GUI técnica ya existente en una interfaz Windows realmente utilizable para preparar, ejecutar, seguir y recuperar generaciones de video sin depender de consola ni de edición manual de archivos de configuración.
+
+F11 se desarrolla por **slices verticales utilizables**. Cada slice cerrado debe dejar una aplicación que siga pudiendo generar videos reales; las capacidades nuevas se agregan sobre contratos ya estabilizados, sin rehacer la lógica anterior. La configuración de generación debe tener una única fuente de verdad compartida por aplicación y GUI: la interfaz no debe duplicar reglas de defaults, validación, herencia o bindings, ni hablar directamente con ComfyUI, FFmpeg o persistencia.
+
+No forman parte de F11 por defecto: IA para prompts o planificación, nuevos modelos/workflows, cloud, multi-GPU, plugin system, timeline/editor avanzado, biblioteca avanzada de personajes ni otras expansiones del backlog.
+
+### F11.0 — Inspección y contrato único de configuración
+
+Antes de modificar funcionalidad de producto:
+
+- inspeccionar la GUI F9 y su cableado real;
+- inventariar los bindings públicos soportados por el perfil H3 actual;
+- definir qué parámetros son de proyecto y cuáles admiten override por chunk;
+- fijar obligatoriedad, defaults, precedencia y validaciones;
+- identificar qué controles ya existen y cuáles faltan;
+- definir archivos afectados, pruebas y criterios de aceptación antes de implementar.
+
+**Criterio de cierre:** contrato de configuración explícito y reutilizable, sin segunda lógica paralela en la UI y sin cambios innecesarios del núcleo ya validado.
+
+**Estado:** **APPROVED / NOT STARTED**.
+
+### F11.1 — Primera GUI realmente utilizable para generar
+
+Exponer desde la aplicación Windows el conjunto mínimo que permita producir un video real sin preparación externa:
+
+- seleccionar imagen inicial;
+- seleccionar las referencias requeridas por el perfil H3 vigente;
+- definir cantidad de chunks;
+- editar un prompt para cada chunk;
+- configurar resolución, `length`, `steps` y FPS;
+- preparar y lanzar la cadena desde la GUI;
+- mostrar estado real `chunk X/N` y fase verificable;
+- obtener los chunks generados y poder crear el resultado final mediante la frontera F8 existente.
+
+Los parámetros todavía no expuestos usan defaults conocidos y validados; no se crean controles ficticios para bindings que H3 no soporte.
+
+**Criterio de cierre:** desde Windows, el usuario abre la aplicación, prepara únicamente desde la GUI una generación real de dos chunks, la ejecuta de inicio a fin contra ComfyUI, obtiene los outputs y el resultado final, sin consola ni edición manual de configuración. Requiere pruebas automáticas pertinentes, ejecución real, auditoría y validación humana.
+
+Este es el primer checkpoint de F11 que debe dejar el producto utilizable mientras continúan las slices siguientes.
+
+### F11.2 — Gestión visual de imagen inicial y referencias
+
+Agregar comodidad de preparación sin cambiar el contrato de generación:
+
+- previews/thumbnails;
+- agregar, reemplazar y quitar referencias respetando requisitos del perfil;
+- orden/slot visible;
+- recorte manual desde la propia aplicación;
+- conservar siempre el original y materializar el recorte como derivado controlado;
+- no destruir ni sobrescribir silenciosamente archivos fuente.
+
+**Criterio de cierre:** toda la preparación habitual de imagen inicial y referencias puede realizarse dentro de la aplicación y la generación real de F11.1 continúa funcionando sin regresiones.
+
+### F11.3 — Configuración H3 ampliada
+
+Exponer los bindings H3 reales restantes que resulte útil controlar, incluyendo donde corresponda `ref_image_size`, `also_ref_first_frame` y presets/variantes de resolución. Mantener defaults globales y overrides por chunk únicamente donde el dominio y el perfil lo soporten.
+
+Seed, sampler, scheduler u otros parámetros no se exponen mientras no sean bindings públicos reales del perfil vigente.
+
+**Criterio de cierre:** todos los parámetros H3 decididos para uso normal pueden configurarse desde GUI, con validación previa y sin duplicar lógica de bindings.
+
+### F11.4 — Editor de secuencia de chunks
+
+Mejorar la preparación de sesiones de más de dos chunks:
+
+- agregar y quitar chunks;
+- reordenar;
+- duplicar cuando sea útil;
+- editar prompt individual;
+- visualizar valores heredados y overrides explícitos;
+- mantener una secuencia inequívoca antes de iniciar.
+
+**Criterio de cierre:** una sesión multi-chunk puede prepararse y revisarse completamente desde la GUI antes de enviarse a generación.
+
+### F11.5 — Operación, recuperación y resultados desde GUI
+
+Llevar a la experiencia gráfica las capacidades ya existentes del núcleo:
+
+- abrir/reabrir proyecto durable;
+- resume/recover;
+- retry según contrato vigente;
+- cancelación sólo cuando sea segura;
+- ensamblar/reensamblar mediante F8;
+- mostrar errores accionables y estados fail-closed;
+- acceso claro a chunks, transiciones, intermedios y resultado final.
+
+**Criterio de cierre:** las operaciones normales de continuidad, fallo y recuperación pueden ejecutarse desde Windows sin recurrir a herramientas técnicas externas.
+
+### F11.6 — Pulido de UX y validación Windows
+
+Con las capacidades anteriores ya funcionales:
+
+- consolidar distribución de paneles y navegación;
+- mejorar mensajes, estados, previews y accesos frecuentes;
+- eliminar fricciones detectadas durante uso real;
+- validar sesiones reales más largas y comportamiento de la UI durante generación;
+- documentar cualquier limitación conocida que quede aceptada.
+
+**Criterio de cierre F11:** la aplicación Windows permite preparar, configurar, generar, seguir, recuperar y obtener resultados de una sesión H3 real mediante la GUI, manteniendo las garantías de chaining, persistencia y conservación de artefactos demostradas hasta F10.
+
+### Regla de avance de F11
+
+Cada slice sigue el flujo obligatorio: **inspección → diagnóstico/diseño → implementación → pruebas → evidencia → auditoría → validación humana cuando corresponda → aprobación → commit**.
+
+No se inicia automáticamente la slice siguiente. Una slice aprobada debe quedar utilizable por sí misma, de forma que el usuario pueda generar videos con la aplicación mientras continúa el desarrollo posterior.
