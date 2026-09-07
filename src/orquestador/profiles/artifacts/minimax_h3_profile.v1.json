@@ -5,7 +5,7 @@
   "api_template_sha256": "4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25",
   "api_template": "minimax_h3_api_template.v1.json",
   "required_nodes": {"92":"SaveVideo","114":"LoadImage","119":"ImageScaleToTotalPixels","120":"GetImageSize","127":"ImageCropV2","129":"MiniMaxH3HybridRefAndKeyframe","147":"VAEDecode","148":"CreateVideo"},
-  "bindings": {"prompt":[129,"prompt"],"first_frame":[129,"first_frame"],"width":[129,"width"],"height":[129,"height"],"length":[129,"length"],"ref_image_size":[129,"ref_image_size"],"also_ref_first_frame":[129,"also_ref_first_frame"],"fps":[148,"fps"],"output":[92,"video"]},
+  "bindings": {"prompt":[129,"prompt"],"first_frame":[114,"image"],"megapixels":[119,"megapixels"],"steps":[146,"steps"],"width":[129,"width"],"height":[129,"height"],"length":[129,"length"],"ref_image_size":[129,"ref_image_size"],"also_ref_first_frame":[129,"also_ref_first_frame"],"fps":[148,"fps"],"output":[92,"video"]},
   "reference_slots": ["ref_images.ref_image_0","ref_images.ref_image_1","ref_images.ref_image_2","ref_images.ref_image_3","ref_images.ref_image_4","ref_images.ref_image_5"],
   "sanitization": {"machine_paths":false,"transient_ui_state":false,"secrets":false,"generated_filenames":false,"object_info_bulk":false}
 }

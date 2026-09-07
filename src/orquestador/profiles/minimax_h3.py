@@ -4,6 +4,7 @@ from types import MappingProxyType
 import hashlib,json
 from pathlib import Path
 from orquestador.domain.workflow_profile import WorkflowProfile
+from orquestador.domain.config import validate_parameter, GenerationConfigError
 class WorkflowProfileError(ValueError):
  def __init__(self,message,code='workflow.invalid',context=None): super().__init__(message); self.code=code; self.context=MappingProxyType(dict(context or {}))
 class MalformedWorkflowError(WorkflowProfileError): pass
@@ -20,7 +21,7 @@ FAST_E2E_CONFIG=MappingProxyType({'length':56,'megapixels':0.09,'steps':4})
 _T={92:'SaveVideo',114:'LoadImage',119:'ImageScaleToTotalPixels',120:'GetImageSize',127:'ImageCropV2',129:'MiniMaxH3HybridRefAndKeyframe',136:'CLIPLoader',137:'VAELoader',138:'VAELoader',139:'UNETLoader',142:'BasicGuider',143:'SamplerCustomAdvanced',144:'RandomNoise',145:'KSamplerSelect',146:'BasicScheduler',147:'VAEDecode',148:'CreateVideo',**{i:'LoadImage' for i in(130,131,132,150,151,152)},**{i:'ImageCropV2' for i in(133,134,135,153,154,155)},**{i:'ImageScaleToMaxDimension' for i in range(156,162)}}
 H3_NODE_TYPES=MappingProxyType(_T); REQUIRED_REFS=tuple(f'ref_images.ref_image_{i}' for i in range(7))
 _API_LINKS=MappingProxyType({'92.video':['148',0],'119.image':['127',0],'120.image':['119',0],'127.image':['114',0],'129.width':['120',0],'129.height':['120',1],'129.clip':['136',0],'129.vae':['137',0],'129.audio_vae':['138',0],'129.first_frame':['119',0],**{f'129.ref_images.ref_image_{i}':[str(x),0] for i,x in enumerate((156,157,158,159,161,160))},'133.image':['130',0],'134.image':['131',0],'135.image':['132',0],'142.model':['139',0],'142.conditioning':['129',0],'143.noise':['144',0],'143.guider':['142',0],'143.sampler':['145',0],'143.sigmas':['146',0],'143.latent_image':['129',1],'146.model':['139',0],'147.samples':['143',0],'147.vae':['137',0],'148.images':['147',0],'153.image':['150',0],'154.image':['151',0],'155.image':['152',0],'156.image':['133',0],'157.image':['134',0],'158.image':['135',0],'159.image':['153',0],'160.image':['155',0],'161.image':['154',0]})
-H3_BINDINGS=MappingProxyType({'prompt':(129,'prompt'),'first_frame':(114,'image'),'width':(129,'width'),'height':(129,'height'),'length':(129,'length'),'ref_image_size':(129,'ref_image_size'),'also_ref_first_frame':(129,'also_ref_first_frame'),'fps':(148,'fps'),'output':(92,'video'),'ref_images':tuple((n,'image') for n in (130,131,132,150,151,152))})
+H3_BINDINGS=MappingProxyType({'prompt':(129,'prompt'),'first_frame':(114,'image'),'megapixels':(119,'megapixels'),'steps':(146,'steps'),'width':(129,'width'),'height':(129,'height'),'length':(129,'length'),'ref_image_size':(129,'ref_image_size'),'also_ref_first_frame':(129,'also_ref_first_frame'),'fps':(148,'fps'),'output':(92,'video'),'ref_images':tuple((n,'image') for n in (130,131,132,150,151,152))})
 _L=((314,114,0,127,0,'IMAGE'),(315,127,0,119,0,'IMAGE'),(251,119,0,120,0,'IMAGE'),(259,119,0,129,3,'IMAGE'),(263,120,0,129,15,'INT'),(264,120,1,129,16,'INT'),(301,133,0,156,0,'IMAGE'),(302,156,0,129,5,'IMAGE'),(303,134,0,157,0,'IMAGE'),(304,157,0,129,6,'IMAGE'),(305,135,0,158,0,'IMAGE'),(306,158,0,129,7,'IMAGE'),(307,153,0,159,0,'IMAGE'),(310,159,0,129,8,'IMAGE'),(308,154,0,161,0,'IMAGE'),(311,161,0,129,9,'IMAGE'),(309,155,0,160,0,'IMAGE'),(312,160,0,129,10,'IMAGE'),(271,136,0,129,0,'CLIP'),(275,137,0,129,1,'VAE'),(274,138,0,129,2,'VAE'),(281,139,0,142,0,'MODEL'),(282,129,0,142,1,'CONDITIONING'),(283,142,0,143,1,'GUIDER'),(284,144,0,143,0,'NOISE'),(285,145,0,143,2,'SAMPLER'),(286,139,0,146,0,'MODEL'),(287,146,0,143,3,'SIGMAS'),(288,129,1,143,4,'LATENT'),(289,143,0,147,0,'LATENT'),(291,137,0,147,1,'VAE'),(292,147,0,148,0,'IMAGE'),(293,148,0,92,0,'VIDEO'))
 @dataclass(frozen=True,slots=True)
 class CompatibilityReport: profile:WorkflowProfile; sha256:str; node_ids:tuple; link_ids:tuple
@@ -71,7 +72,7 @@ def validate_static_compatibility(raw, expected_sha256=H3_CANONICAL_SHA256):
  except Exception as e: raise MalformedWorkflowError('invalid workflow JSON','workflow.invalid_json') from e
  return validate_ui_workflow_structure(d, verified_sha256=digest)
 
-_BOUND_MUTABLE_KEYS=frozenset({'114.image',*(f'{n}.image' for n in (130,131,132,150,151,152)),'129.prompt','129.width','129.height','129.length','129.ref_image_size','129.also_ref_first_frame','148.fps'})
+_BOUND_MUTABLE_KEYS=frozenset({'114.image','119.megapixels','146.steps',*(f'{n}.image' for n in (130,131,132,150,151,152)),'129.prompt','129.width','129.height','129.length','129.ref_image_size','129.also_ref_first_frame','148.fps'})
 
 def _validate_api_template(d, *, bound=False):
  if not isinstance(d,dict) or set(d)!=set(map(str,H3_NODE_TYPES)): raise IncompatibleWorkflowError('API template node set mismatch','template.shape')
@@ -145,17 +146,31 @@ def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, *
  """Return a copy of the API prompt with only declared H3 inputs overridden."""
  _validate_api_template(api_prompt)
  out=json.loads(json.dumps(api_prompt)); ins=out['129']['inputs']
- allowed={'prompt','first_frame','width','height','length','ref_image_size','also_ref_first_frame','fps'}
+ allowed={'prompt','first_frame','megapixels','steps','width','height','length','ref_image_size','also_ref_first_frame','fps'}
  if prompt is not None: values['prompt']=prompt
  if first_frame is not None: values['first_frame']=first_frame
  for k,v in values.items():
   if k not in allowed: raise WorkflowProfileError(f'unsupported H3 binding: {k}','binding.unsupported')
+  try:
+   if k in {'megapixels','steps','length','fps','ref_image_size','also_ref_first_frame'}:
+    v=validate_parameter(k,v)
+  except GenerationConfigError as exc:
+   raise WorkflowProfileError(str(exc),'binding.invalid_value') from exc
   if k=='fps': out['148']['inputs']['fps']=v
-  elif k=='first_frame': out['114']['inputs']['image']=v
+  elif k=='megapixels': out['119']['inputs']['megapixels']=v
+  elif k=='steps': out['146']['inputs']['steps']=v
+  elif k=='first_frame':
+   if not isinstance(v,str) or not v.strip(): raise WorkflowProfileError('first_frame must be a nonblank path','binding.first_frame')
+   out['114']['inputs']['image']=v
+  elif k=='prompt':
+   if not isinstance(v,str) or not v.strip(): raise WorkflowProfileError('prompt must be nonblank','binding.prompt')
+   ins[k]=v
   else: ins[k]=v
  if references is not None:
   if not isinstance(references,(list,tuple)) or len(references)!=6: raise WorkflowProfileError('exactly six reference images required','binding.references')
-  for i,v in enumerate(references): out[str((130,131,132,150,151,152)[i])]['inputs']['image']=v
+  for i,v in enumerate(references):
+   if not isinstance(v,str) or not v.strip(): raise WorkflowProfileError('reference image paths must be nonblank','binding.references')
+   out[str((130,131,132,150,151,152)[i])]['inputs']['image']=v
  _validate_api_template(out, bound=True)
  return out
 
