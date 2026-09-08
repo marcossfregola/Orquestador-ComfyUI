@@ -86,6 +86,8 @@ Seed, sampler, scheduler, IA y otros parámetros de backlog no se convierten en 
 
 ## Bindings conceptuales
 
+La cardinalidad de producto para referencias es 0..6 opcional y densa; el esquema H3 puede exponer más ranuras, pero no amplía ese límite. Las ausentes no generan ramas ni imágenes dummy.
+
 Un binding traduce un concepto del proyecto a un input real del workflow. Debe declarar suficiente información para validar que el objetivo existe, es del tipo esperado y no está ocupado por otra semántica. No se asume que cada binding sea una clase o tabla.
 
 Ejemplos conceptuales:

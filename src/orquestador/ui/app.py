@@ -18,7 +18,7 @@ from ..application.chain_execution import ChainExecutionUseCase
 from ..application.assembly import AssembleExecutionUseCase
 from ..adapters.video import FFmpegVideoAdapter
 from ..domain.core import Lifecycle, MaterializedInputRef
-from ..application.prepare_gui import PrepareGuiUseCase
+from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase, StaticInputMaterializer
 from ..persistence.sqlite import SQLiteProjectRepository
 
@@ -120,10 +120,35 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         if not s["can_cancel"]: raise ValueError(s.get("cancel_reason","cancellation unavailable"))
         _, es=repository.load(project_id); e=next(x for x in es if str(x.id)==str(execution_id)); refs=[a.external_job_ref for c in e.chunks for a in c.attempts if a.external_job_ref]
         return {**s,"can_cancel":False,"state":"cancellation_requested"} if len(refs)==1 and cancellation.cancel(refs[0]) else s
-    def preflight(*_a, **_k):
-        health = client.health()
-        return {"state": "preflight", "errors": (), "can_cancel": False}
-    prepare = PrepareGuiUseCase(repository, cfg.project_root, snapshot)
+    def _operation_repository():
+        return repository_factory(cfg.project_root)
+    def _prepare_operation(**kwargs):
+        op_repo = _operation_repository()
+        try:
+            def op_snapshot(project_id=None, execution_id=None):
+                if not project_id: return {"state":"unavailable","errors":("select a project",)}
+                project, executions = op_repo.load(project_id)
+                matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
+                if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
+                e=matches[0]
+                return {"project_id":str(project_id),"execution_id":str(execution_id),"state":e.state.value,"chunks":[],"artifacts":[],"can_start":e.state is Lifecycle.PENDING,"can_resume":e.state in (Lifecycle.RUNNING,Lifecycle.FAILED),"can_recover":e.state in (Lifecycle.RUNNING,Lifecycle.FAILED),"can_retry":False,"can_cancel":False,"can_assemble":False}
+            return PrepareGuiUseCase(op_repo, cfg.project_root, op_snapshot)(**kwargs)
+        finally:
+            op_repo.close()
+    def _preflight_operation(**kwargs):
+        op_repo = _operation_repository()
+        try: return PreflightGuiUseCase(op_repo, cfg.project_root)(**kwargs)
+        finally: op_repo.close()
+    def preflight(**kwargs):
+        result = _preflight_operation(**kwargs)
+        # Backend readiness is observed only after all local checks pass.
+        try:
+            health = client.health()
+        except Exception as exc:
+            raise RuntimeError(f"backend health check failed: {exc}") from exc
+        if health is False or (isinstance(health, dict) and health.get("healthy") is False):
+            raise RuntimeError("backend health check reported unhealthy")
+        return result
     def resume_route(project_id, execution_id=None, **kwargs): return resume_usecase.resume(project_id, execution_id, **kwargs)
     def recover_route(project_id, execution_id=None, **_): return recover_usecase.recover(project_id, execution_id)
     def retry_route(project_id, execution_id=None, **kwargs): return retry_usecase.retry(project_id, execution_id, **kwargs)
@@ -165,7 +190,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         # Keep the concrete chain dependency observable at the composition boundary.
         _chain = chain_usecase
         return start_usecase(project_id, execution_id, **kwargs)
-    facade = GuiFacade(prepare=prepare, preflight=preflight, retry=retry_route, chain=start_chain,
+    facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
                        cancel=cancel, snapshot=snapshot)
     return facade, {"repository": repository, "client": client, "cancellation": cancellation,

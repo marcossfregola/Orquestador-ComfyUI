@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-07
-**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11 — GUI operativa incremental y configuración de generación **APPROVED**; F11.0 **CLOSED — APPROVED (documental)**; F11.1 **APPROVED / NOT STARTED**.
-**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 cerrada como inspección/contrato, sin implementación de producto; F11.1 es la próxima slice.
+**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**; F11.1B **TECHNICALLY APPROVED — READY FOR GIT CLOSURE**.
+**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**, baseline comprometida `b642af94a1091f1f4e1d71912f61d3b9c756ce86` con contrato de configuración de generación implementado; F11.1B local, no comprometida.
 
 ## Fotografía viva
 
@@ -12,7 +12,7 @@
 - La corrección posterior del seam eliminó el recorte implícito 512×512 de `ImageCropV2`; el E2E FAST confirmó que la transición llega pixel-idéntica al pipeline del chunk siguiente. La modificación residual del frame 0 queda clasificada como comportamiento del modelo H3, no como defecto pendiente del Orquestador.
 - No es necesario esperar al cierre completo de F11 para usar la aplicación: el roadmap exige slices verticales utilizables y F11.1 es el primer checkpoint destinado a permitir generar un video real completamente desde la GUI Windows.
 
-## F11 — siguiente bloque aprobado
+## F11 — GUI operativa incremental
 
 La autoridad del plan detallado es [ROADMAP.md](ROADMAP.md), sección **F11 — GUI operativa incremental y configuración de generación**.
 
@@ -30,7 +30,8 @@ Orden aprobado:
 
 Regla operativa: cada slice debe cerrarse con implementación, pruebas, evidencia, auditoría y validación humana cuando corresponda, dejando una aplicación utilizable antes de avanzar a la siguiente. No se implementan de entrada expansiones del backlog como IA, otros modelos, cloud, multi-GPU, timeline avanzado o plugin system.
 
-**Próximo trabajo:** F11.1. F11.0 quedó cerrada documentalmente; todavía no se inició su implementación de producto ni se modificó código de producción para F11.
+**Checkpoint:** F11.1B queda técnicamente aprobada y lista para cierre Git; no commit/push en esta tarea. `REAL_VIDEO_GENERATION=NO`; `HUMAN_GUI_VALIDATION=NO`.
+
 
 ## Histórico F1–F10
 

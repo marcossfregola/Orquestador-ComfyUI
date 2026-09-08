@@ -185,8 +185,8 @@ class GenerationConfig:
         if not isinstance(self.references, (list, tuple)):
             raise GenerationConfigError("references must be a sequence")
         refs = tuple(self.references)
-        if len(refs) != 6 or any(not isinstance(x, str) or not x.strip() for x in refs):
-            raise GenerationConfigError("exactly six nonblank references are required")
+        if len(refs) > 6 or any(not isinstance(x, str) or not x.strip() for x in refs):
+            raise GenerationConfigError("references must contain 0 to 6 nonblank paths")
         if not isinstance(self.prompts, (list, tuple)):
             raise GenerationConfigError("prompts must be a sequence")
         prompts = tuple(validate_prompt(value) for value in self.prompts)

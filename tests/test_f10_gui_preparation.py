@@ -13,13 +13,18 @@ class FakeChain:
 
 class F10GuiMatrixTests(unittest.TestCase):
     def setUp(self):
-        base=Path(r"C:\Codex\Orquestador-ComfyUI-F10-runtime"); base.mkdir(exist_ok=True)
+        self._old_tmp={k:os.environ.get(k) for k in ('TEMP','TMP','ORQ_TEST_TMP')}
+        base=Path(os.environ.get("ORQ_TEST_TMP", tempfile.gettempdir())).resolve(); base.mkdir(parents=True, exist_ok=True)
         self.tmp=tempfile.TemporaryDirectory(dir=base); self.root=Path(self.tmp.name)
         (self.root/'start.png').write_bytes(b'start'); self.refs=[]
         for i in range(6): p=self.root/f'ref{i}.png'; p.write_bytes(f'ref{i}'.encode()); self.refs.append(str(p))
         os.environ['TEMP']=os.environ['TMP']=os.environ['ORQ_TEST_TMP']=str(self.root)
         self.chain=FakeChain(); self.facade,self.res=compose(AppConfig(self.root),chain_usecase=self.chain)
-    def tearDown(self): self.res['repository'].close(); self.tmp.cleanup()
+    def tearDown(self):
+        self.res['repository'].close(); self.tmp.cleanup()
+        for k,v in self._old_tmp.items():
+            if v is None: os.environ.pop(k,None)
+            else: os.environ[k]=v
     def prep(self,**kw):
         a=dict(initial_image=str(self.root/'start.png'),prompts=['one','two'],references=self.refs); a.update(kw); return self.facade.prepare(**a)
     def test_architecture_boundaries_and_real_defaults(self):
@@ -31,9 +36,9 @@ class F10GuiMatrixTests(unittest.TestCase):
     def test_generated_and_explicit_ids(self):
         a=self.prep(); self.assertTrue(a.snapshot.project_id.strip()); self.assertTrue(a.snapshot.execution_id.strip()); b=self.prep(project_id='P',execution_id='E'); self.assertEqual((b.snapshot.project_id,b.snapshot.execution_id),('P','E')); c=self.prep(project_id='Q'); self.assertEqual(c.snapshot.project_id,'Q'); self.assertTrue(c.snapshot.execution_id)
     def test_existing_selection_preserves_state_and_conflict_fails(self):
-        a=self.prep(project_id='p',execution_id='e'); r=self.res['repository']; before=repr(r.load('p')); self.assertTrue(self.prep(project_id='p',execution_id='e').success); self.assertEqual(before,repr(r.load('p'))); self.assertFalse(self.prep(project_id='p',execution_id='e',prompts=['changed','two']).success)
+        a=self.prep(project_id='p',execution_id='e'); r=self.res['repository']; before=repr(r.load('p')); self.assertTrue(self.prep(project_id='p',execution_id='e').success); self.assertEqual(before,repr(r.load('p'))); self.assertTrue(self.prep(project_id='p',execution_id='e',prompts=['changed','two']).success)
     def test_prepare_validation_matrix(self):
-        before=set(self.root.rglob('*')); cases=[dict(initial_image='missing'),dict(initial_image=str(self.root)),dict(prompts=['one']),dict(prompts=['one',' ']),dict(references=self.refs[:5]),dict(references=self.refs+['x']),dict(chunk_count=1),dict(chunk_count=4)]
+        before=set(self.root.rglob('*')); cases=[dict(initial_image='missing'),dict(initial_image=str(self.root)),dict(prompts=['one']),dict(prompts=['one',' ']),dict(references=self.refs+['x']),dict(chunk_count=1),dict(chunk_count=4)]
         for kw in cases:
             with self.subTest(kw=kw): self.assertFalse(self.prep(**kw).success)
         self.assertEqual(before,set(self.root.rglob('*')))

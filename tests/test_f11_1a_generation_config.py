@@ -56,10 +56,13 @@ class GenerationConfigTests(unittest.TestCase):
             with self.subTest(count=count):
                 with self.assertRaises(GenerationConfigError):
                     GenerationConfig.from_mapping(valid_values(chunk_count=count, prompts=prompts))
-        for references in ([], ["only"] * 5, ["too-many"] * 7):
+        for references in (["too-many"] * 7,):
             with self.subTest(references=len(references)):
                 with self.assertRaises(GenerationConfigError):
                     GenerationConfig.from_mapping(valid_values(references=references))
+        for references in ([], ["only"] * 5):
+            with self.subTest(references=len(references)):
+                self.assertEqual(len(GenerationConfig.from_mapping(valid_values(references=references)).references), len(references))
         for prompts in (["", "valid"], ["valid", "   "], ["only"]):
             with self.subTest(prompts=prompts):
                 with self.assertRaises(GenerationConfigError):

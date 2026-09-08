@@ -82,7 +82,7 @@ class TestH3(unittest.TestCase):
  def test_binding_rejects_unknown_and_wrong_reference_count(self):
   t=load_api_template()
   with self.assertRaises(WorkflowProfileError): bind_inputs(t,wat=False)
-  with self.assertRaises(WorkflowProfileError): bind_inputs(t,references=['a'])
+  self.assertEqual(bind_inputs(t,references=['a'])['130']['inputs']['image'],'a')
  def test_immutable_existing_node_link_rejected_as_canonical_mismatch(self):
   t=load_api_template()
   t['147']['inputs']['samples']=['143',1]

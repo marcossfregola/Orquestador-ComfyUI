@@ -17,6 +17,67 @@ from ..profiles.minimax_h3 import H3_PROFILE
 class PreparationError(ValueError):
     pass
 
+_GUI_KEYS = {"config", "generation_config", "initial_image", "prompts", "references", "chunk_count", "megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame", "orchestration_timeout_seconds"}
+
+def normalize_gui_updates(**kwargs):
+    if kwargs.get("config") is not None and kwargs.get("generation_config") is not None:
+        raise PreparationError("config and generation_config are mutually exclusive")
+    source = kwargs.get("generation_config") if kwargs.get("generation_config") is not None else kwargs.get("config")
+    if source is None: values = {}
+    elif isinstance(source, GenerationConfig): values = source.to_mapping()
+    elif isinstance(source, Mapping):
+        try: values = merge_generation_mappings(source, strict=True)
+        except GenerationConfigError as exc: raise PreparationError(str(exc)) from exc
+    else: raise PreparationError("generation config must be a mapping or GenerationConfig")
+    values.update({k: kwargs[k] for k in _GUI_KEYS - {"config", "generation_config"} if kwargs.get(k) is not None})
+    return values
+
+def effective_generation_config(*scopes):
+    try: return GenerationConfig.from_scopes(*scopes)
+    except GenerationConfigError as exc: raise PreparationError(str(exc)) from exc
+
+
+class PreflightGuiUseCase:
+    """Validate a GUI candidate without importing files or touching persistence."""
+    def __init__(self, repository, root):
+        self.repository, self.root = repository, Path(root).resolve()
+
+    def __call__(self, **kwargs):
+        updates = normalize_gui_updates(**kwargs)
+        project_id, execution_id = kwargs.get("project_id"), kwargs.get("execution_id")
+        project = executions = None
+        if project_id and execution_id:
+            try: project, executions = self.repository.load(ProjectId(str(project_id).strip()))
+            except PersistenceError as exc:
+                if str(exc).strip().lower() != "project not found": raise PreparationError(f"project load failed: {exc}") from exc
+        existing = next((e for e in (executions or ()) if str(e.id) == str(execution_id)), None)
+        if project is None: project_defaults, execution_defaults = {}, {}
+        else: project_defaults, execution_defaults = project.defaults, (existing.defaults if existing else {})
+        generation = effective_generation_config(project_defaults, execution_defaults, updates)
+        prompts = generation.prompts
+        refs = generation.references
+        count = generation.chunk_count
+        if type(count) is not int or count not in (2, 3):
+            raise PreparationError("chunk count must be two or three")
+        if not isinstance(prompts, (list, tuple)) or len(prompts) != count or any(not isinstance(p, str) or not p.strip() for p in prompts):
+            raise PreparationError("one nonblank prompt is required per chunk")
+        if not isinstance(refs, (list, tuple)) or len(refs) > 6:
+            raise PreparationError("H3 references must contain 0 to 6 paths")
+        def readable(value, label):
+            if not isinstance(value, str) or not value.strip():
+                raise PreparationError(f"{label} is required")
+            path = Path(value.strip()); path = path if path.is_absolute() else self.root / path
+            try: path = path.resolve(strict=True)
+            except (OSError, RuntimeError) as exc: raise PreparationError(f"{label} does not exist or is inaccessible") from exc
+            if not path.is_file(): raise PreparationError(f"{label} must be a file")
+            try: path.open("rb").close()
+            except OSError as exc: raise PreparationError(f"{label} is inaccessible") from exc
+        readable(generation.initial_image, "initial image")
+        for i, ref in enumerate(refs): readable(ref, f"reference slot {i}")
+        generation = effective_generation_config(project_defaults, execution_defaults, {**updates, "chunk_count": count})
+        if generation.profile_ref != H3_PROFILE.name: raise PreparationError("execution is not prepared for minimax-h3-ui")
+        return {"state": "preflight", "valid": True, "errors": (), "generation_config": generation.to_mapping()}
+
 
 class PrepareGuiUseCase:
     def __init__(self, repository, root, snapshot):
@@ -57,40 +118,7 @@ class PrepareGuiUseCase:
         orchestration_timeout_seconds=None,
         extra=None,
     ):
-        if config is not None and generation_config is not None:
-            raise PreparationError("config and generation_config are mutually exclusive")
-        source = generation_config if generation_config is not None else config
-        if source is None:
-            values = {}
-        elif isinstance(source, GenerationConfig):
-            values = source.to_mapping()
-        elif isinstance(source, Mapping):
-            try:
-                values = merge_generation_mappings(source, strict=True)
-            except GenerationConfigError as exc:
-                raise PreparationError(str(exc)) from exc
-        else:
-            raise PreparationError("generation config must be a mapping or GenerationConfig")
-        explicit = {
-            "initial_image": initial_image,
-            "prompts": prompts,
-            "references": references,
-            "chunk_count": chunk_count,
-            "megapixels": megapixels,
-            "length": length,
-            "steps": steps,
-            "fps": fps,
-            "ref_image_size": ref_image_size,
-            "also_ref_first_frame": also_ref_first_frame,
-            "orchestration_timeout_seconds": orchestration_timeout_seconds,
-        }
-        values.update({key: value for key, value in explicit.items() if value is not None})
-        if extra:
-            try:
-                values.update(merge_generation_mappings(extra, strict=True))
-            except GenerationConfigError as exc:
-                raise PreparationError(str(exc)) from exc
-        return values
+        return normalize_gui_updates(config=config, generation_config=generation_config, initial_image=initial_image, prompts=prompts, references=references, chunk_count=chunk_count, megapixels=megapixels, length=length, steps=steps, fps=fps, ref_image_size=ref_image_size, also_ref_first_frame=also_ref_first_frame, orchestration_timeout_seconds=orchestration_timeout_seconds, **extra)
 
     def __call__(
         self,
@@ -143,10 +171,7 @@ class PrepareGuiUseCase:
         if existing is not None:
             scopes.append(existing.defaults)
         scopes.append(updates)
-        try:
-            values = merge_generation_mappings(*scopes)
-        except GenerationConfigError as exc:
-            raise PreparationError(str(exc)) from exc
+        values = effective_generation_config(*scopes).to_mapping()
         prompts_value = values.get("prompts", ())
         refs_value = values.get("references", ())
         count_value = values.get("chunk_count")
@@ -164,8 +189,8 @@ class PrepareGuiUseCase:
             not isinstance(value, str) or not value.strip() for value in prompts_value
         ):
             raise PreparationError("one nonblank prompt is required per chunk")
-        if len(refs_value) != 6:
-            raise PreparationError("exactly six H3 references are required")
+        if len(refs_value) > 6 or any(not isinstance(v, str) or not v.strip() for v in refs_value):
+            raise PreparationError("H3 references must contain 0 to 6 nonblank paths")
         source = [self._src(values.get("initial_image"), "initial image")]
         source.extend(self._src(value, f"reference slot {index}") for index, value in enumerate(refs_value))
         relative = []
@@ -209,7 +234,11 @@ class PrepareGuiUseCase:
                 existing_generation = GenerationConfig.from_scopes(project.defaults, existing.defaults)
             except GenerationConfigError as exc:
                 raise PreparationError(f"existing execution configuration is invalid: {exc}") from exc
-            if existing_generation != generation or len(existing.chunks) != count_value:
+            started_states = {"running", "succeeded", "failed", "cancelled", "unknown"}
+            if (existing.artifacts or any(c.attempts or c.first_frame is not None for c in existing.chunks)
+                    or str(existing.state.value if hasattr(existing.state, 'value') else existing.state) in started_states):
+                raise PreparationError("cannot re-prepare execution after real execution evidence")
+            if len(existing.chunks) != count_value:
                 raise PreparationError("existing execution conflicts with preparation")
         else:
             existing = Execution(

@@ -132,6 +132,25 @@ def _validate_api_template(d, *, bound=False):
   if leftovers: raise WorkflowProfileError('unbound ORQ placeholders','binding.placeholders',{'placeholders':tuple(x[0] for x in leftovers)})
  return d
 
+def _validate_reduced_bound_graph(d):
+ """Validate the compact graph produced when trailing reference branches are pruned."""
+ if not isinstance(d,dict) or not d: raise IncompatibleWorkflowError('reduced graph required','template.reduced_shape')
+ required={'92','114','119','120','127','129','136','137','138','139','142','143','144','145','146','147','148'}
+ if not required.issubset(d): raise IncompatibleWorkflowError('reduced graph missing required node','template.reduced_node')
+ for node_id,node in d.items():
+  if not isinstance(node,dict) or node.get('class_type') != H3_NODE_TYPES.get(int(node_id)) or not isinstance(node.get('inputs'),dict):
+   raise IncompatibleWorkflowError('reduced graph node mismatch','template.reduced_node')
+ for consumer,node in d.items():
+  for name,value in node['inputs'].items():
+   if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and type(value[1]) is int:
+    if value[0] not in d or value[1] < 0: raise IncompatibleWorkflowError('reduced graph dangling link','template.dangling_link')
+ refs=sorted((k for k in d['129']['inputs'] if k.startswith('ref_images.ref_image_')), key=lambda k:int(k.rsplit('_',1)[1]))
+ if refs != [f'ref_images.ref_image_{i}' for i in range(len(refs))] or len(refs)>6:
+  raise IncompatibleWorkflowError('reduced graph reference keys are not dense','template.references')
+ if any(not isinstance(d['129']['inputs'][k],list) or d['129']['inputs'][k][0] not in d for k in refs):
+  raise IncompatibleWorkflowError('reduced graph reference link missing','template.references')
+ return d
+
 def configure_fast_e2e(api_prompt):
  """Return a non-persistent, explicitly opt-in fast development prompt."""
  _validate_api_template(api_prompt)
@@ -167,11 +186,23 @@ def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, *
    ins[k]=v
   else: ins[k]=v
  if references is not None:
-  if not isinstance(references,(list,tuple)) or len(references)!=6: raise WorkflowProfileError('exactly six reference images required','binding.references')
-  for i,v in enumerate(references):
+  if not isinstance(references,(list,tuple)) or len(references)>6: raise WorkflowProfileError('references must contain 0 to 6 images','binding.references')
+  refs=list(references)
+  if any(not isinstance(v,str) or not v.strip() for v in refs): raise WorkflowProfileError('reference image paths must be nonblank','binding.references')
+  for i,v in enumerate(refs):
    if not isinstance(v,str) or not v.strip(): raise WorkflowProfileError('reference image paths must be nonblank','binding.references')
    out[str((130,131,132,150,151,152)[i])]['inputs']['image']=v
- _validate_api_template(out, bound=True)
+  # Compact the product binding: omit absent reference slots and their branch.
+  if len(refs) < 6:
+   branch_nodes=((130,133,156),(131,134,157),(132,135,158),(150,153,159),(151,154,161),(152,155,160))
+   for nodes in branch_nodes[len(refs):]:
+    for nid in nodes: out.pop(str(nid),None)
+   for key in list(ins):
+    if key.startswith('ref_images.ref_image_') and int(key.rsplit('_',1)[1]) >= len(refs): ins.pop(key)
+ if references is None or len(references)==6:
+  _validate_api_template(out, bound=True)
+ else:
+  _validate_reduced_bound_graph(out)
  return out
 
 def rebind_first_frame(bound_prompt, first_frame):

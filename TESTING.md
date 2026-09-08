@@ -228,3 +228,7 @@ Resultados automáticos del cambio:
 E2E FAST contra ComfyUI `0.33.0` en `127.0.0.1:8188`: 57,0 s, siete uploads estáticos `overwrite=false`, un upload de transición, dos submits, cero tercero, dos MP4 H.264 352×256 a 24 fps con 56 frames, persistencia/reopen `succeeded`. La evidencia está en `C:\Codex\Orquestador-ComfyUI-F10-runtime\seam-fast-e2e\fast-20260901T223000Z`. `node127` del segundo graph coincide pixel a pixel con `TRANSITION_INPUT.png`; el frame 0 del MP4 no coincide exactamente (PSNR 29,846985 dB, MSE 67,356863, diferencia media 6,431763, dimensiones iguales). La entrada no presenta el crop anterior; la diferencia restante se clasifica como comportamiento D del modelo H3 y queda aceptada como limitación conocida del backend, no como defecto pendiente del Orquestador. La continuidad visual fue aprobada (`VISUAL_CONTINUITY=APPROVED`).
 
 El control `codec-baseline-frame0.png` (56 frames idénticos codificados localmente con H.264) dio PSNR 40,894518 dB y diferencia media 1,772694; por eso la diferencia FAST no se atribuye sólo a la serialización H.264.
+
+## F11.1B — evidencia final
+
+F11.1A+F10+F4 H3+F11.1B: **83 PASS**; F11.1B: **27 PASS**; suite completa: **518 PASS**, **0 skipped**; `compileall` y `git diff --check` PASS. Se cubren referencias 0..6 densas, length en frames/FPS dinámico, re-Prepare seguro, invalidación de Start y SQLite/QThread en worker. Runtime `/prompt`: 0, 1, 6 y hueco intencional aceptados; prompts interrumpidos inmediatamente; `REAL_VIDEO_GENERATION=NO`. Auditoría 031: PASS.

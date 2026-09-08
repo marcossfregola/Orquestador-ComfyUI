@@ -140,7 +140,7 @@ Decisiones formalizadas para el diseño de F11:
 
 - existe un único contrato conceptual `GenerationConfig`, compartido por GUI, aplicación y profile/bindings; la GUI no mantiene una segunda lógica de defaults o validación;
 - se conserva la precedencia `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk, y cada ejecución guarda un snapshot durable de su configuración efectiva;
-- F11.1 exige imagen inicial, exactamente seis referencias H3, 2 o 3 chunks y un prompt no vacío por chunk;
+- F11.1 exige imagen inicial, referencias H3 opcionales (0..6), ordenadas y densas para la serialización de producto, 2 o 3 chunks y un prompt no vacío por chunk;
 - F11.1 expone resolución mediante una única política de megapíxeles, además de `length`, `steps` y FPS; los destinos, defaults y la distinción externa/interna de `first_frame` son autoridad de [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md);
 - width/height siguen siendo derivados por el workflow y no se crea una política manual concurrente; la forma de scopes, snapshot y validación es autoridad de [DATA_MODEL.md](DATA_MODEL.md);
 - seed, sampler, scheduler, IA y demás backlog quedan fuera; `ref_image_size` y `also_ref_first_frame` usan defaults sin controles hasta F11.3;
@@ -148,7 +148,7 @@ Decisiones formalizadas para el diseño de F11:
 
 **Criterio de cierre:** contrato de configuración explícito y reutilizable, sin segunda lógica paralela en la UI y sin cambios innecesarios del núcleo ya validado.
 
-**Estado:** **CLOSED — APPROVED** como decisión documental/contractual. La implementación de F11.1 permanece sin iniciar.
+**Estado:** **CLOSED — APPROVED** como decisión documental/contractual. F11.1A y F11.1B están implementadas y aprobadas técnicamente; quedan pendientes/listas para el cierre Git según el estado vigente en [STATUS.md](STATUS.md).
 
 ### F11.1 — Primera GUI realmente utilizable para generar
 
@@ -170,6 +170,8 @@ La configuración de resolución usa exclusivamente megapíxeles del node 119; w
 Este es el primer checkpoint de F11 que debe dejar el producto utilizable mientras continúan las slices siguientes.
 
 ### F11.2 — Gestión visual de imagen inicial y referencias
+
+**Corrección F11.1 vigente:** el contrato de producto admite 0..6 referencias H3 opcionales, serializadas densamente en `ref_image_0..N-1`; F11.1A/F11.1B están implementadas, auditadas y técnicamente aprobadas, listas para cierre Git.
 
 Agregar comodidad de preparación sin cambiar el contrato de generación:
 
