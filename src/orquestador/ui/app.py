@@ -313,8 +313,10 @@ def launch(config: AppConfig) -> int:
     QApplication = import_module("PySide6.QtWidgets").QApplication
     from .main_window import MainWindow
     app = QApplication.instance() or QApplication([])
+    app.setOrganizationName("OrquestadorComfyUI")
+    app.setApplicationName("Orquestador")
     facade, resources = compose(config)
-    window = MainWindow(facade); window.show()
+    window = MainWindow(facade, config.project_root); window.show()
     try:
         return int(app.exec())
     finally:
