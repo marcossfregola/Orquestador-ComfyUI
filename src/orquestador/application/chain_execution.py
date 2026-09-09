@@ -33,14 +33,17 @@ class ChainExecutionUseCase:
     ``prompts`` may be a sequence or callable(order, chunk).  A checkpoint is
     persisted after every successful chunk, before the next submit is made.
     """
-    def __init__(self, repository, coordinator, recovery=None):
+    def __init__(self, repository, coordinator, recovery=None, orchestrator=None):
         self.repository = repository
         self.coordinator = coordinator
         self.recovery = recovery
+        self.orchestrator = orchestrator
 
     def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None):
         if len(execution.chunks) < 2 or len(execution.chunks) > 3:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason="F7 supports two or three chunks")
+        if execution.state is Lifecycle.CANCELLED:
+            return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='execution cancelled')
         if execution.state is Lifecycle.PENDING:
             execution.transition(Lifecycle.RUNNING)
             self.repository.save(project, [execution])
@@ -51,6 +54,8 @@ class ChainExecutionUseCase:
         except Exception as exc:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason=f'transition load failed: {exc}')
         for index, chunk in enumerate(execution.chunks):
+            if execution.state is Lifecycle.CANCELLED or chunk.state is Lifecycle.CANCELLED:
+                return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), index, 'cancelled')
             if chunk.state is Lifecycle.SUCCEEDED:
                 if index < len(execution.chunks)-1:
                     links=[t for t in durable if t.target_chunk_id == execution.chunks[index+1].id]
@@ -106,18 +111,31 @@ class ChainExecutionUseCase:
                     prompt = (transition_rebinder(prompt, materialized)
                               if transition_rebinder is not None
                               else dict(prompt, first_frame=materialized))
-                except Exception:
-                    return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'invalid prompt binding')
+                except Exception as exc:
+                    # Preserve the fail-closed boundary while exposing the
+                    # safe actionable cause (missing frame/upload or invalid
+                    # LoadImage descriptor) to the chain outcome.
+                    detail = str(exc).strip() or exc.__class__.__name__
+                    return ChainExecutionResult(
+                        ChainOutcome.BLOCKED, str(execution.id), index,
+                        f'invalid prompt binding: {detail}'
+                    )
+            route = self.orchestrator.route_chain_chunk(chunk) if self.orchestrator is not None else None
+            use_recovery = route is not None and route.action.value == 'recover_resume'
             if chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING) and self.recovery is None:
                 return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'recovery required')
-            runner = self.recovery if chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING) else self.coordinator
+            runner = self.recovery if use_recovery or (route is None and chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING)) else self.coordinator
             if hasattr(runner, 'resume'):
                 rr = runner.resume(project.id, execution.id, prompt=prompt, project=project)
                 result = getattr(rr, 'completion', None)
                 if result is None:
                     return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), index, getattr(rr, 'reason', 'recovery did not complete'))
             else:
-                result = runner.execute(project, execution, chunk.id, prompt)
+                if self.orchestrator is not None and runner is self.coordinator:
+                    result = self.orchestrator.execute_chunk_with_policy(
+                        project, execution, chunk.id, prompt)
+                else:
+                    result = runner.execute(project, execution, chunk.id, prompt)
             if hasattr(result,'completion') and result.completion is not None: result = result.completion
             if not result.success:
                 return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), index, result.reason, result)

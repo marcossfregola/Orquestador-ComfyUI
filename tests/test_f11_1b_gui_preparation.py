@@ -109,7 +109,7 @@ class F111BGuiPreparationTests(unittest.TestCase):
         facade.calls=calls
         facade.prepare=lambda **kw: calls.append(("prepare",kw)) or OperationResult(True, ExecutionSnapshot(state="pending",can_start=True), detail=kw)
         facade.preflight=lambda **kw: calls.append(("preflight",kw)) or OperationResult(True, ExecutionSnapshot(state="pending",can_start=True), detail=kw)
-        facade.start_chain=lambda **kw: calls.append(("start",kw)) or OperationResult(True, ExecutionSnapshot(state="running",can_start=False), detail=kw)
+        facade.start_chain=lambda *a, **kw: calls.append(("start",a if a else kw)) or OperationResult(True, ExecutionSnapshot(state="running",can_start=False), detail=(a or kw))
         w=MainWindow(facade); w._test_calls=calls; w.show(); self.app.processEvents()
         return w
 
@@ -190,6 +190,42 @@ class F111BGuiPreparationTests(unittest.TestCase):
         w._prepare(); self.assertTrue(w.start.isEnabled()); before_counts={k:[c[0] for c in w._test_calls].count(k) for k in ("prepare","preflight")}
         w._start_chain(); self.assertEqual([c[0] for c in w._test_calls[-1:]], ["start"])
         self.assertEqual({k:[c[0] for c in w._test_calls].count(k) for k in before_counts}, before_counts)
+
+    def test_gui_start_uses_prepared_selection_without_resending_source_paths(self):
+        w=self._window(); self.addCleanup(w.close)
+        w.project.setText("typed-project"); w.execution.setText("typed-execution")
+        w.initial.setText(str(self.root / "absolute-initial.png"))
+        w._prepared_key=w._form_key(); w._auth_can_start=True; w._update_start()
+        # A durable prepare may canonicalize IDs; Start must hand off only that
+        # selection, never the stale absolute form payload.
+        w._prepared_selection=("durable-project", "durable-execution")
+        w._run=lambda op, kind="other": op()
+        w._start_chain()
+        self.assertEqual(w._test_calls[-1], ("start", ("durable-project", "durable-execution")))
+
+    def test_facade_start_failure_preserves_selected_context(self):
+        from orquestador.application.gui_facade import GuiFacade
+        facade=GuiFacade(chain=lambda *_a, **_k: (_ for _ in ()).throw(ValueError("durable mismatch")),
+                         snapshot=lambda project_id, execution_id: {
+                             "project_id": project_id, "execution_id": execution_id,
+                             "state": "pending", "can_start": True})
+        result=facade.start_chain("p", "e")
+        self.assertFalse(result.success)
+        self.assertEqual((result.snapshot.project_id, result.snapshot.execution_id), ("p", "e"))
+        self.assertEqual(result.message, "durable mismatch")
+
+    def test_facade_start_keyword_failure_preserves_selected_context_and_error(self):
+        from orquestador.application.gui_facade import GuiFacade
+        facade=GuiFacade(chain=lambda **_k: (_ for _ in ()).throw(ValueError("keyword mismatch")),
+                         snapshot=lambda project_id, execution_id: {
+                             "project_id": project_id, "execution_id": execution_id,
+                             "state": "pending", "can_start": True})
+        result=facade.start_chain(project_id="keyword-project", execution_id="keyword-execution")
+        self.assertFalse(result.success)
+        self.assertEqual((result.snapshot.project_id, result.snapshot.execution_id),
+                         ("keyword-project", "keyword-execution"))
+        self.assertEqual(result.message, "keyword mismatch")
+        self.assertIsInstance(result.detail, ValueError)
 
     def test_gui_L_widget_defaults_use_authoritative_constants(self):
         w=self._window(); self.addCleanup(w.close)
@@ -390,7 +426,7 @@ class F111BGuiPreparationTests(unittest.TestCase):
         finally:
             verifier.close()
 
-    def test_real_worker_prepare_one_reference_fails_exact_cardinality_without_health(self):
+    def test_real_worker_prepare_one_reference_is_valid_with_optional_cardinality(self):
         class Client:
             def __init__(self, endpoint): self.health_calls = 0
             def health(self): self.health_calls += 1; return {"healthy": True}
@@ -405,6 +441,71 @@ class F111BGuiPreparationTests(unittest.TestCase):
         log = window.log.toPlainText().lower()
         self.assertNotIn("exactly six nonblank references are required", log)
         self.assertNotIn("sqlite", log); self.assertEqual(client.health_calls, 0); self.assertTrue(window.start.isEnabled())
+
+    def test_real_worker_start_uses_worker_local_sqlite_repository(self):
+        """Exercise the actual StartGuiChainUseCase through MainWindow/QThread.
+
+        The chain runner is a controlled generation boundary; Start itself still
+        performs durable SQLite loading, static materialization, workflow
+        binding, and dispatches from the worker thread.
+        """
+        from orquestador.ui.app import compose, AppConfig
+
+        class Client:
+            def __init__(self, endpoint):
+                self.health_calls = 0
+                self.uploads = []
+            def health(self):
+                self.health_calls += 1
+                return {"healthy": True}
+            def upload_image(self, path, **kwargs):
+                self.uploads.append((Path(path).name, kwargs))
+                return {"type": "input", "name": kwargs["requested_filename"], "subfolder": kwargs["subfolder"]}
+
+        from orquestador.application.chain_execution import ChainExecutionUseCase
+
+        class ControlledChain(ChainExecutionUseCase):
+            calls = []
+            repositories = []
+            orchestrators = []
+            def __init__(self, repository, coordinator, recovery=None, orchestrator=None):
+                super().__init__(repository, coordinator, recovery=recovery, orchestrator=orchestrator)
+                ControlledChain.repositories.append(repository)
+                ControlledChain.orchestrators.append(orchestrator)
+            def run(self, project, execution, bound, **kwargs):
+                ControlledChain.calls.append((str(project.id), str(execution.id), len(bound)))
+                return type("Outcome", (), {"outcome": "complete", "execution_id": str(execution.id)})()
+
+        client = Client("unused")
+        with patch("orquestador.ui.app.ChainExecutionUseCase", ControlledChain):
+            facade, resources = compose(AppConfig(self.root), client_factory=lambda endpoint: client)
+            from orquestador.ui.main_window import MainWindow
+            window = MainWindow(facade)
+            self.addCleanup(window.close)
+            self.addCleanup(resources["repository"].close)
+            window.project.setText("p"); window.execution.setText("e")
+            window.initial.setText(self.files[0]); window.references.addItems(self.files[1:3])
+            window.chunk_count.setCurrentText("2")
+            window.prompts[0].setText("first"); window.prompts[1].setText("second")
+            window._prepare(); self._wait_for_worker(window)
+            self.assertTrue(window.start.isEnabled())
+            window._start_chain(); self._wait_for_worker(window)
+
+        self.assertEqual(ControlledChain.calls, [("p", "e", 2)])
+        self.assertEqual(len(ControlledChain.repositories), 2)
+        self.assertIs(ControlledChain.repositories[0], resources["repository"])
+        self.assertIsNot(ControlledChain.repositories[1], resources["repository"])
+        self.assertIsNotNone(ControlledChain.orchestrators[1])
+        self.assertEqual(len(client.uploads), 3)
+        self.assertNotIn("sqlite", window.log.toPlainText().lower())
+        self.assertNotIn("thread", window.log.toPlainText().lower())
+        verifier = SQLiteProjectRepository(self.root)
+        try:
+            project, executions = verifier.load("p")
+            self.assertEqual(str(project.id), "p")
+            self.assertEqual(str(executions[0].id), "e")
+        finally:
+            verifier.close()
 
 
 if __name__ == "__main__":

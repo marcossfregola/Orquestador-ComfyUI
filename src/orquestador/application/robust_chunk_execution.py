@@ -50,29 +50,31 @@ class RobustChunkExecutionCoordinator:
         if aa.state is Lifecycle.RUNNING: aa.transition(Lifecycle.FAILED,error=ErrorRecord('backend_failed',reason))
         self.coordinator.repository.save(project,[clone]); _copy_execution_state(execution,clone)
 
-    def execute(self, project, execution, chunk_id, prompt, **submit_kwargs):
+    def attempt_once(self, project, execution, chunk_id, prompt, **submit_kwargs):
         chunk=next((c for c in execution.chunks if str(c.id)==str(chunk_id)),None)
         if chunk is None: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,'chunk identity mismatch')
         timeout=resolve_orchestration_timeout_seconds(project,execution,chunk)
         ids=[]
-        for number in range(2):
-            try:
-                result=self.coordinator.submitter.submit(project,execution,chunk_id,prompt,**submit_kwargs)
-            except Exception as exc:
-                return RobustChunkExecutionResult(RobustOutcome.BLOCKED,f'submit failed: {exc}',ids)
-            ids.append(result.attempt_id)
-            if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,result.outcome.value,ids)
-            attempt=next((a for a in chunk.attempts if str(a.id)==str(result.attempt_id)),None)
-            if attempt is None or attempt.external_job_ref != result.job_ref: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,'attempt/reference mismatch',ids)
-            observed, problem=self._observe(result.job_ref,execution,chunk,attempt,self.clock()+timeout)
-            if problem: return RobustChunkExecutionResult(RobustOutcome.NEEDS_MANUAL_REVIEW,problem,ids)
-            if observed.state is HistoryState.SUCCEEDED:
-                completion=self.coordinator.complete_submitted_attempt(project,execution,chunk,attempt,observed)
-                return RobustChunkExecutionResult(RobustOutcome.COMPLETED if completion.success else RobustOutcome.NEEDS_MANUAL_REVIEW,completion.reason,ids,completion)
-            if observed.state is not HistoryState.FAILED: return RobustChunkExecutionResult(RobustOutcome.NEEDS_MANUAL_REVIEW,'nonterminal/ambiguous state',ids)
-            try: self._persist_failed(project,execution,chunk,attempt,observed.error or 'backend failed')
-            except Exception as exc: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,f'failed attempt persistence: {exc}',ids)
-            if number==1: return RobustChunkExecutionResult(RobustOutcome.FAILED,observed.error or 'backend failed',ids)
-        return RobustChunkExecutionResult(RobustOutcome.FAILED,'backend failed',ids)
+        try:
+            result, validation_error = self.coordinator.submit_new(project, execution, chunk_id, prompt, **submit_kwargs)
+            if validation_error is not None: return RobustChunkExecutionResult(RobustOutcome.BLOCKED, validation_error, ids)
+        except Exception as exc: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,f'submit failed: {exc}',ids)
+        ids.append(result.attempt_id)
+        if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,result.outcome.value,ids)
+        attempt=next((a for a in chunk.attempts if str(a.id)==str(result.attempt_id)),None)
+        if attempt is None or attempt.external_job_ref != result.job_ref: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,'attempt/reference mismatch',ids)
+        observed, problem=self._observe(result.job_ref,execution,chunk,attempt,self.clock()+timeout)
+        if problem: return RobustChunkExecutionResult(RobustOutcome.NEEDS_MANUAL_REVIEW,problem,ids)
+        if observed.state is HistoryState.SUCCEEDED:
+            completion=self.coordinator.complete_submitted_attempt(project,execution,chunk,attempt,observed)
+            return RobustChunkExecutionResult(RobustOutcome.COMPLETED if completion.success else RobustOutcome.NEEDS_MANUAL_REVIEW,completion.reason,ids,completion)
+        if observed.state is not HistoryState.FAILED: return RobustChunkExecutionResult(RobustOutcome.NEEDS_MANUAL_REVIEW,'nonterminal/ambiguous state',ids)
+        try: self._persist_failed(project,execution,chunk,attempt,observed.error or 'backend failed')
+        except Exception as exc: return RobustChunkExecutionResult(RobustOutcome.BLOCKED,f'failed attempt persistence: {exc}',ids)
+        return RobustChunkExecutionResult(RobustOutcome.FAILED,observed.error or 'backend failed',ids)
+
+    def execute(self, project, execution, chunk_id, prompt, **submit_kwargs):
+        """Compatibility alias: exactly one mechanically executed attempt."""
+        return self.attempt_once(project, execution, chunk_id, prompt, **submit_kwargs)
 
 RobustChunkExecutionUseCase = RobustChunkExecutionCoordinator

@@ -36,9 +36,11 @@ class SubmitAttemptTests(unittest.TestCase):
             result=SubmitAttemptUseCase(r,client).submit(p,e,'c',{'observe':lambda: r.load('p')[1][0].chunks[0].attempts[0].external_job_ref})
             self.assertIsNone(client.seen); self.assertEqual(result.outcome,SubmitOutcome.SUCCEEDED)
             self.assertEqual(r.load('p')[1][0].chunks[0].attempts[0].external_job_ref,BackendJobRef('j')); r.close()
-    def test_uncertain_submit_is_single_ambiguous_attempt(self):
+    def test_runtime_error_propagates_and_is_not_ambiguous_or_retried(self):
         with tempfile.TemporaryDirectory() as d:
-            r=SQLiteProjectRepository(d); p,e,c=self.make(r); cl=FakeClient(error=RuntimeError('unknown')); x=SubmitAttemptUseCase(r,cl).submit(p,e,'c',{'observe':lambda:None}); self.assertEqual(x.outcome,SubmitOutcome.AMBIGUOUS); self.assertEqual(cl.calls,1); self.assertIsNone(r.load('p')[1][0].chunks[0].attempts[0].external_job_ref); r.close()
+            r=SQLiteProjectRepository(d); p,e,c=self.make(r); cl=FakeClient(error=RuntimeError('unknown'))
+            with self.assertRaises(RuntimeError): SubmitAttemptUseCase(r,cl).submit(p,e,'c',{'observe':lambda:None})
+            self.assertEqual(cl.calls,1); self.assertEqual(len(e.chunks[0].attempts),1); r.close()
     def test_empty_and_unsupported_refs_are_invalid(self):
         for value in (None, '', object()):
             with tempfile.TemporaryDirectory() as d:

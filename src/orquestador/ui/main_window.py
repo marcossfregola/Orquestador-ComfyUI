@@ -6,7 +6,7 @@ from .workers import OperationWorker
 from ..domain.config import DEFAULT_MEGAPIXELS, DEFAULT_LENGTH, DEFAULT_STEPS, DEFAULT_FPS
 class MainWindow(QMainWindow):
     def __init__(self, facade):
-        super().__init__(); self.facade=facade; self._thread=None; self._busy=False; self._prepared_key=None; self._auth_can_start=False; self._auth_busy=False
+        super().__init__(); self.facade=facade; self._thread=None; self._busy=False; self._prepared_key=None; self._prepared_selection=None; self._auth_can_start=False; self._auth_busy=False
         root=QWidget(); self.setCentralWidget(root); lay=QVBoxLayout(root)
         lay.addWidget(QLabel("Project / execution preparation")); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setPlaceholderText("Project id"); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setPlaceholderText("Execution id"); row.addWidget(self.execution); row.addWidget(QLabel("Initial image:")); self.initial=QLineEdit(); self.initial.setPlaceholderText("empty — choose an initial image"); row.addWidget(self.initial); self.initial_button=QPushButton("Choose initial…"); row.addWidget(self.initial_button); self.preflight=QPushButton("Preflight"); self.prepare=QPushButton("Prepare"); row.addWidget(self.preflight); row.addWidget(self.prepare); lay.addLayout(row)
         self.reference_labels=[]
@@ -55,7 +55,9 @@ class MainWindow(QMainWindow):
         for i,e in enumerate(self.prompts): e.setVisible(i<count); e.setEnabled(i<count)
     def _preflight(self): self._run(lambda:self.facade.preflight(**self._inputs()), "preflight")
     def _prepare(self): self._run(lambda:self.facade.prepare(**self._inputs()), "prepare")
-    def _start_chain(self): self._run(lambda:self.facade.start_chain(**self._inputs()), "start")
+    def _start_chain(self):
+        project_id, execution_id = self._prepared_selection or (self.project.text().strip(), self.execution.text().strip())
+        self._run(lambda:self.facade.start_chain(project_id, execution_id), "start")
     def _form_key(self):
         x=self._inputs(); return tuple((k, tuple(v) if isinstance(v,list) else v) for k,v in x.items())
     def _update_start(self): self.start.setEnabled(bool(self._auth_can_start and not self._auth_busy and not self._busy and self._prepared_key is not None and self._form_key()==self._prepared_key))
@@ -70,18 +72,23 @@ class MainWindow(QMainWindow):
         if self._busy: return
         self._operation_kind=kind; self._busy=True; self._set_enabled(False); self._thread=QThread(); self._worker=OperationWorker(op); self._worker.moveToThread(self._thread); self._thread.started.connect(self._worker.run); self._worker.succeeded.connect(lambda r:self._done(r)); self._worker.failed.connect(lambda e:self.log.append(e)); self._worker.finished.connect(self._thread.quit); self._thread.finished.connect(self._cleanup); self._thread.start()
     def _done(self,r):
-        if r.success and self._operation_kind=="prepare": self._prepared_key=self._form_key()
+        if r.success and self._operation_kind=="prepare":
+            self._prepared_key=self._form_key()
+            self._prepared_selection=(r.snapshot.project_id or self.project.text().strip(), r.snapshot.execution_id or self.execution.text().strip())
         self.render(r.snapshot)
         self.log.append(r.message or "Operation completed")
     def _cleanup(self):
         thread=self._thread; worker=self._worker; self._busy=False; self._set_enabled(True); self._update_start(); self._thread=None
         if worker is not None: worker.deleteLater()
         if thread is not None: thread.deleteLater()
-    def _invalidate(self,*_): self._prepared_key=None; self._update_start()
+    def _invalidate(self,*_): self._prepared_key=None; self._prepared_selection=None; self._update_start()
     def _set_enabled(self,v): [x.setEnabled(v) for x in (self.preflight,self.prepare,self.start,self.resume,self.retry,self.cancel,self.assemble)]
     def _assemble(self):
         p,_=QFileDialog.getSaveFileName(self,"Destination MP4",filter="MP4 (*.mp4)");
-        if p: self._run(lambda:self.facade.assemble(p))
+        if p:
+            project_id = self.project.text().strip()
+            execution_id = self.execution.text().strip()
+            self._run(lambda:self.facade.assemble(project_id, execution_id, p))
     def closeEvent(self,e):
         if self._busy: e.ignore(); self.status.setText("Operation active; wait for completion")
         else: e.accept()

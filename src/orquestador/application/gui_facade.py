@@ -36,14 +36,36 @@ class GuiFacade:
                 outcome_value=getattr(outcome,"value",outcome)
                 ok = ok and outcome_value in {"complete", "completed"}
             return OperationResult(ok,snap,"" if ok else getattr(value,"reason","operation failed"),value)
-        except Exception as exc: return OperationResult(False, self.refresh(), str(exc), exc)
+        except Exception as exc:
+            # Preserve the selected durable context when an operation fails.  In
+            # particular, Start validation errors must not degrade the UI to the
+            # generic "select a project" state.
+            selection = list(args[:2])
+            for key in ("project_id", "execution_id"):
+                if len(selection) >= 2:
+                    break
+                selection.append(kwargs.get(key))
+            project_id = selection[0] if selection else None
+            execution_id = selection[1] if len(selection) > 1 else None
+            return OperationResult(
+                False,
+                ExecutionSnapshot(
+                    project_id=str(project_id) if project_id else None,
+                    execution_id=str(execution_id) if execution_id else None,
+                    state="error",
+                    errors=(str(exc),),
+                ),
+                str(exc),
+                exc,
+            )
     def prepare(self,*a,**k): return self._call("prepare",*a,**k)
     def preflight(self,*a,**k): return self._call("preflight",*a,**k)
     def start_chain(self,*a,**k): return self._call("chain",*a,**k)
     def resume_execution(self,*a,**k): return self._call("resume",*a,**k)
     def recover_execution(self,*a,**k): return self._call("recover",*a,**k)
     def retry_execution(self,*a,**k): return self._call("retry",*a,**k)
-    def assemble(self,*a,**k): return self._call("assemble",*a,**k)
+    def assemble(self, project_id, execution_id, destination):
+        return self._call("assemble", project_id, execution_id, destination)
     def cancel_pending(self,*a,**k):
         snap=self.refresh(*a[:2])
         if not snap.can_cancel: return OperationResult(False,snap,snap.cancel_reason or "cancellation unavailable")

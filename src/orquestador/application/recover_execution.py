@@ -13,6 +13,7 @@ from .bridge import SubmitOutcome
 from .chunk_execution import _clone_execution, _copy_execution_state
 from ..adapters.http import HistoryResult
 from ..domain.core import ErrorRecord, Artifact, Phase
+from .submit_boundary import validate_configured_output_root, SubmitBoundary
 
 class RecoveryOutcome(str, Enum):
     COMPLETE='complete'; WAIT='wait'; RETRIED_WAIT='retried_wait'; RETRIED_COMPLETE='retried_complete'
@@ -36,26 +37,14 @@ class RecoveryPlan:
     cause: str | None = None
     observed: Any = None
 
-def _apply_f6_retry_policy(execution, result: ReconciliationResult, jobs=()) -> ReconciliationResult:
-    """Application policy: authorize at most one retry; never retry cancellation."""
-    if result.decision is not Decision.RETRY_CURRENT_CHUNK or Action.CREATE_NEW_ATTEMPT not in result.proposed_actions:
-        return result
-    target = next((c for c in execution.chunks if any(str(a.id) == result.attempt_id for a in c.attempts)), None)
-    if target is None:
-        return result
-    attempt = next((a for a in target.attempts if str(a.id) == result.attempt_id), None)
-    cancelled = attempt is not None and attempt.state.value == "cancelled"
-    cancelled = cancelled or any(j.attempt_id == result.attempt_id and j.state is BackendJobState.CANCELLED for j in jobs)
-    if cancelled or len(target.attempts) >= 2:
-        return ReconciliationResult(result.execution_id, Decision.NEEDS_MANUAL_REVIEW,
-            result.last_safe_completed_chunk, result.next_actionable_chunk, result.attempt_id,
-            result.evidence_codes, (Action.BLOCK_FOR_REVIEW,), False)
-    return result
-
 class RecoverExecutionUseCase:
     """Load durable state, obtain fresh backend evidence, and reconcile only."""
-    def __init__(self, repository: RecoveryRepository, backend: FreshRecoveryBackend):
+    def __init__(self, repository: RecoveryRepository, backend: FreshRecoveryBackend, orchestrator=None):
         self.repository, self.backend = repository, backend
+        if orchestrator is None:
+            from .f11_1b import F11_1BOrchestrator
+            orchestrator = F11_1BOrchestrator(materializer=None, submit_boundary=None)
+        self.orchestrator = orchestrator
 
     def recover(self, project_id: Any, execution_id: Any | None = None) -> RecoveryPlan:
         _, executions = self.repository.load(project_id)
@@ -83,13 +72,18 @@ class RecoverExecutionUseCase:
         else:
             evidence = map_backend_evidence(execution=execution, project_id=str(execution.project_id), execution_id=str(execution.id), chunk_id=str(chunk.id), attempt_id=str(attempt.id), job_ref=attempt.external_job_ref, source=source)
             observation = BackendJobObservation(evidence.project_id, evidence.execution_id, evidence.chunk_id, evidence.attempt_id, evidence.state, evidence.job_ref)
-        result = _apply_f6_retry_policy(execution, reconcile(execution, jobs=(observation,)), (observation,))
+        # Reconciliation is deliberately observational. Retry authorization,
+        # budget and manual-review selection belong to F11_1BOrchestrator.
+        result = self.orchestrator.apply_retry_policy(execution, reconcile(execution, jobs=(observation,)), (observation,))
         return RecoveryPlan(result, observed=source)
 
 class ResumeExecutionUseCase:
     """Executable, single-chunk F6 boundary composed from F5 services."""
-    def __init__(self, repository, backend, coordinator, submitter):
-        self.repository, self.backend, self.coordinator, self.submitter = repository, backend, coordinator, submitter
+    def __init__(self, repository, backend, coordinator, submitter, output_root=None):
+        self.repository, self.backend, self.coordinator = repository, backend, coordinator
+        # submitter is a SubmitBoundary (legacy callers may pass the adapter).
+        self.submit_boundary = submitter
+        self.output_root = output_root if output_root is not None else getattr(coordinator, 'comfyui_output_root', None)
 
     def _manual(self, e, c=None, a=None, reason=''):
         return RecoveryExecutionResult(RecoveryOutcome.NEEDS_MANUAL_REVIEW, str(e.id), str(c.id) if c else None, str(a.id) if a else None, reason)
@@ -104,7 +98,29 @@ class ResumeExecutionUseCase:
         c=next((x for x in e.chunks if x.state is not Lifecycle.SUCCEEDED),None)
         if c is None: return self._manual(e,reason='no actionable chunk')
         a=c.attempts[-1] if c.attempts else None
-        if a is None or a.external_job_ref is None: return self._manual(e,c,a,'actionable attempt has no trustworthy external_job_ref')
+        if a is None: return self._manual(e,c,a,'actionable attempt has no trustworthy external_job_ref')
+        # Definite local submit rejection has no backend reference by design;
+        # it is safe to enter the existing bounded retry path directly.
+        if a.external_job_ref is None:
+            if a.state is Lifecycle.FAILED and getattr(a.error, 'code', None) == 'submit_rejected':
+                if len(c.attempts) >= 2:
+                    return self._manual(e,c,a,'retry budget exhausted')
+                result = self.submit_boundary.submit(project, e, c.id, prompt)
+                if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None:
+                    return self._manual(e,c,a,result.outcome.value)
+                a2 = next(x for x in c.attempts if str(x.id) == str(result.attempt_id))
+                if c.state is Lifecycle.FAILED:
+                    try: c.reopen_for_retry()
+                    except DomainError as exc: return self._manual(e,c,a2,str(exc))
+                    self.repository.save(project,[e])
+                src2=self.backend.observe(result.job_ref)
+                st2=src2.state if isinstance(src2,BackendJobObservation) else map_backend_evidence(execution=e,project_id=str(project_id),execution_id=str(e.id),chunk_id=str(c.id),attempt_id=str(a2.id),job_ref=result.job_ref,source=src2).state
+                if st2 in (BackendJobState.QUEUED,BackendJobState.RUNNING): return RecoveryExecutionResult(RecoveryOutcome.RETRIED_WAIT,str(e.id),str(c.id),str(a2.id))
+                if st2 is BackendJobState.COMPLETED:
+                    h=self.backend.history(result.job_ref); completion=self.coordinator.complete_submitted_attempt(project,e,c,a2,h)
+                    return RecoveryExecutionResult(RecoveryOutcome.RETRIED_COMPLETE if completion.success else RecoveryOutcome.NEEDS_MANUAL_REVIEW,str(e.id),str(c.id),str(a2.id),completion=completion)
+                return self._manual(e,c,a2,'retry attempt did not complete successfully')
+            return self._manual(e,c,a,'actionable attempt has no trustworthy external_job_ref')
         ref=a.external_job_ref
         try: source=self.backend.observe(ref)
         except (TimeoutError,ConnectionError,OSError) as exc: return self._manual(e,c,a,str(exc))
@@ -136,7 +152,10 @@ class ResumeExecutionUseCase:
             clone=_clone_execution(e); cc=next(x for x in clone.chunks if str(x.id)==str(c.id)); aa=next(x for x in cc.attempts if str(x.id)==str(a.id));
             if aa.state is Lifecycle.RUNNING: aa.transition(Lifecycle.FAILED,error=ErrorRecord('backend_failed','backend reported FAILED'))
             self.repository.save(project,[clone]); _copy_execution_state(e,clone); a=next(x for x in c.attempts if str(x.id)==str(a.id))
-        result=self.submitter.submit(project,e,c.id,prompt)
+        if self.output_root is not None and isinstance(self.output_root, (str, bytes, __import__('os').PathLike)):
+            try: validate_configured_output_root(self.output_root)
+            except ValueError as exc: return self._manual(e,c,a,str(exc))
+        result=self.submit_boundary.submit(project,e,c.id,prompt)
         if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None: return self._manual(e,c,a,result.outcome.value)
         # A retry reopens the failed chunk before completion orchestration; the
         # coordinator requires the aggregate to be RUNNING when it promotes the

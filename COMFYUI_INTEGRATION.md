@@ -234,3 +234,9 @@ La ejecución FAST de control se hizo por `facade.prepare` y `facade.start_chain
 La evidencia `seam-comparison.json` contiene `TRANSITION_INPUT.png`, `CHUNK1_FRAME0.png`, `CHUNK1_FRAME1.png`, frames 2–4, preview node 127, histories, hashes y métricas. `node127_vs_transition` es `pixel_identical=true` (352×256); el frame 55 exacto de chunk 0 coincide byte/pixel a pixel con `TRANSITION_INPUT.png`. `transition_vs_chunk1[0]` mantiene dimensiones pero no identidad pixel: PSNR 29,846985 dB, MSE 67,356863 y diferencia media 6,431763. Con la entrada ya idéntica, la alteración residual es causa D del modelo H3 y queda aceptada como limitación conocida del backend, no como defecto pendiente del Orquestador; la continuidad visual fue aprobada (`VISUAL_CONTINUITY=APPROVED`).
 
 El control local `codec-baseline-frame0.png`, codificando 56 copias de la transición con H.264 y decodificando el primer frame, obtuvo PSNR 40,894518 dB y diferencia media 1,772694. La diferencia adicional del output H3 excede el error esperado del codec y mantiene la clasificación D con una base separada de la compresión.
+# Output-root guard
+
+`--comfyui-output-root` must name an existing absolute directory at submit time. Start/retry operations fail closed with an actionable error if it is missing or invalid; existing durable external job references are reconciled without resubmission.
+
+### Slice B cancellation
+Pending cancellation deletes one exact prompt only after coherent queue/history proof and post-verification. Running jobs are refused; uncertain or raced outcomes remain nonterminal and require recovery evidence.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -12,14 +13,17 @@ from ..adapters.assembly import FFmpegAssemblyAdapter
 from ..application.gui_facade import GuiFacade
 from ..application.bridge import SubmitAttemptUseCase
 from ..application.chunk_execution import ChunkExecutionCoordinator
+from ..application.f11_1b import validate_configured_output_root, F11_1BOrchestrator, SubmitBoundary, derive_capabilities, select_active_cancellation_target
+from ..application.submit_boundary import ComfyUISubmitTransport
 from ..application.robust_chunk_execution import RobustChunkExecutionCoordinator
 from ..application.recover_execution import ResumeExecutionUseCase, RecoverExecutionUseCase, RetryExecutionUseCase
 from ..application.chain_execution import ChainExecutionUseCase
-from ..application.assembly import AssembleExecutionUseCase
+from ..application.assembly import AssembleExecutionUseCase, AssemblySource, AssemblySourceRoot
 from ..adapters.video import FFmpegVideoAdapter
 from ..domain.core import Lifecycle, MaterializedInputRef
 from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
-from ..application.start_gui_chain import StartGuiChainUseCase, StaticInputMaterializer
+from ..application.start_gui_chain import StartGuiChainUseCase
+from ..application.f11_1b import InputMaterializationService
 from ..persistence.sqlite import SQLiteProjectRepository
 
 class StartupConfigurationError(ValueError):
@@ -46,9 +50,9 @@ class AppConfig:
         if template is not None and (not template.is_absolute() or not template.is_file()):
             raise StartupConfigurationError("--workflow-template must be an existing absolute file")
         output_root = (self.comfyui_output_root or root).expanduser()
-        if not output_root.is_absolute() or not output_root.is_dir():
-            raise StartupConfigurationError("--comfyui-output-root must be an existing absolute directory")
-        return AppConfig(root, self.comfyui_endpoint.strip(), template, self.ffmpeg, self.ffprobe, output_root.resolve())
+        try: output_root = validate_configured_output_root(output_root)
+        except ValueError as exc: raise StartupConfigurationError(str(exc)) from exc
+        return AppConfig(root, self.comfyui_endpoint.strip(), template, self.ffmpeg, self.ffprobe, output_root)
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m orquestador", description="Launch Orquestador desktop UI")
@@ -71,30 +75,45 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             assembly_usecase=None, extractor_factory=FFmpegVideoAdapter):
     """Build concrete production boundaries; no network call is made here."""
     cfg = config.check()
+    injected_chain = chain_usecase is not None
+    injected_resume = resume_usecase is not None
+    injected_recover = recover_usecase is not None
+    injected_retry = retry_usecase is not None
     repository = repository_factory(cfg.project_root)
     client = client_factory(cfg.comfyui_endpoint)
     cancellation = cancellation_factory(client)
     assembler = assembler_factory(cfg.ffprobe, cfg.ffmpeg) if assembler_factory is FFmpegAssemblyAdapter else assembler_factory()
     extractor = extractor_factory(cfg.ffprobe, cfg.ffmpeg) if extractor_factory is FFmpegVideoAdapter else extractor_factory()
-    submitter = SubmitAttemptUseCase(repository, client)
+    submitter = ComfyUISubmitTransport(client)
     monitor = lambda ref, **_: client.history(ref)
     class BackendObservationAdapter:
         def observe(self, ref): return client.history(ref)
         def history(self, ref): return client.history(ref)
     backend = BackendObservationAdapter()
+    submit_boundary = SubmitBoundary(submitter)
     coordinator = __import__('orquestador.application.chunk_execution', fromlist=['ChunkExecutionCoordinator']).ChunkExecutionCoordinator(
-        repository, submitter, monitor, extractor=extractor, trusted_root=cfg.project_root, comfyui_output_root=cfg.comfyui_output_root)
+        repository, submit_boundary, monitor, extractor=extractor, trusted_root=cfg.project_root, comfyui_output_root=cfg.comfyui_output_root)
     # Production chain execution must keep the accepted attempt while
     # observing transient queue/history states until terminal evidence.  Keep
     # the plain coordinator for recovery/completion services, and wrap it only
     # at the chain orchestration boundary where bounded polling belongs.
     chain_coordinator = RobustChunkExecutionCoordinator(coordinator)
-    resume_real = ResumeExecutionUseCase(repository, backend, coordinator, submitter)
+    resume_real = ResumeExecutionUseCase(repository, backend, coordinator, submit_boundary, cfg.comfyui_output_root)
     recover_real = RecoverExecutionUseCase(repository, backend)
-    chain_real = ChainExecutionUseCase(repository, chain_coordinator, recovery=resume_real)
-    assembly_real = AssembleExecutionUseCase(assembler, cfg.project_root)
+    materializer_real = InputMaterializationService(client, cfg.project_root)
+    orchestrator_real = F11_1BOrchestrator(materializer=materializer_real,
+        submit_boundary=submit_boundary, recovery=recover_real, resume=resume_real,
+        retry=None, robust=chain_coordinator)
+    chain_kwargs = {'recovery': resume_real, 'orchestrator': orchestrator_real}
+    if 'orchestrator' not in inspect.signature(ChainExecutionUseCase).parameters:
+        chain_kwargs.pop('orchestrator')
+    chain_real = (ChainExecutionUseCase(repository, chain_coordinator, **chain_kwargs)
+        if chain_usecase is None else chain_usecase)
+    assembly_real = AssembleExecutionUseCase(
+        assembler, cfg.project_root,
+        source_roots=(cfg.project_root, cfg.comfyui_output_root))
     retry_real = RetryExecutionUseCase(repository, resume_real)
-    chain_usecase = chain_usecase or chain_real
+    chain_usecase = chain_real
     resume_usecase = resume_usecase or resume_real
     recover_usecase = recover_usecase or recover_real
     retry_usecase = retry_usecase or retry_real
@@ -104,24 +123,68 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         project, executions = repository.load(project_id)
         matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
         if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
-        e=matches[0]; chunks=[]; outputs=[]; target=[]
+        e=matches[0]; chunks=[]; outputs=[]
         for c in e.chunks:
             a=c.attempts[-1] if c.attempts else None
             chunks.append({"order":c.order,"state":c.state.value,"attempt_ref":str(a.id) if a else None,"error":a.error.message if a and a.error else None,"output":a.output.uri if a and a.output else None})
             if a and a.output and a.state is Lifecycle.SUCCEEDED: outputs.append(a.output.uri)
-            if a and a.external_job_ref: target.append(a.external_job_ref)
-        can_cancel=len(target)==1 and e.state is Lifecycle.RUNNING and any(c.state is Lifecycle.RUNNING for c in e.chunks)
+        target=select_active_cancellation_target(e)
         retryable = (retry_usecase is not None and e.state is Lifecycle.FAILED and
                      any(c.state is Lifecycle.FAILED and len(c.attempts) == 1 and
                          c.attempts[0].state is Lifecycle.FAILED for c in e.chunks))
-        return {"project_id":str(project_id),"execution_id":str(e.id),"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],"can_start":e.state is Lifecycle.PENDING,"can_resume":e.state in (Lifecycle.RUNNING,Lifecycle.FAILED),"can_recover":e.state in (Lifecycle.RUNNING,Lifecycle.FAILED),"can_retry":retryable,"can_cancel":can_cancel,"cancel_reason":"no unique safe pending target" if not can_cancel else "","can_assemble":e.state is Lifecycle.SUCCEEDED and len(outputs)==len(e.chunks) and len(outputs)>=2}
+        caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
+            startable=True, assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
+        return {"project_id":str(project_id),"execution_id":str(e.id),"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
     def cancel(project_id, execution_id):
         s=snapshot(project_id,execution_id)
         if not s["can_cancel"]: raise ValueError(s.get("cancel_reason","cancellation unavailable"))
-        _, es=repository.load(project_id); e=next(x for x in es if str(x.id)==str(execution_id)); refs=[a.external_job_ref for c in e.chunks for a in c.attempts if a.external_job_ref]
-        return {**s,"can_cancel":False,"state":"cancellation_requested"} if len(refs)==1 and cancellation.cancel(refs[0]) else s
+        op_repo = _operation_repository()
+        try:
+            _, es=op_repo.load(project_id); e=next(x for x in es if str(x.id)==str(execution_id)); ref=select_active_cancellation_target(e)
+        finally: op_repo.close()
+        if ref is None: return {**s,"can_cancel":False,"state":"error","errors":("no unique safe pending target",)}
+        op_client=client_factory(cfg.comfyui_endpoint); op_cancel=cancellation_factory(op_client)
+        result=op_cancel.cancel(ref)
+        state=getattr(result.state,'value',str(result.state))
+        if state=='confirmed':
+            op_repo=_operation_repository()
+            try:
+                project, es=op_repo.load(project_id); cur=next(x for x in es if str(x.id)==str(execution_id))
+                target=select_active_cancellation_target(cur)
+                if target is not None and target==ref:
+                    chunk=next(c for c in cur.chunks if any(a.external_job_ref==ref for a in c.attempts)); att=next(a for a in chunk.attempts if a.external_job_ref==ref)
+                    att.transition(Lifecycle.CANCELLED); chunk.transition(Lifecycle.CANCELLED); cur.transition(Lifecycle.CANCELLED)
+                    op_repo.save(project,[cur]); return {**s,"state":"cancelled","can_cancel":False,"message":"cancellation confirmed"}
+            except Exception as exc: return {**s,"state":"reconciliation_required","can_cancel":False,"errors":(str(exc),),"message":"backend cancelled; durable reconciliation required"}
+            finally: op_repo.close()
+        return {**s,"state":("cancellation_requested" if state=='requested' else state),"can_cancel":False,"message":result.issue or state}
     def _operation_repository():
         return repository_factory(cfg.project_root)
+
+    def _worker_services(op_repo):
+        # Every operation owns its backend transport and observation adapter;
+        # no GUI-thread client is captured by worker execution.
+        op_client = client_factory(cfg.comfyui_endpoint)
+        op_transport = ComfyUISubmitTransport(op_client)
+        op_transport.repository = op_repo
+        op_boundary = SubmitBoundary(op_transport)
+        op_monitor = lambda ref, **_: op_client.history(ref)
+        class OpBackend:
+            def observe(self, ref): return op_client.history(ref)
+            def history(self, ref): return op_client.history(ref)
+        op_backend = OpBackend()
+        op_coordinator = ChunkExecutionCoordinator(
+            op_repo, op_boundary, op_monitor, extractor=extractor,
+            trusted_root=cfg.project_root, comfyui_output_root=cfg.comfyui_output_root)
+        op_chain_coordinator = RobustChunkExecutionCoordinator(op_coordinator)
+        op_resume = ResumeExecutionUseCase(op_repo, op_backend, op_coordinator, op_boundary, cfg.comfyui_output_root)
+        op_recover = RecoverExecutionUseCase(op_repo, op_backend)
+        op_retry = RetryExecutionUseCase(op_repo, op_resume)
+        op_materializer = InputMaterializationService(op_client, cfg.project_root)
+        orchestrator = F11_1BOrchestrator(materializer=op_materializer, submit_boundary=op_boundary,
+            recovery=op_recover, resume=op_resume, retry=op_retry, robust=op_chain_coordinator)
+        op_chain = ChainExecutionUseCase(op_repo, op_chain_coordinator, recovery=op_resume, orchestrator=orchestrator)
+        return op_chain, op_resume, op_recover, op_retry, orchestrator
     def _prepare_operation(**kwargs):
         op_repo = _operation_repository()
         try:
@@ -131,7 +194,15 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
                 if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
                 e=matches[0]
-                return {"project_id":str(project_id),"execution_id":str(execution_id),"state":e.state.value,"chunks":[],"artifacts":[],"can_start":e.state is Lifecycle.PENDING,"can_resume":e.state in (Lifecycle.RUNNING,Lifecycle.FAILED),"can_recover":e.state in (Lifecycle.RUNNING,Lifecycle.FAILED),"can_retry":False,"can_cancel":False,"can_assemble":False}
+                target = select_active_cancellation_target(e)
+                caps = derive_capabilities(
+                    e,
+                    can_cancel_candidate=(target is not None),
+                    retryable=False,
+                    startable=True,
+                    assemble=False,
+                )
+                return {"project_id":str(project_id),"execution_id":str(execution_id),"state":e.state.value,"chunks":[],"artifacts":[],**caps.__dict__}
             return PrepareGuiUseCase(op_repo, cfg.project_root, op_snapshot)(**kwargs)
         finally:
             op_repo.close()
@@ -149,47 +220,85 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         if health is False or (isinstance(health, dict) and health.get("healthy") is False):
             raise RuntimeError("backend health check reported unhealthy")
         return result
-    def resume_route(project_id, execution_id=None, **kwargs): return resume_usecase.resume(project_id, execution_id, **kwargs)
-    def recover_route(project_id, execution_id=None, **_): return recover_usecase.recover(project_id, execution_id)
-    def retry_route(project_id, execution_id=None, **kwargs): return retry_usecase.retry(project_id, execution_id, **kwargs)
+    def resume_route(project_id, execution_id=None, **kwargs):
+        if resume_usecase is None: raise RuntimeError("resume unavailable")
+        op_repo = _operation_repository()
+        try:
+            if injected_resume:
+                recovery = resume_usecase
+                chain = chain_usecase
+            else:
+                chain, recovery, _, _, orchestrator = _worker_services(op_repo)
+            if chain is None:
+                return recovery.resume(project_id, execution_id, **kwargs)
+            # Resume / Recover is a higher-level route: F6 recovery remains
+            # single-chunk, while this seam explicitly continues F7 when safe.
+            return orchestrator.resume(project_id, execution_id, **kwargs)
+        finally: op_repo.close()
+    def recover_route(project_id, execution_id=None, **_):
+        if recover_usecase is None: raise RuntimeError("recover unavailable")
+        op_repo = _operation_repository()
+        try:
+            if injected_recover: return recover_usecase.recover(project_id, execution_id)
+            return _worker_services(op_repo)[4].recover(project_id, execution_id)
+        finally: op_repo.close()
+    def retry_route(project_id, execution_id=None, **kwargs):
+        if retry_usecase is None: raise RuntimeError("retry unavailable")
+        op_repo = _operation_repository()
+        try:
+            if injected_retry: return retry_usecase.retry(project_id, execution_id, **kwargs)
+            return _worker_services(op_repo)[4].retry(project_id, execution_id, **kwargs)
+        finally: op_repo.close()
     def assemble_route(project_id, execution_id=None, destination=None, **_):
-        project, executions = repository.load(project_id); e=next(x for x in executions if str(x.id)==str(execution_id))
-        outputs=[a.output.uri for c in e.chunks for a in reversed(c.attempts) if a.output and a.state is Lifecycle.SUCCEEDED]
-        return assembly_usecase.execute(outputs, destination or f"assembled-{e.id}.mp4")
-    def materialize_transition(transition):
-        # The transition input is the exact N-1 frame extracted by the F5
-        # coordinator, never the source MP4 itself.
-        materialized_ref = transition.materialized_ref if hasattr(transition, 'materialized_ref') else None
-        if isinstance(materialized_ref, MaterializedInputRef):
-            return materialized_ref
-        root = cfg.project_root.resolve()
-        frame = (root / 'transitions' / f'{transition.source_attempt_id}.png').resolve()
+        op_repo = _operation_repository()
         try:
-            frame.relative_to(root)
-        except ValueError as exc:
-            raise ValueError('transition frame escapes project root') from exc
-        if not frame.is_file():
-            raise ValueError('transition frame is missing')
-        digest=hashlib.sha256(frame.read_bytes()).hexdigest()
-        requested=f"transition-{transition.source_attempt_id}-{digest[:16]}.png"
-        value=client.upload_image(frame, subfolder='orquestador/transitions', overwrite=False,
-                                  requested_filename=requested)
-        if (not isinstance(value,dict) or value.get('type')!='input' or
-                not isinstance(value.get('name'),str) or not value.get('name') or
-                not isinstance(value.get('subfolder',''),str)):
-            raise ValueError('invalid materialized upload')
-        try:
-            return MaterializedInputRef('input', value.get('subfolder',''), value['name'], digest)
-        except Exception as exc:
-            raise ValueError('unsafe materialized upload reference') from exc
-    static_materializer = StaticInputMaterializer(client, cfg.project_root)
-    start_usecase = StartGuiChainUseCase(repository, cfg.project_root, chain_usecase, cfg.workflow_template, static_materializer, materialize_transition)
+            project, executions = op_repo.load(project_id); e=next(x for x in executions if str(x.id)==str(execution_id))
+            outputs=[AssemblySource(a.output.uri, AssemblySourceRoot.PROJECT_DURABLE)
+                     for c in e.chunks for a in reversed(c.attempts)
+                     if a.output and a.state is Lifecycle.SUCCEEDED]
+            return assembly_usecase.execute(outputs, destination or f"assembled-{e.id}.mp4")
+        finally: op_repo.close()
     # Keep the composition route as a thin closure; all validation/binding remains
     # owned by the application-layer use case.
     def start_chain(project_id, execution_id, **kwargs):
-        # Keep the concrete chain dependency observable at the composition boundary.
-        _chain = chain_usecase
-        return start_usecase(project_id, execution_id, **kwargs)
+        if chain_usecase is None: raise RuntimeError("chain unavailable")
+        op_repo = _operation_repository()
+        try:
+            # Every Start invocation runs in OperationWorker's QThread.  Bind
+            # validation/context to the operation-local repository even when
+            # the chain execution seam is injected, so the persistent GUI
+            # thread connection is never touched by worker code.
+            start_repo = op_repo
+            worker = _worker_services(op_repo) if not injected_chain else None
+            op_chain = chain_usecase if injected_chain else worker[0]
+            # Materialization is operation-local as well: the same service
+            # instance handles static inputs and N-1 transition uploads, and
+            # no GUI-thread service or SQLite-bound use case crosses QThread.
+            op_materializer = (worker[4].materializer if worker is not None
+                               else InputMaterializationService(client, cfg.project_root))
+            def materialize_transition(transition):
+                ref = transition.materialized_ref if hasattr(transition, 'materialized_ref') else None
+                if ref is not None:
+                    return ref
+                # The N-1 extractor writes the continuity frame to the
+                # project transition namespace, keyed by the successful
+                # source attempt.  ``source_output.uri`` is the video
+                # artifact (and may live under ComfyUI's output root); it is
+                # not the physical transition-frame path.
+                attempt = getattr(transition, 'source_attempt_id', None)
+                attempt_id = getattr(attempt, 'value', attempt)
+                if not isinstance(attempt_id, str) or not attempt_id.strip():
+                    raise ValueError('transition source attempt is invalid')
+                source_path = (cfg.project_root / 'transitions' / f'{attempt_id}.png').resolve()
+                if not source_path.is_relative_to(cfg.project_root.resolve()):
+                    raise ValueError('transition path escapes project root')
+                return op_materializer.materialize_transition(source_path)
+            op_start = StartGuiChainUseCase(start_repo, cfg.project_root, op_chain, cfg.workflow_template, op_materializer, materialize_transition)
+            if worker is not None:
+                worker[4].start_usecase = op_start
+                return worker[4].start(project_id, execution_id, **kwargs)
+            return op_start(project_id, execution_id, **kwargs)
+        finally: op_repo.close()
     facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
                        cancel=cancel, snapshot=snapshot)

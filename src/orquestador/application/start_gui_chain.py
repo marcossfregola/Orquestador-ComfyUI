@@ -1,6 +1,5 @@
 from collections.abc import Mapping
 from pathlib import Path
-import hashlib
 
 from ..domain.config import (
     GenerationConfig,
@@ -43,34 +42,6 @@ def _effective_upload_ref(value):
     ):
         raise StartPreparationError("static upload response is unsafe")
     return (subfolder + "/" if subfolder else "") + name
-
-
-class StaticInputMaterializer:
-    def __init__(self, client, root):
-        self.client, self.root = client, Path(root).resolve()
-
-    def __call__(self, paths):
-        out = []
-        for index, raw in enumerate(paths):
-            if not isinstance(raw, str) or Path(raw).is_absolute():
-                raise StartPreparationError("prepared static path is invalid")
-            path = (self.root / raw).resolve()
-            if not path.is_relative_to(self.root) or not path.is_file():
-                raise StartPreparationError("prepared static file is missing")
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-            suffix = path.suffix.lower() if path.suffix else ".png"
-            requested = f"{'initial' if index == 0 else f'ref-{index}'}-{digest}{suffix}"
-            try:
-                value = self.client.upload_image(
-                    path,
-                    subfolder="orquestador/static",
-                    overwrite=False,
-                    requested_filename=requested,
-                )
-            except Exception as exc:
-                raise StartPreparationError(f"static upload failed: {exc}") from exc
-            out.append(_effective_upload_ref(value))
-        return out
 
 
 class StartGuiChainUseCase:
@@ -255,7 +226,8 @@ class StartGuiChainUseCase:
                 raise
             except Exception as exc:
                 raise StartPreparationError(f"static upload failed: {exc}") from exc
-            if len(materialized) != 7 or any(not isinstance(value, str) or not value for value in materialized):
+            expected_materialized = 1 + len(selected.references)
+            if len(materialized) != expected_materialized or any(not isinstance(value, str) or not value for value in materialized):
                 raise StartPreparationError("static materialization is incomplete")
             image, refs = materialized[0], materialized[1:]
         else:

@@ -12,7 +12,7 @@ class F9FacadeTests(unittest.TestCase):
         calls=[]
         def op(*a,**k): calls.append((a,k)); return {"state":"DONE"}
         f=GuiFacade(preflight=op,chain=op,resume=op,recover=op,assemble=op,cancel=op,snapshot=lambda *_:{"state":"READY","can_cancel":False})
-        for method,args in ((f.preflight,(1,)),(f.start_chain,(2,)),(f.resume_execution,(3,)),(f.recover_execution,(4,)),(f.assemble,("x",))): self.assertTrue(method(*args).success)
+        for method,args in ((f.preflight,(1,)),(f.start_chain,(2,)),(f.resume_execution,(3,)),(f.recover_execution,(4,)),(f.assemble,("project", "execution", "destination"))): self.assertTrue(method(*args).success)
         self.assertFalse(f.cancel_pending().success); self.assertEqual(len(calls),5)
         f2=GuiFacade(cancel=op,snapshot=lambda *_:{"state":"QUEUED","can_cancel":True}); self.assertTrue(f2.cancel_pending().success); self.assertEqual(len(calls),6)
 

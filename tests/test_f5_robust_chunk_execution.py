@@ -11,6 +11,8 @@ from orquestador.application.bridge import SubmitAttemptUseCase
 from orquestador.application.chunk_execution import ChunkExecutionCoordinator, ChunkExecutionResult
 from orquestador.application.robust_chunk_execution import RobustChunkExecutionCoordinator, RobustOutcome
 from orquestador.persistence.sqlite import SQLiteProjectRepository
+from orquestador.application.f11_1b import F11_1BOrchestrator, InputMaterializationService
+from orquestador.application.submit_boundary import SubmitBoundary
 
 class Client:
     def __init__(self): self.n=0
@@ -42,18 +44,23 @@ class RobustContractTests(unittest.TestCase):
         core=ChunkExecutionCoordinator(repo,submit,monitor,extractor=extractor,trusted_root=self.root,correlator=corr,physical_validator=physical)
         return RobustChunkExecutionCoordinator(core,sleeper=lambda _:None,poll_interval=.01),client
     def reopen(self): self.repo.close(); self.repo=SQLiteProjectRepository(self.root); return self.repo.load(self.project.id)[1][0]
+    def policy(self, robust):
+        return F11_1BOrchestrator(materializer=InputMaterializationService(), submit_boundary=SubmitBoundary(Mock()), robust=robust)
     def test_first_attempt_success_is_durable_sqlite(self):
         u,c=self.make([HistoryState.SUCCEEDED]); self.assertEqual(u.execute(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.COMPLETED); self.assertEqual(c.n,1); p,e=self.repo.load(self.project.id); x=e[0].chunks[0]; a=x.attempts[0]; self.assertEqual((x.state,a.state,a.external_job_ref.value), (Lifecycle.SUCCEEDED,Lifecycle.SUCCEEDED,'job-1')); arts=[z for z in p and e[0].artifacts if z.attempt_id==a.id and z.phase is Phase.OUTPUT]; self.assertEqual(len(arts),1); self.assertEqual(arts[0].output,a.output); row=self.repo.db.execute('SELECT source_attempt_id,frame_index,frame_count FROM transitions').fetchone(); self.assertEqual(row,(str(a.id),0,1)); self.assertEqual(row[1],row[2]-1)
+    def test_invalid_output_root_after_composition_blocks_robust_submit(self):
+        u,c=self.make([HistoryState.SUCCEEDED]); u.coordinator.comfyui_output_root=self.root/'missing-output-root'; r=u.execute(self.project,self.execution,self.chunk.id,{})
+        self.assertEqual(r.outcome,RobustOutcome.BLOCKED); self.assertEqual(c.n,0); self.assertEqual(len(self.chunk.attempts),0)
     def test_failed_retry_success_is_durable_sqlite(self):
-        u,c=self.make([HistoryState.FAILED,HistoryState.SUCCEEDED]); self.assertEqual(u.execute(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.COMPLETED); self.assertEqual(c.n,2); p,e=self.repo.load(self.project.id); x=e[0].chunks[0]; self.assertEqual([a.number for a in x.attempts],[1,2]); self.assertEqual(x.attempts[0].state,Lifecycle.FAILED); self.assertEqual(x.attempts[1].state,Lifecycle.SUCCEEDED); self.assertTrue(any(z.attempt_id==x.attempts[1].id and z.phase is Phase.OUTPUT for z in e[0].artifacts)); row=self.repo.db.execute('SELECT source_attempt_id,frame_index,frame_count FROM transitions').fetchone(); self.assertEqual(row[0],str(x.attempts[1].id)); self.assertEqual(row[1],row[2]-1)
+        u,c=self.make([HistoryState.FAILED,HistoryState.SUCCEEDED]); policy = self.policy(u); self.assertEqual(policy.execute_chunk_with_policy(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.COMPLETED); self.assertEqual(c.n,2); p,e=self.repo.load(self.project.id); x=e[0].chunks[0]; self.assertEqual([a.number for a in x.attempts],[1,2]); self.assertEqual(x.attempts[0].state,Lifecycle.FAILED); self.assertEqual(x.attempts[1].state,Lifecycle.SUCCEEDED); self.assertTrue(any(z.attempt_id==x.attempts[1].id and z.phase is Phase.OUTPUT for z in e[0].artifacts)); row=self.repo.db.execute('SELECT source_attempt_id,frame_index,frame_count FROM transitions').fetchone(); self.assertEqual(row[0],str(x.attempts[1].id)); self.assertEqual(row[1],row[2]-1)
     def test_failed_retry_failed_is_durable_sqlite(self):
-        u,c=self.make([HistoryState.FAILED,HistoryState.FAILED]); self.assertEqual(u.execute(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.FAILED); self.assertEqual(c.n,2); x=self.reopen().chunks[0]; self.assertEqual(len(x.attempts),2); self.assertTrue(all(a.state is Lifecycle.FAILED for a in x.attempts))
+        u,c=self.make([HistoryState.FAILED,HistoryState.FAILED]); policy = self.policy(u); self.assertEqual(policy.execute_chunk_with_policy(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.FAILED); self.assertEqual(c.n,2); x=self.reopen().chunks[0]; self.assertEqual(len(x.attempts),2); self.assertTrue(all(a.state is Lifecycle.FAILED for a in x.attempts))
     def test_invalid_timeout_raises_before_attempt_and_reopen_is_durable(self):
         self.project.defaults={'orchestration_timeout_seconds':0}; u,c=self.make([HistoryState.FAILED]); self.assertRaises(DomainError,u.execute,self.project,self.execution,self.chunk.id,{}); self.assertEqual(c.n,0); self.assertEqual(len(self.reopen().chunks[0].attempts),0)
     def test_first_failed_save_failure_blocks_retry_and_reopen_shows_no_retry(self):
-        self.repo.close(); self.repo=FaultRepo(SQLiteProjectRepository(self.root),1); u,c=self.make([HistoryState.FAILED,HistoryState.SUCCEEDED],self.repo); self.assertEqual(u.execute(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.BLOCKED); self.assertEqual(c.n,1); x=self.reopen().chunks[0]; self.assertEqual(len(x.attempts),1); self.assertEqual(x.attempts[0].state,Lifecycle.PENDING); self.assertIsNotNone(x.attempts[0].external_job_ref)
+        self.repo.close(); self.repo=FaultRepo(SQLiteProjectRepository(self.root),1); u,c=self.make([HistoryState.FAILED,HistoryState.SUCCEEDED],self.repo); policy = self.policy(u); self.assertEqual(policy.execute_chunk_with_policy(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.BLOCKED); self.assertEqual(c.n,1); x=self.reopen().chunks[0]; self.assertEqual(len(x.attempts),1); self.assertEqual(x.attempts[0].state,Lifecycle.PENDING); self.assertIsNotNone(x.attempts[0].external_job_ref)
     def test_second_failed_save_failure_is_blocked_and_reopen_is_truthful(self):
-        self.repo.close(); self.repo=FaultRepo(SQLiteProjectRepository(self.root),2); u,c=self.make([HistoryState.FAILED,HistoryState.FAILED],self.repo); self.assertEqual(u.execute(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.BLOCKED); self.assertEqual(c.n,2); x=self.reopen().chunks[0]; self.assertEqual(len(x.attempts),2); self.assertEqual(x.attempts[0].state,Lifecycle.FAILED); self.assertEqual(x.attempts[1].state,Lifecycle.PENDING)
+        self.repo.close(); self.repo=FaultRepo(SQLiteProjectRepository(self.root),2); u,c=self.make([HistoryState.FAILED,HistoryState.FAILED],self.repo); policy = self.policy(u); self.assertEqual(policy.execute_chunk_with_policy(self.project,self.execution,self.chunk.id,{}).outcome,RobustOutcome.BLOCKED); self.assertEqual(c.n,2); x=self.reopen().chunks[0]; self.assertEqual(len(x.attempts),2); self.assertEqual(x.attempts[0].state,Lifecycle.FAILED); self.assertEqual(x.attempts[1].state,Lifecycle.PENDING)
 
     def _bounded(self, state, *, clock=None, sleeper=None, submitter=None, complete=None):
         self.execution.defaults={'orchestration_timeout_seconds':1}

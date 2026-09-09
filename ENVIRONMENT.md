@@ -52,3 +52,6 @@ F3/F4/F6/F7/F8/F9 deben decidir y probar recovery contra backend tras crash/rein
 - Mantener el endpoint configurable aunque el primer release use ComfyUI local.
 - No elegir framework UI, persistencia, SDK, bindings definitivos ni packaging sólo por el resultado de un spike.
 - El producto esencial debe poder operar localmente sin IA ni servicios cloud pagos.
+# Runtime output root
+
+Configure the physical ComfyUI output directory with `--comfyui-output-root`; it is validated again immediately before any new prompt submission and is never hard-coded to a machine-specific path.

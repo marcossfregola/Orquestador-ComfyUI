@@ -135,20 +135,31 @@ def _validate_api_template(d, *, bound=False):
 def _validate_reduced_bound_graph(d):
  """Validate the compact graph produced when trailing reference branches are pruned."""
  if not isinstance(d,dict) or not d: raise IncompatibleWorkflowError('reduced graph required','template.reduced_shape')
- required={'92','114','119','120','127','129','136','137','138','139','142','143','144','145','146','147','148'}
- if not required.issubset(d): raise IncompatibleWorkflowError('reduced graph missing required node','template.reduced_node')
+ core={'92','114','119','120','127','129','136','137','138','139','142','143','144','145','146','147','148'}
+ refs=sorted((k for k in d.get('129',{}).get('inputs',{}) if k.startswith('ref_images.ref_image_')), key=lambda k:int(k.rsplit('_',1)[1]))
+ if refs != [f'ref_images.ref_image_{i}' for i in range(len(refs))] or len(refs)>6:
+  raise IncompatibleWorkflowError('reduced graph reference keys are not dense','template.references')
+ expected=set(core)
+ for i in range(len(refs)):
+  expected.update((str((130,131,132,150,151,152)[i]),str((133,134,135,153,154,155)[i]),str((156,157,158,159,161,160)[i])))
+ if set(d)!=expected: raise IncompatibleWorkflowError('reduced graph node set mismatch','template.reduced_node')
  for node_id,node in d.items():
-  if not isinstance(node,dict) or node.get('class_type') != H3_NODE_TYPES.get(int(node_id)) or not isinstance(node.get('inputs'),dict):
+  if not node_id.isdigit() or not isinstance(node,dict) or node.get('class_type') != H3_NODE_TYPES.get(int(node_id)) or not isinstance(node.get('inputs'),dict):
    raise IncompatibleWorkflowError('reduced graph node mismatch','template.reduced_node')
+ expected_links={(consumer,name): list(value) for key,value in _API_LINKS.items()
+                 for consumer,name in [key.split('.',1)] if consumer in d and value[0] in d}
  for consumer,node in d.items():
   for name,value in node['inputs'].items():
    if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and type(value[1]) is int:
-    if value[0] not in d or value[1] < 0: raise IncompatibleWorkflowError('reduced graph dangling link','template.dangling_link')
- refs=sorted((k for k in d['129']['inputs'] if k.startswith('ref_images.ref_image_')), key=lambda k:int(k.rsplit('_',1)[1]))
- if refs != [f'ref_images.ref_image_{i}' for i in range(len(refs))] or len(refs)>6:
-  raise IncompatibleWorkflowError('reduced graph reference keys are not dense','template.references')
- if any(not isinstance(d['129']['inputs'][k],list) or d['129']['inputs'][k][0] not in d for k in refs):
-  raise IncompatibleWorkflowError('reduced graph reference link missing','template.references')
+    if (consumer,name) not in expected_links or value != expected_links[(consumer,name)]:
+     raise IncompatibleWorkflowError('reduced graph topology mismatch','template.topology')
+ for (consumer,name),link in expected_links.items():
+  inputs=d[consumer]['inputs']
+  key=f'{consumer}.{name}'
+  if key in _BOUND_MUTABLE_KEYS:
+   continue
+  if name not in inputs or inputs[name] != link:
+   raise IncompatibleWorkflowError('reduced graph topology mismatch','template.topology')
  return d
 
 def configure_fast_e2e(api_prompt):
@@ -207,7 +218,11 @@ def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, *
 
 def rebind_first_frame(bound_prompt, first_frame):
  """Copy an H3 API prompt and replace its authoritative first-frame input."""
- _validate_api_template(bound_prompt, bound=True)
+ validator = _validate_api_template if isinstance(bound_prompt, dict) and set(bound_prompt) == set(map(str, H3_NODE_TYPES)) else _validate_reduced_bound_graph
+ if validator is _validate_api_template:
+  validator(bound_prompt, bound=True)
+ else:
+  validator(bound_prompt)
  if not isinstance(first_frame, str) or not first_frame.strip():
   raise WorkflowProfileError('first_frame must be a nonblank path','binding.first_frame')
  out=json.loads(json.dumps(bound_prompt))
@@ -216,7 +231,10 @@ def rebind_first_frame(bound_prompt, first_frame):
  if not isinstance(node,dict) or not isinstance(node.get('inputs'),dict) or input_name not in node['inputs']:
   raise IncompatibleWorkflowError('authoritative first_frame binding missing','binding.first_frame')
  node['inputs'][input_name]=first_frame
- _validate_api_template(out, bound=True)
+ if validator is _validate_api_template:
+  validator(out, bound=True)
+ else:
+  validator(out)
  return out
 
 def load_api_template(path=None):

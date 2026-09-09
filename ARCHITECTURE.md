@@ -132,7 +132,7 @@ La GUI sólo captura y presenta valores del contrato. No duplica defaults, valid
 
 Se conserva la precedencia `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk. La ejecución guarda un snapshot durable de la configuración elegida para esa corrida; el prompt pertenece al chunk y los overrides por chunk sólo pueden existir para parámetros autorizados explícitamente por el contrato. Editar el proyecto no reescribe una ejecución histórica.
 
-F11.0 queda cerrado como decisión documental y contractual. La implementación de la primera GUI utilizable pertenece exclusivamente a F11.1, que todavía no se inicia.
+F11.0 queda cerrado como decisión documental y contractual. La implementación técnica de F11.1A/F11.1B (preparación, composición y proyección canónica de capacidades GUI) está en curso y cuenta con aprobación técnica/auditoría; permanecen abiertos la validación humana/live y el cierre Git de F11.1.
 
 ## F5 — Contrato de orquestación de un chunk
 
@@ -149,3 +149,6 @@ F5 está **CLOSED — APPROVED**. Slices 1, 2, 3 y 4A completadas/auditadas. F6 
 El timeout `orchestration_timeout_seconds` se resuelve antes de Attempt/submit, precedencia proyecto → ejecución → chunk; `WorkflowProfileRef` no aporta defaults. Ausente/default 1800 s; sólo `int` Python real >0, demás tipos producen `DomainError`. Deadline monotónico/polling positivo, separado de HTTP 10.0/WS 5.0; clock congelado termina fail-closed. Máximo un retry automático total (dos Attempts/dos submits), siempre nuevos; sólo FAILED terminal inequívoco. FAILED debe persistir antes del segundo o BLOCKED; segundo save fallido BLOCKED, sin tercer intento. RUNNING/QUEUED/NOT_FOUND/UNKNOWN, timeout, excepciones, submit incierto, output/provenance/physical/FFmpeg/extractor/completion fallidos o persistencia incierta no reintentan. Éxito reutiliza `complete_submitted_attempt`/Slice3 sin segundo submit; Artifact OUTPUT y TransitionFrame durables commit-late, extracción N-1 con `shell=False`. UI, multi-chunk, assembly, running cancellation y F6 quedan fuera.
 
 La coordinación de un chunk único persiste el `BackendJobRef`, exige history terminal SUCCESS correlacionado, valida el artefacto físico y extrae exactamente el frame N-1 con commit tardío. Slice1 (timeout), Slice2 (pre-submit/job ref durable) y Slice4A (deadline/retry/política fail-closed) están completadas, auditadas y aprobadas.
+
+### Canonical cancellation capability
+F11.1B derives the single UI capability projection and exact active target. Cancel workers create operation-local repository/client/adapter instances; GUI state never interrupts running jobs.

@@ -115,20 +115,20 @@ class SQLiteProjectRepository:
      if oaid and not self.db.execute('SELECT 1 FROM artifacts WHERE id=?',(oaid,)).fetchone(): raise PersistenceDataError('dangling artifact reference')
   for eid,pr in self.db.execute('SELECT id,project_id FROM executions'):
    if pr==str(pid) and eid not in {e.id.value for e in es}: raise PersistenceDataError('execution ownership mismatch')
-  for erid,pr,ex,ch,at,code,msg in self.db.execute('SELECT id,project_id,execution_id,chunk_id,attempt_id,code,message FROM errors'):
+  for erid,pr,ex,ch,at,code,msg in self.db.execute('SELECT id,project_id,execution_id,chunk_id,attempt_id,code,message FROM errors WHERE project_id=?',(str(pid),)):
    own=am.get(at)
    if pr!=str(pid) or not own or own[0].id.value!=ex or own[1].id.value!=ch: raise PersistenceDataError('error ownership mismatch')
   arts={}
-  for aid,pr,ex,ch,at,ph,out in self.db.execute('SELECT id,project_id,execution_id,chunk_id,attempt_id,phase,output FROM artifacts'):
+  for aid,pr,ex,ch,at,ph,out in self.db.execute('SELECT id,project_id,execution_id,chunk_id,attempt_id,phase,output FROM artifacts WHERE project_id=?',(str(pid),)):
    own=am.get(at)
    if pr!=str(pid) or not own or own[0].id.value!=ex or own[1].id.value!=ch or own[2].output is None or own[2].output.uri!=out:raise PersistenceDataError('artifact ownership mismatch')
    own[0].artifacts.append(Artifact(ProjectId(pr),ExecutionId(ex),ChunkId(ch),AttemptId(at),Phase(ph),OutputRef(out),ArtifactId(aid)))
    arts[aid]=own
-  for aid,_,_,_,_,_,_,oaid in self.db.execute('SELECT id,chunk_id,number,state,output,evidence,error_id,output_artifact_id FROM attempts'):
+  for aid,_,_,_,_,_,_,oaid in self.db.execute('SELECT a.id,a.chunk_id,a.number,a.state,a.output,a.evidence,a.error_id,a.output_artifact_id FROM attempts a JOIN chunks c ON c.id=a.chunk_id JOIN executions e ON e.id=c.execution_id WHERE e.project_id=?',(str(pid),)):
    if oaid:
     own=am.get(aid); ar=arts.get(oaid)
     if not ar or ar is not own: raise PersistenceDataError('attempt artifact ownership mismatch')
-  for pr,ex,tgt,src,sa,out,idx,count,mtype,msub,mname,msha in self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions'):
+  for pr,ex,tgt,src,sa,out,idx,count,mtype,msub,mname,msha in self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions WHERE project_id=?',(str(pid),)):
    if pr!=str(pid) or src not in cm or ex!=cm[src][0].id.value:raise PersistenceDataError('transition ownership')
    _,sc=cm[src]; own=am.get(sa)
    if tgt is not None:

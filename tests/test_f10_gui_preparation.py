@@ -6,10 +6,22 @@ from orquestador.profiles.minimax_h3 import H3_PROFILE
 from orquestador.domain.core import BackendJobRef
 from orquestador.adapters.http import HistoryResult, HistoryState
 from orquestador.adapters.video import VideoFrame
+from orquestador.application.recover_execution import ResumeExecutionUseCase, RecoverExecutionUseCase, RetryExecutionUseCase
 
 class FakeChain:
     def __init__(self): self.calls=[]
     def run(self, project, execution, prompts, *, transition_rebinder=None, transition_materializer=None): self.calls.append((project, execution, prompts, transition_rebinder, transition_materializer)); return {"state":"submitted"}
+
+class FakeClient:
+    """Discriminating client for GUI preparation/start tests."""
+    def __init__(self, endpoint): self.uploads=[]
+    def upload_image(self, path, *, subfolder='', overwrite=False, requested_filename=None):
+        name = requested_filename or Path(path).name
+        descriptor = {'name': name, 'subfolder': subfolder, 'type': 'input'}
+        self.uploads.append((Path(path).resolve(), descriptor))
+        return descriptor
+    def __getattr__(self, name):
+        raise AssertionError(f'unexpected real-network method: {name}')
 
 class F10GuiMatrixTests(unittest.TestCase):
     def setUp(self):
@@ -19,7 +31,7 @@ class F10GuiMatrixTests(unittest.TestCase):
         (self.root/'start.png').write_bytes(b'start'); self.refs=[]
         for i in range(6): p=self.root/f'ref{i}.png'; p.write_bytes(f'ref{i}'.encode()); self.refs.append(str(p))
         os.environ['TEMP']=os.environ['TMP']=os.environ['ORQ_TEST_TMP']=str(self.root)
-        self.chain=FakeChain(); self.facade,self.res=compose(AppConfig(self.root),chain_usecase=self.chain)
+        self.chain=FakeChain(); self.client=FakeClient('test'); self.facade,self.res=compose(AppConfig(self.root),chain_usecase=self.chain,client_factory=lambda _: self.client)
     def tearDown(self):
         self.res['repository'].close(); self.tmp.cleanup()
         for k,v in self._old_tmp.items():
@@ -64,10 +76,21 @@ class F10GuiMatrixTests(unittest.TestCase):
             with self.subTest(kw=kw): self.assertFalse(self.facade.start_chain(pid,eid,**kw).success)
         self.assertEqual(len(self.chain.calls),1)
     def test_start_missing_project_execution_profile_and_chunk_fail_closed(self):
-        self.assertFalse(self.facade.start_chain('none','none').success); a=self.prep(); pid,eid=a.snapshot.project_id,a.snapshot.execution_id; repo=self.res['repository']; orig=repo.load
-        def badload(x):
-            p,es=orig(x); es[0].workflow_profile_ref=type(es[0].workflow_profile_ref)('wrong'); return p,es
-        with patch.object(repo,'load',side_effect=badload): self.assertFalse(self.facade.start_chain(pid,eid).success)
+        self.assertFalse(self.facade.start_chain('none','none').success); a=self.prep(); pid,eid=a.snapshot.project_id,a.snapshot.execution_id; repo=self.res['repository']
+        # Start opens a fresh operation-local repository for each worker call;
+        # patch that boundary rather than the persistent GUI-thread connection.
+        repository_type = type(repo)
+        original_load = repository_type.load
+        def worker_badload(worker_repo, project_id):
+            project, executions = original_load(worker_repo, project_id)
+            executions[0].workflow_profile_ref = type(executions[0].workflow_profile_ref)("wrong")
+            return project, executions
+        def load_with_worker_corruption(current_repo, project_id):
+            if current_repo is repo:
+                return original_load(current_repo, project_id)
+            return worker_badload(current_repo, project_id)
+        with patch.object(repository_type, "load", side_effect=load_with_worker_corruption):
+            self.assertFalse(self.facade.start_chain(pid,eid).success)
         self.assertEqual(len(self.chain.calls),0)
     def test_each_missing_persisted_image_or_ref_rejected(self):
         a=self.prep(); pid,eid=a.snapshot.project_id,a.snapshot.execution_id; d=self.res['repository'].load(pid)[1][0].defaults
@@ -84,7 +107,11 @@ class F10GuiMatrixTests(unittest.TestCase):
                 self.submits.append(prompt); ref=BackendJobRef(f'job-{len(self.submits)}'); p=self.root/'outputs'/f'{ref.value}.mp4'; p.parent.mkdir(exist_ok=True); p.write_bytes(b'video'); return ref
             def upload_image(self, path, *, subfolder='', overwrite=False, requested_filename=None):
                 name = requested_filename or Path(path).name
+                path = Path(path).resolve()
                 self.uploads.append((subfolder + '/' if subfolder else '') + name)
+                self.upload_records = getattr(self, 'upload_records', [])
+                self.upload_records.append({'path': path, 'bytes': path.read_bytes(),
+                                            'descriptor': {'name': name, 'subfolder': subfolder, 'type': 'input'}})
                 return {'name': name, 'subfolder': subfolder, 'type':'input'}
             def history(self, ref):
                 return HistoryResult(ref, HistoryState.SUCCEEDED, {'status':{'status_str':'success','completed':True},'outputs':{'92':{'images':[{'filename':f'{ref.value}.mp4','subfolder':'outputs','type':'output'}],'animated':[True]}}})
@@ -117,7 +144,22 @@ class F10GuiMatrixTests(unittest.TestCase):
         self.assertTrue(c2.uploads[7].endswith('.png'))
         self.assertEqual(b['129']['inputs']['first_frame'],['119',0])
         self.assertNotEqual(t.source_output.uri,ex.defaults['initial_image']); self.assertIsNotNone(t.materialized_ref); self.assertEqual(t.materialized_ref.load_image_value,c2.uploads[7]); self.assertNotIn('__ORQ_FIRST_FRAME__',t.source_output.uri); self.assertTrue((self.root/t.source_output.uri).is_file()); self.assertEqual(len(e2.calls),2)
+        # Discriminating materialization proof: upload must receive the exact
+        # extracted N-1 PNG artifact, never the source video output path.
+        source_output_video = (self.root / t.source_output.uri).resolve()
+        expected_frame = (self.root / 'transitions' / f'{t.source_attempt_id}.png').resolve()
+        self.assertEqual(e2.calls[0][1].resolve(), expected_frame)
+        transition_upload = c2.upload_records[7]
+        self.assertEqual(transition_upload['path'], expected_frame)
+        self.assertNotEqual(transition_upload['path'], source_output_video)
+        self.assertEqual(transition_upload['bytes'], b'frame')
+        self.assertEqual(transition_upload['bytes'], expected_frame.read_bytes())
+        self.assertEqual(transition_upload['descriptor']['name'], Path(c2.uploads[7]).name)
+        self.assertEqual(transition_upload['descriptor']['subfolder'] + '/' + transition_upload['descriptor']['name'], t.materialized_ref.load_image_value)
         _,final=res['repository'].load(pid); self.assertEqual(final[0].state.value,'succeeded'); self.assertEqual(len(c2.submits),2); self.assertEqual(c2.network_calls,0)
+        self.assertEqual(len(final[0].chunks[0].attempts), 1)
+        self.assertEqual(len(final[0].chunks[1].attempts), 1)
+        self.assertEqual(final[0].chunks[1].first_frame.materialized_ref.load_image_value, t.materialized_ref.load_image_value)
         evidence_path=os.environ.get('ORQ_F10_COMPOSITION_EVIDENCE_PATH')
         if evidence_path:
             import json
@@ -125,5 +167,55 @@ class F10GuiMatrixTests(unittest.TestCase):
             payload={'project_id':pid,'execution_id':eid,'real_components':['SQLiteProjectRepository','GuiFacade','PrepareGuiUseCase','StartGuiChainUseCase','ChainExecutionUseCase','ChunkExecutionCoordinator','SubmitAttemptUseCase'],'fake_boundaries':['Client','Extractor'],'initial_relative':rel(ex.defaults['initial_image']),'references':[rel(x) for x in ex.defaults['references']], 'chunk0_first_frame':a['129']['inputs']['first_frame'],'transition_uri':t.source_output.uri,'chunk1_first_frame':b['129']['inputs']['first_frame'],'prompt0':a['129']['inputs']['prompt'],'prompt1':b['129']['inputs']['prompt'],'submit_count':len(c2.submits),'final_state':final[0].state.value,'durable_reread_state':final[0].state.value,'durable_transition':t.source_output.uri,'TRANSITION_REPLACED_INITIAL':'YES','PLACEHOLDER_ABSENT':'YES','NO_THIRD_SUBMIT':'YES','NO_REAL_NETWORK':'YES','NO_REAL_FFMPEG':'YES'}
             Path(evidence_path).write_text(json.dumps(payload),encoding='utf-8')
         res['repository'].close()
+
+    def test_transition_upload_failure_fail_closed_preserves_chunk0_and_transition(self):
+        self.res['repository'].close()
+        class Client:
+            def __init__(self, endpoint): self.submits=[]; self.uploads=[]; self.root=None
+            def submit(self, prompt, client_id=None):
+                self.submits.append(prompt); ref=BackendJobRef(f'job-{len(self.submits)}')
+                p=self.root/'outputs'/f'{ref.value}.mp4'; p.parent.mkdir(exist_ok=True); p.write_bytes(b'video'); return ref
+            def upload_image(self, path, *, subfolder='', overwrite=False, requested_filename=None):
+                if subfolder == 'orquestador/transitions':
+                    raise OSError('deterministic transition upload failure')
+                name=requested_filename or Path(path).name; self.uploads.append(subfolder+'/'+name)
+                return {'name':name,'subfolder':subfolder,'type':'input'}
+            def history(self, ref):
+                return HistoryResult(ref, HistoryState.SUCCEEDED, {'status':{'status_str':'success','completed':True},'outputs':{'92':{'images':[{'filename':f'{ref.value}.mp4','subfolder':'outputs','type':'output'}]}}})
+            def health(self): raise AssertionError('network')
+        class Extractor:
+            def extract_last_frame(self, source, destination):
+                destination=Path(destination); destination.parent.mkdir(parents=True,exist_ok=True); destination.write_bytes(b'frame'); return VideoFrame(destination,4,5)
+        client=Client('x'); client.root=self.root
+        facade,res=compose(AppConfig(self.root),client_factory=lambda _:client,extractor_factory=Extractor)
+        prepared=facade.prepare(project_id='p-fail',execution_id='e-fail',initial_image=str(self.root/'start.png'),prompts=['p0','p1'],references=self.refs,chunk_count=2)
+        self.assertTrue(prepared.success, prepared.message); pid,eid=prepared.snapshot.project_id,prepared.snapshot.execution_id
+        # Instrument the actual lifecycle use-case boundaries.  Start-chain
+        # owns the normal transition path; any fallback resume/recover/retry
+        # call is therefore observable without inventing a production hook.
+        with patch.object(ResumeExecutionUseCase, 'resume', autospec=True,
+                          side_effect=AssertionError('unexpected resume fallback')) as resume_spy, \
+             patch.object(RecoverExecutionUseCase, 'recover', autospec=True,
+                          side_effect=AssertionError('unexpected recover fallback')) as recover_spy, \
+             patch.object(RetryExecutionUseCase, 'retry', autospec=True,
+                          side_effect=AssertionError('unexpected retry fallback')) as retry_spy:
+            out=facade.start_chain(pid,eid)
+        self.assertFalse(out.success)
+        self.assertEqual(out.detail.outcome.value, 'blocked')
+        self.assertIn('transition', out.message.lower()); self.assertIn('upload', out.message.lower())
+        self.assertEqual(retry_spy.call_count, 0)
+        self.assertEqual(resume_spy.call_count, 0)
+        self.assertEqual(recover_spy.call_count, 0)
+        self.assertEqual(len(client.submits),1)
+        project, executions=res['repository'].load(pid); execution=executions[0]
+        self.assertEqual(execution.state.value,'running')
+        self.assertEqual(execution.chunks[0].state.value,'succeeded'); self.assertEqual(len(execution.chunks[0].attempts),1)
+        self.assertEqual(execution.chunks[1].state.value,'pending'); self.assertEqual(len(execution.chunks[1].attempts),0)
+        transitions=res['repository'].load_transitions(eid); self.assertEqual(len(transitions),1)
+        transition=transitions[0]; self.assertEqual(transition.source_output.uri,'outputs/job-1.mp4'); self.assertIsNone(transition.materialized_ref)
+        res['repository'].close()
+        _, reopened=compose(AppConfig(self.root),client_factory=lambda _:client,extractor_factory=Extractor)
+        _, reread=reopened['repository'].load(pid); durable=reread[0]; self.assertEqual(len(durable.chunks[1].attempts),0)
+        self.assertEqual(reopened['repository'].load_transitions(eid)[0].source_output.uri,'outputs/job-1.mp4'); reopened['repository'].close()
 
 if __name__=='__main__': unittest.main()

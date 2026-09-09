@@ -10,6 +10,7 @@ from ..adapters.outputs import correlate_outputs
 from ..adapters.savevideo import resolve_savevideo_output
 from ..adapters.physical_outputs import validate_physical_output, import_project_output
 from .bridge import SubmitOutcome, map_backend_evidence, map_verified_artifact_observation
+from .submit_boundary import SubmitBoundary, validate_configured_output_root
 
 @dataclass(frozen=True)
 class ChunkExecutionResult:
@@ -20,13 +21,30 @@ class ChunkExecutionResult:
     transition: TransitionFrame|None = None
 
 class ChunkExecutionCoordinator:
-    def __init__(self, repository, submitter, monitor, *, extractor, trusted_root, comfyui_output_root=None, correlator=resolve_savevideo_output, physical_validator=validate_physical_output, importer=import_project_output):
-        self.repository,self.submitter,self.monitor=repository,submitter,monitor
+    def __init__(self, repository, submit_boundary, monitor, *, extractor, trusted_root, comfyui_output_root=None, correlator=resolve_savevideo_output, physical_validator=validate_physical_output, importer=import_project_output):
+        # The coordinator is an execution primitive: policy has already
+        # selected this command and the only allowed submission capability is
+        # the product SubmitBoundary.
+        # Legacy test seams may provide a submit-like double; production
+        # composition always supplies SubmitBoundary.
+        self.repository,self.submit_boundary,self.monitor=repository, (submit_boundary if hasattr(submit_boundary, 'submit') else SubmitBoundary(submit_boundary)), monitor
         self.extractor,self.trusted_root,self.comfyui_output_root,self.correlator,self.physical_validator,self.importer=extractor,Path(trusted_root),Path(comfyui_output_root or trusted_root),correlator,physical_validator,importer
+    @property
+    def submitter(self):
+        return self.submit_boundary
+    @submitter.setter
+    def submitter(self, value):
+        self.submit_boundary = value if hasattr(value, 'submit') else SubmitBoundary(value)
+    def submit_new(self, project, execution, chunk_id, prompt, **submit_kwargs):
+        """Validate the operation-time output boundary before any new submit."""
+        try: self.comfyui_output_root = validate_configured_output_root(self.comfyui_output_root)
+        except ValueError as exc: return None, str(exc)
+        return self.submit_boundary.submit(project, execution, chunk_id, prompt, **submit_kwargs), None
     def execute(self, project, execution, chunk_id, prompt, **submit_kwargs):
         chunk=next((c for c in execution.chunks if str(c.id)==str(chunk_id)),None)
         if chunk is None: return ChunkExecutionResult(False,'chunk identity mismatch','')
-        result=self.submitter.submit(project,execution,chunk_id,prompt,**submit_kwargs)
+        result, validation_error = self.submit_new(project, execution, chunk_id, prompt, **submit_kwargs)
+        if validation_error is not None: return ChunkExecutionResult(False, validation_error, '')
         if result.outcome is not SubmitOutcome.SUCCEEDED or not isinstance(result.job_ref, BackendJobRef):
             reason = result.error if result.error else result.outcome.value
             return ChunkExecutionResult(False, reason, result.attempt_id)

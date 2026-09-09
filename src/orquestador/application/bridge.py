@@ -5,7 +5,7 @@ from copy import copy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-from ..domain.core import BackendJobRef, Execution, Project, OutputRef
+from ..domain.core import BackendJobRef, Execution, Project, OutputRef, Lifecycle, ErrorRecord
 from ..domain.recovery import Action, ArtifactObservation, BackendJobObservation, BackendJobState, ReconciliationResult, reconcile
 from ..adapters.http import (HistoryResult, HistoryState, QueueSnapshot, QueueState,
     ComfyUIRejectedError, ComfyUIProtocolError, ComfyUITransportError)
@@ -21,6 +21,16 @@ class BackendEvidence:
 @dataclass(frozen=True)
 class CancellationEvidence:
     target:BackendJobRef; state:Enum; action:Enum; issue:str|None=None; issue_kind:Enum|None=None; phase:Enum|None=None
+
+def map_cancellation_result(result: CancellationResult) -> dict[str, Any]:
+    """Stable UI projection without exposing adapter internals."""
+    if not isinstance(result, CancellationResult): raise TypeError('result must be CancellationResult')
+    state=getattr(result.state, 'value', str(result.state))
+    action=getattr(result.action, 'value', str(result.action))
+    phase=getattr(result.phase, 'value', None) if result.phase else None
+    issue_kind=getattr(result.issue_kind, 'value', None) if result.issue_kind else None
+    return {'semantic_state': state, 'action': action, 'phase': phase,
+            'issue_kind': issue_kind, 'message': result.issue}
 
 class SubmitOutcome(str, Enum):
     SUCCEEDED = 'succeeded'
@@ -38,38 +48,18 @@ class SubmitAttemptResult:
     error: str | None = None
 
 class SubmitAttemptUseCase:
-    """Durably create an attempt, submit exactly once, then bind and persist."""
+    """Compatibility facade delegating all policy to SubmitBoundary."""
     def __init__(self, repository, client, bridge=None):
         self.repository = repository
         self.client = client
         self.bridge = bridge or ComfyUIJobBridge(repository)
 
     def submit(self, project, execution, chunk_id, prompt, *, client_id=None):
-        chunk = next((c for c in execution.chunks if str(c.id) == str(chunk_id)), None)
-        if chunk is None:
-            raise ValueError('chunk identity mismatch')
-        attempt = chunk.new_attempt()
-        # Intentionally propagate pre-submit persistence failures: no external request boundary has been crossed.
-        self.repository.save(project, [execution])
-        try:
-            ref = self.client.submit(prompt, client_id=client_id)
-        except ComfyUIRejectedError as exc:
-            detail = getattr(exc, 'body', None) or str(exc)
-            detail = f"rejected status={exc.status} body={detail[:4096]} type={type(exc).__name__} message={exc}"
-            return SubmitAttemptResult(SubmitOutcome.REJECTED, str(attempt.id), error=detail)
-        except ComfyUIProtocolError as exc:
-            return SubmitAttemptResult(SubmitOutcome.PROTOCOL_FAILED, str(attempt.id), error=f"protocol_failure type={type(exc).__name__} message={str(exc)[:4096]}")
-        except ComfyUITransportError as exc:
-            return SubmitAttemptResult(SubmitOutcome.AMBIGUOUS, str(attempt.id), error=f"ambiguous_transport type={type(exc).__name__} message={str(exc)[:4096]}")
-        except Exception as exc:
-            return SubmitAttemptResult(SubmitOutcome.AMBIGUOUS, str(attempt.id), error=f"ambiguous_transport type={type(exc).__name__} message={str(exc)[:4096]}")
-        if not isinstance(ref, BackendJobRef) or not ref.value.strip():
-            return SubmitAttemptResult(SubmitOutcome.INVALID_REF, str(attempt.id), error='invalid backend job reference')
-        try:
-            self.bridge.bind(project, execution, chunk_id, str(attempt.id), ref, execution_id=execution.id)
-        except Exception as exc:
-            return SubmitAttemptResult(SubmitOutcome.BIND_FAILED, str(attempt.id), ref, str(exc))
-        return SubmitAttemptResult(SubmitOutcome.SUCCEEDED, str(attempt.id), ref)
+        from .submit_boundary import SubmitBoundary
+        class _Transport:
+            def __init__(self, repository, client): self.repository, self.client = repository, client
+            def submit(self, prompt, **kwargs): return self.client.submit(prompt, **kwargs)
+        return SubmitBoundary(_Transport(self.repository, self.client), self.bridge).submit(project, execution, chunk_id, prompt, client_id=client_id)
 
 def _authority(execution, project_id, execution_id, chunk_id, attempt_id, ref):
     if str(execution.project_id)!=str(project_id) or str(execution.id)!=str(execution_id): raise ValueError('provenance mismatch')

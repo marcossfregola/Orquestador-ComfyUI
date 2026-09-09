@@ -5,7 +5,9 @@ from pathlib import Path
 from unittest.mock import Mock
 from orquestador.domain import Project, Execution, Chunk, BackendJobRef, Lifecycle, OutputRef, Evidence, TransitionFrame, Artifact, Phase, ErrorRecord
 from orquestador.domain.recovery import BackendJobObservation, BackendJobState, Decision, Action, EvidenceCode, reconcile
-from orquestador.application.recover_execution import RecoverExecutionUseCase, ResumeExecutionUseCase, _apply_f6_retry_policy, RecoveryOutcome
+from orquestador.application.recover_execution import RecoverExecutionUseCase, ResumeExecutionUseCase, RecoveryOutcome
+from orquestador.application.f11_1b import F11_1BOrchestrator, InputMaterializationService
+from orquestador.application.submit_boundary import SubmitBoundary
 from orquestador.persistence.sqlite import SQLiteProjectRepository
 from orquestador.application.bridge import BackendEvidence, SubmitAttemptUseCase, SubmitOutcome, SubmitAttemptResult
 from orquestador.application.chunk_execution import ChunkExecutionCoordinator
@@ -14,6 +16,8 @@ from orquestador.adapters.outputs import OutputCorrelationResult, OutputCorrelat
 from orquestador.adapters.physical_outputs import PhysicalOutputEvidence, PhysicalOutputStatus
 
 class F6RecoverExecutionTests(unittest.TestCase):
+    def orchestrator(self):
+        return F11_1BOrchestrator(materializer=InputMaterializationService(), submit_boundary=SubmitBoundary(Mock()))
     def tempdir(self):
         root=os.environ.get('ORQ_TEST_TMP')
         return tempfile.TemporaryDirectory(dir=root) if root else tempfile.TemporaryDirectory()
@@ -100,7 +104,7 @@ class F6RecoverExecutionTests(unittest.TestCase):
         original=__import__('orquestador.domain.recovery',fromlist=['ReconciliationResult']).ReconciliationResult(
             str(e.id),Decision.RETRY_CURRENT_CHUNK,3,4,str(a.id),
             (EvidenceCode.BACKEND_TERMINAL_FAILURE,), (Action.CREATE_NEW_ATTEMPT,), True)
-        filtered=_apply_f6_retry_policy(e,original)
+        filtered=self.orchestrator().apply_retry_policy(e,original)
         self.assertEqual((filtered.execution_id,filtered.attempt_id,filtered.last_safe_completed_chunk,
                           filtered.next_actionable_chunk,filtered.evidence_codes),
                          (original.execution_id,original.attempt_id,3,4,original.evidence_codes))
