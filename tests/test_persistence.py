@@ -24,6 +24,14 @@ class PersistenceTests(unittest.TestCase):
  def test_path_reject(self):
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
    p,e,c,a,b=self.make(); self.r=r=SQLiteProjectRepository(d); ar=Artifact(p.id,e.id,c.id,b.id,Phase.OUTPUT,OutputRef('../x')); self.assertRaises(PersistenceError,r.save,p,[e],[ar])
+ def test_retry_reopen_requires_explicit_opt_in_and_keeps_attempt_chunk_guards(self):
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+   p,e,c,a,b=self.make(); e.transition(Lifecycle.RUNNING); e.transition(Lifecycle.FAILED); self.r=r=SQLiteProjectRepository(d); r.save(p,[e])
+   reopened=Execution(p.id,e.id,e.defaults,Lifecycle.RUNNING,[c])
+   self.assertRaises(PersistenceConflict, r.save, p, [reopened])
+   r.save(p,[reopened],allow_retry_reopen=True)
+   a.state=Lifecycle.RUNNING
+   self.assertRaises(PersistenceConflict, r.save, p, [reopened], allow_retry_reopen=True)
  def test_future_reject(self):
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
    self.r=r=SQLiteProjectRepository(d); r.db.execute('update schema_version set version=99'); r.db.commit(); r.close(); self.r=None; self.assertRaises(UnsupportedSchemaVersion,SQLiteProjectRepository,d)

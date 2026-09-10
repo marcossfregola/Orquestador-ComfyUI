@@ -82,6 +82,12 @@ class Attempt:
   if output is not None:self.output=output
   if evidence is not None:self.evidence=evidence
   if error is not None:self.error=error
+ def retire_stale_not_found(self, error):
+  """Narrow terminal transition for a bound job proven absent from history."""
+  if self.state not in {Lifecycle.PENDING, Lifecycle.RUNNING} or self.external_job_ref is None:
+   raise DomainError('stale retirement requires a bound pending or running attempt')
+  self.state = Lifecycle.FAILED
+  self.error = error
 @dataclass
 class Chunk:
  id:ChunkId=_uid(ChunkId); order:int=0; execution_id:ExecutionId|None=None; defaults:Mapping[str,Any]=field(default_factory=dict); state:Lifecycle=Lifecycle.PENDING; attempts:list[Attempt]=field(default_factory=list); first_frame:TransitionFrame|None=None
@@ -106,6 +112,11 @@ class Chunk:
   if latest.state is not Lifecycle.PENDING or latest.external_job_ref is None:
    raise DomainError('retry reopening requires a bound pending attempt 2')
   self.state = Lifecycle.PENDING
+ def retire_stale_not_found(self):
+  """Retire a stale chunk after its bound attempt was explicitly retired."""
+  if self.state not in {Lifecycle.PENDING, Lifecycle.RUNNING}:
+   raise DomainError('stale retirement requires a pending or running chunk')
+  self.state = Lifecycle.FAILED
  def effective_parameters(self,project,execution_defaults): return _map({**project.defaults,**dict(execution_defaults),**self.defaults})
 @dataclass
 class Execution:
@@ -120,6 +131,11 @@ class Execution:
   if target not in allowed.get(self.state,set()): raise DomainError(f'illegal execution transition {self.state}->{target}')
   if target is Lifecycle.SUCCEEDED and (not self.chunks or any(c.state is not Lifecycle.SUCCEEDED for c in self.chunks)): raise DomainError('execution requires all chunks succeeded')
   self.state=target
+ def reopen_for_retry(self):
+  """Re-enter a durably failed execution for its single bounded retry."""
+  if self.state is not Lifecycle.FAILED:
+   raise DomainError('retry reopening requires a failed execution')
+  self.state = Lifecycle.RUNNING
  def link_transition(self,chunk,frame):
   if chunk not in self.chunks or chunk.order==0 or frame.execution_id!=self.id: raise DomainError('invalid transition execution/chunk')
   prev=self.chunks[chunk.order-1]

@@ -18,7 +18,10 @@ def _safe(root,v):
  except ValueError: raise PersistenceError('path escapes project root')
  return p.as_posix()
 _NEXT={Lifecycle.PENDING:{Lifecycle.RUNNING,Lifecycle.CANCELLED},Lifecycle.RUNNING:{Lifecycle.SUCCEEDED,Lifecycle.FAILED,Lifecycle.CANCELLED}}
-def _legal(a,b): return a==b or (a is Lifecycle.UNKNOWN and b is not Lifecycle.PENDING) or b in _NEXT.get(a,set())
+def _legal(a,b,*,allow_retry_reopen=False):
+ return (a==b or (a is Lifecycle.UNKNOWN and b is not Lifecycle.PENDING)
+         or (allow_retry_reopen and a is Lifecycle.FAILED and b in {Lifecycle.RUNNING,Lifecycle.PENDING})
+         or b in _NEXT.get(a,set()))
 class SQLiteProjectRepository:
  migrations={2: lambda db: [db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL') for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256')]}
  def __init__(self,project_root,db_name='orquestador.sqlite3'):
@@ -59,7 +62,7 @@ class SQLiteProjectRepository:
   for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256'):
    if c not in cols: self.db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL')
  def close(self):self.db.close()
- def save(self,p,es,artifacts=(),errors=(),transitions=()):
+ def save(self,p,es,artifacts=(),errors=(),transitions=(),*,allow_retry_reopen=False):
   try:
    owners={str(a.id):(e,c) for e in es for c in e.chunks for a in c.attempts}
    for ar in artifacts:
@@ -70,13 +73,16 @@ class SQLiteProjectRepository:
    self.db.execute('BEGIN'); self.db.execute('INSERT INTO projects VALUES(?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults',(str(p.id),_json(dict(p.defaults))))
    for e in es:
     prof=e.workflow_profile_ref.value if e.workflow_profile_ref else None; old=self.db.execute('SELECT state,workflow_profile_ref FROM executions WHERE id=?',(str(e.id),)).fetchone()
-    if old and (not _legal(Lifecycle(old[0]),e.state) or old[1]!=prof):raise PersistenceConflictError('execution lifecycle/profile conflict')
+    if old and (not _legal(Lifecycle(old[0]),e.state,allow_retry_reopen=allow_retry_reopen) or old[1]!=prof):raise PersistenceConflictError('execution lifecycle/profile conflict')
     self.db.execute('INSERT INTO executions VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults,state=excluded.state,workflow_profile_ref=excluded.workflow_profile_ref',(str(e.id),str(p.id),_json(dict(e.defaults)),e.state.value,prof))
     for c in e.chunks:
      self.db.execute('INSERT INTO chunks VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults,state=excluded.state',(str(c.id),str(e.id),c.order,_json(dict(c.defaults)),c.state.value))
      for a in c.attempts:
-      oldref=self.db.execute('SELECT external_job_ref FROM attempts WHERE id=?',(str(a.id),)).fetchone()
-      if oldref and oldref[0] and a.external_job_ref and oldref[0]!=str(a.external_job_ref): raise PersistenceConflictError('backend job reference conflict')
+      old_attempt=self.db.execute('SELECT state,external_job_ref FROM attempts WHERE id=?',(str(a.id),)).fetchone()
+      if old_attempt and Lifecycle(old_attempt[0]) is Lifecycle.FAILED and a.state in {Lifecycle.RUNNING,Lifecycle.PENDING}:
+       raise PersistenceConflictError('attempt lifecycle conflict')
+      oldref=old_attempt[1] if old_attempt else None
+      if oldref and a.external_job_ref and oldref!=str(a.external_job_ref): raise PersistenceConflictError('backend job reference conflict')
       self.db.execute('INSERT INTO attempts(id,chunk_id,number,state,output,evidence,error_id,output_artifact_id,external_job_ref) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,output=COALESCE(attempts.output,excluded.output),evidence=COALESCE(attempts.evidence,excluded.evidence),error_id=excluded.error_id,external_job_ref=COALESCE(attempts.external_job_ref,excluded.external_job_ref)',(str(a.id),str(c.id),a.number,a.state.value,a.output.uri if a.output else None,a.evidence.detail if a.evidence else None,str(a.error.id) if a.error else None,None,str(a.external_job_ref) if a.external_job_ref else None))
       if a.error:self.db.execute('INSERT OR IGNORE INTO errors VALUES(?,?,?,?,?,?,?)',(str(a.error.id),str(p.id),str(e.id),str(c.id),str(a.id),a.error.code,a.error.message))
    for a in artifacts:self.db.execute('INSERT OR IGNORE INTO artifacts VALUES(?,?,?,?,?,?,?,?)',(str(a.id),str(a.project_id),str(a.execution_id),str(a.chunk_id),str(a.attempt_id),a.phase.value,a.output.uri,_safe(self.root,a.output.uri)))

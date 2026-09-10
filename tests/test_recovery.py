@@ -23,6 +23,16 @@ class RecoveryTests(unittest.TestCase):
   _,e=self.make(); a=e.chunks[0].new_attempt(); a.transition(Lifecycle.CANCELLED); self.assertEqual(reconcile(e).decision,Decision.RETRY_CURRENT_CHUNK)
  def test_success_missing_output_block(self):
   _,e=self.make(); self.success(e); self.assertEqual(reconcile(e).decision,Decision.BLOCKED_CORRUPT_STATE)
+ def test_pending_bound_lost_job_reaches_retry_without_output_requirement(self):
+  _,e=self.make(2); a0,o0=self.success(e,0); ob=self.obs(e,0,a0,o0)[0]
+  t=TransitionObservation('p','e','c0',str(a0.id),'c1',True,True,o0)
+  e.chunks[1].transition(Lifecycle.RUNNING)
+  a1=e.chunks[1].new_attempt(); a1.assign_external_job_ref(BackendJobRef('lost'))
+  job=BackendJobObservation('p','e','c1',str(a1.id),BackendJobState.UNKNOWN,BackendJobRef('lost'))
+  r=reconcile(e,artifacts=(ob,),jobs=(job,),transitions=(t,))
+  self.assertEqual(r.decision,Decision.RETRY_CURRENT_CHUNK)
+  self.assertIn(Action.CREATE_NEW_ATTEMPT,r.proposed_actions)
+  self.assertNotIn(EvidenceCode.MISSING_OUTPUT,r.evidence_codes)
  def test_success_corrupt_output_block(self):
   _,e=self.make(); a,o=self.success(e); ob=ArtifactObservation('p','e','c0',str(a.id),o,True,False); self.assertEqual(reconcile(e,artifacts=(ob,)).decision,Decision.BLOCKED_CORRUPT_STATE)
  def test_wrong_provenance_block(self):

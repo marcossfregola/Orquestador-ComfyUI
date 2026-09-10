@@ -34,7 +34,13 @@ class GuiFacade:
             outcome=getattr(value,"outcome",None)
             if outcome is not None:
                 outcome_value=getattr(outcome,"value",outcome)
-                ok = ok and outcome_value in {"complete", "completed"}
+                ok = ok and (
+                    outcome_value in {"complete", "completed"}
+                    or (
+                        outcome_value == "retried_complete"
+                        and getattr(getattr(value, "completion", None), "success", False)
+                    )
+                )
             return OperationResult(ok,snap,"" if ok else getattr(value,"reason","operation failed"),value)
         except Exception as exc:
             # Preserve the selected durable context when an operation fails.  In

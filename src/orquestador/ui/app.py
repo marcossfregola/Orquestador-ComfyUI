@@ -90,7 +90,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         def observe(self, ref): return client.history(ref)
         def history(self, ref): return client.history(ref)
     backend = BackendObservationAdapter()
-    submit_boundary = SubmitBoundary(submitter)
+    submit_boundary = SubmitBoundary(submitter, repository=repository)
     coordinator = __import__('orquestador.application.chunk_execution', fromlist=['ChunkExecutionCoordinator']).ChunkExecutionCoordinator(
         repository, submit_boundary, monitor, extractor=extractor, trusted_root=cfg.project_root, comfyui_output_root=cfg.comfyui_output_root)
     # Production chain execution must keep the accepted attempt while

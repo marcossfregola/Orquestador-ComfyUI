@@ -122,6 +122,12 @@ def _copy_execution_state(target: Execution, source: Execution) -> None:
     for target_chunk, source_chunk in zip(target.chunks, source.chunks):
         target_chunk.state = source_chunk.state
         target_chunk.first_frame = source_chunk.first_frame
+        while len(target_chunk.attempts) < len(source_chunk.attempts):
+            source_attempt = source_chunk.attempts[len(target_chunk.attempts)]
+            target_chunk.attempts.append(Attempt(source_attempt.id, source_attempt.number,
+                                                  source_attempt.state, source_attempt.output,
+                                                  source_attempt.evidence, source_attempt.error,
+                                                  source_attempt.external_job_ref))
         for target_attempt, source_attempt in zip(target_chunk.attempts, source_chunk.attempts):
             target_attempt.state = source_attempt.state
             target_attempt.output = source_attempt.output

@@ -92,6 +92,23 @@ def reconcile(execution: Execution, artifacts: Tuple[ArtifactObservation, ...] =
                     return ReconciliationResult(aid, Decision.RECONCILE_EXTERNAL_COMPLETION,last,i,str(attempt.id),(EvidenceCode.VERIFIED_OUTPUT,),(Action.MARK_EXTERNAL_COMPLETION_FROM_VERIFIED_EVIDENCE,),True)
                 return ReconciliationResult(aid, Decision.NEEDS_MANUAL_REVIEW,last,i,str(attempt.id),(EvidenceCode.EXTERNAL_COMPLETION_UNVERIFIED,),(Action.BLOCK_FOR_REVIEW,),False)
             return ReconciliationResult(aid, Decision.NEEDS_MANUAL_REVIEW,last,i,str(attempt.id),(EvidenceCode.BACKEND_UNKNOWN,),(Action.BLOCK_FOR_REVIEW,),False)
+        if attempt.state is Lifecycle.PENDING:
+            # A pending attempt has not yet reached a lifecycle state that
+            # requires durable output evidence.  If it is bound to a backend
+            # job, reconcile that binding just like an in-flight attempt so a
+            # lost job can enter the bounded stale-job/retry path.
+            if job and (job.project_id != str(execution.project_id) or job.execution_id != aid
+                        or job.external_job_ref != attempt.external_job_ref):
+                return ReconciliationResult(aid, Decision.NEEDS_MANUAL_REVIEW,last,i,str(attempt.id),(EvidenceCode.PROVENANCE_MISMATCH,),(Action.BLOCK_FOR_REVIEW,),False)
+            if job and job.state in (BackendJobState.QUEUED, BackendJobState.RUNNING):
+                return ReconciliationResult(aid, Decision.WAIT_FOR_EXTERNAL_JOB,last,i,str(attempt.id),(EvidenceCode.BACKEND_ACTIVE,),(Action.WAIT,),False)
+            if job and job.state in (BackendJobState.FAILED, BackendJobState.CANCELLED, BackendJobState.UNKNOWN):
+                return ReconciliationResult(aid, Decision.RETRY_CURRENT_CHUNK,last,i,str(attempt.id),
+                                            (EvidenceCode.BACKEND_UNKNOWN if job.state is BackendJobState.UNKNOWN else EvidenceCode.BACKEND_TERMINAL_FAILURE,),
+                                            (Action.CREATE_NEW_ATTEMPT,),True)
+            if job and job.state is BackendJobState.COMPLETED:
+                return ReconciliationResult(aid, Decision.NEEDS_MANUAL_REVIEW,last,i,str(attempt.id),(EvidenceCode.EXTERNAL_COMPLETION_UNVERIFIED,),(Action.BLOCK_FOR_REVIEW,),False)
+            return ReconciliationResult(aid, Decision.NEEDS_MANUAL_REVIEW,last,i,str(attempt.id),(EvidenceCode.BACKEND_UNKNOWN,),(Action.BLOCK_FOR_REVIEW,),False)
         if attempt.state in (Lifecycle.FAILED, Lifecycle.CANCELLED): return ReconciliationResult(aid, Decision.RETRY_CURRENT_CHUNK,last,i,str(attempt.id),(EvidenceCode.BACKEND_TERMINAL_FAILURE,),(Action.CREATE_NEW_ATTEMPT,),True)
         return ReconciliationResult(aid, Decision.BLOCKED_CORRUPT_STATE,last,i,str(attempt.id),(EvidenceCode.GAP,),(Action.BLOCK_FOR_REVIEW,),False)
     return ReconciliationResult(aid, Decision.COMPLETE, last, None, None, (EvidenceCode.VERIFIED_OUTPUT,), (), False)

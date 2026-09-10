@@ -245,6 +245,14 @@ class F6RecoverExecutionTests(unittest.TestCase):
         repo.load_transitions.return_value=(TransitionFrame(p.id,e.id,c.id,a.id,a.output,0,True),)
         self.assertFalse(u._durably_complete(e))
 
+    def test_durably_complete_without_rehydrated_artifacts_returns_false(self):
+        p,e,c=self.make(); a=c.attempts[0]; a.transition(Lifecycle.SUCCEEDED, output=OutputRef('out.mp4'), evidence=Evidence('ok')); c.state=Lifecycle.RUNNING; c.transition(Lifecycle.SUCCEEDED); e.state=Lifecycle.SUCCEEDED
+        e.artifacts = None
+        repo=Mock()
+        repo.load_transitions.return_value = ()
+        u=ResumeExecutionUseCase(repo,Mock(),Mock(),Mock())
+        self.assertFalse(u._durably_complete(e))
+
     def test_F6_persistence_updates_attempt_error_id_after_reopen(self):
         with self.tempdir() as d:
             p = Project(); e = Execution(p.id); c = Chunk(order=0); e.add_chunk(c)
