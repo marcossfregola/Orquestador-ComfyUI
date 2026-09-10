@@ -225,6 +225,14 @@ Resultados automáticos del cambio:
 - `python -B -m unittest discover -s tests` → **481/481 OK**.
 - La suite completa sólo mostró `ResourceWarning` preexistentes; no hubo failures, errors ni skips.
 
+## F11.2A — preparación visual (2026-09-10)
+
+Focused suite: `python -B -m unittest tests.test_f11_2a_visual_preparation -v` — **Ran 5 tests — OK (skipped=1)** (symlink creation unavailable in this Windows environment; lexical root validation remains covered). La suite automatizada cubre preview, cardinalidad/orden y operaciones de referencias, preservación del original y derivación de crops.
+
+Suite completa: `python -B -m unittest discover -s tests` — **Ran 561 tests — OK (skipped=1)**.
+
+Validación humana separada: se confirmó preview inicial; 0, 1 y 6 referencias; Add/Replace/Remove; ratios/movimiento/resize manuales; paths seleccionados y preferencias por defecto; y `Prepare` completado sin crash nativo de Qt. Esto es evidencia de uso humano, no resultado automatizado.
+
 E2E FAST contra ComfyUI `0.33.0` en `127.0.0.1:8188`: 57,0 s, siete uploads estáticos `overwrite=false`, un upload de transición, dos submits, cero tercero, dos MP4 H.264 352×256 a 24 fps con 56 frames, persistencia/reopen `succeeded`. La evidencia está en `C:\Codex\Orquestador-ComfyUI-F10-runtime\seam-fast-e2e\fast-20260901T223000Z`. `node127` del segundo graph coincide pixel a pixel con `TRANSITION_INPUT.png`; el frame 0 del MP4 no coincide exactamente (PSNR 29,846985 dB, MSE 67,356863, diferencia media 6,431763, dimensiones iguales). La entrada no presenta el crop anterior; la diferencia restante se clasifica como comportamiento D del modelo H3 y queda aceptada como limitación conocida del backend, no como defecto pendiente del Orquestador. La continuidad visual fue aprobada (`VISUAL_CONTINUITY=APPROVED`).
 
 El control `codec-baseline-frame0.png` (56 frames idénticos codificados localmente con H.264) dio PSNR 40,894518 dB y diferencia media 1,772694; por eso la diferencia FAST no se atribuye sólo a la serialización H.264.

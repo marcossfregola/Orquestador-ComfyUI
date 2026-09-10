@@ -148,7 +148,7 @@ Decisiones formalizadas para el diseño de F11:
 
 **Criterio de cierre:** contrato de configuración explícito y reutilizable, sin segunda lógica paralela en la UI y sin cambios innecesarios del núcleo ya validado.
 
-**Estado:** **CLOSED — APPROVED** como decisión documental/contractual. F11.1A y F11.1B están implementadas y aprobadas técnicamente; quedan pendientes/listas para el cierre Git según el estado vigente en [STATUS.md](STATUS.md).
+**Estado:** **CLOSED — APPROVED** como decisión documental/contractual. F11.1A y F11.1B están implementadas, auditadas y cerradas en Git; F11.2A queda cerrada tras su evidencia automatizada y validación humana.
 
 ### F11.1 — Primera GUI realmente utilizable para generar
 
@@ -171,7 +171,9 @@ Este es el primer checkpoint de F11 que debe dejar el producto utilizable mientr
 
 ### F11.2 — Gestión visual de imagen inicial y referencias
 
-**Corrección F11.1 vigente:** el contrato de producto admite 0..6 referencias H3 opcionales, serializadas densamente en `ref_image_0..N-1`; F11.1A/F11.1B están implementadas, auditadas y técnicamente aprobadas, listas para cierre Git.
+**F11.2A — CLOSED / HUMAN-VALIDATED (2026-09-10):** preparación visual validada explícitamente en Windows; el detalle y la separación respecto de las pruebas automatizadas constan en `STATUS.md` y `TESTING.md`.
+
+**Corrección F11.1 vigente:** el contrato de producto admite 0..6 referencias H3 opcionales, serializadas densamente en `ref_image_0..N-1`; F11.1A/F11.1B están implementadas, auditadas y cerradas en Git.
 
 Agregar comodidad de preparación sin cambiar el contrato de generación:
 

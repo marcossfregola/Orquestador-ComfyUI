@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-09-07
-**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**; F11.1B **TECHNICALLY APPROVED — READY FOR GIT CLOSURE**.
-**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**, baseline comprometida `b642af94a1091f1f4e1d71912f61d3b9c756ce86` con contrato de configuración de generación implementado; F11.1B local, no comprometida.
+**Última actualización:** 2026-09-10
+**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**; F11.1B **CLOSED — APPROVED**; F11.2A **CLOSED — HUMAN-VALIDATED**.
+**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**, commit `b642af94a1091f1f4e1d71912f61d3b9c756ce86`; F11.1B **CLOSED — APPROVED**, commits `dc2c0e9fc17c4fa9cf0b1809342d3fd10d1ae997` y `97b1f6acb7fd8d558712d8e873f62f03eabf40c4`; F11.2A **CLOSED — HUMAN-VALIDATED**, con evidencia automatizada fresca registrada abajo.
 
 ## Fotografía viva
 
@@ -30,7 +30,11 @@ Orden aprobado:
 
 Regla operativa: cada slice debe cerrarse con implementación, pruebas, evidencia, auditoría y validación humana cuando corresponda, dejando una aplicación utilizable antes de avanzar a la siguiente. No se implementan de entrada expansiones del backlog como IA, otros modelos, cloud, multi-GPU, timeline avanzado o plugin system.
 
-**Checkpoint:** F11.1B queda técnicamente aprobada y lista para cierre Git; no commit/push en esta tarea. `REAL_VIDEO_GENERATION=NO`; `HUMAN_GUI_VALIDATION=NO`.
+**Checkpoint:** F11.1B quedó implementada y cerrada en la historia Git (`dc2c0e9fc17c4fa9cf0b1809342d3fd10d1ae997`, `97b1f6acb7fd8d558712d8e873f62f03eabf40c4`); F11.2A quedó cerrada tras verificación automatizada y validación humana explícita. `REAL_VIDEO_GENERATION=NO`.
+
+### F11.2A — preparación visual (2026-09-10)
+
+**CLOSED — HUMAN-VALIDATED.** La validación humana explícita confirmó preview inicial; 0, 1 y 6 referencias; agregar/reemplazar/quitar; recortes manuales con ratios, movimiento y resize; paths seleccionados y preferencias por defecto; y `Prepare` completado sin el crash nativo de Qt. Esta evidencia humana no sustituye ni amplía la evidencia automatizada.
 
 
 ## Histórico F1–F10
