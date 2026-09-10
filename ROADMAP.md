@@ -194,6 +194,8 @@ Seed, sampler, scheduler u otros parámetros no se exponen mientras no sean bind
 
 **Criterio de cierre:** todos los parámetros H3 decididos para uso normal pueden configurarse desde GUI, con validación previa y sin duplicar lógica de bindings.
 
+**Estado:** **CLOSED — APPROVED (2026-09-10)**. La evidencia automatizada F11.3 es satisfactoria y la VALIDACIÓN HUMANA WINDOWS confirmó los controles en una instancia fresca de la GUI. No se inicia F11.4 como parte de este cierre.
+
 ### F11.4 — Editor de secuencia de chunks
 
 Mejorar la preparación de sesiones de más de dos chunks:

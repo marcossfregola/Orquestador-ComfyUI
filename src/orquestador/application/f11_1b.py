@@ -36,6 +36,8 @@ class ChainRoutingDecision:
 class UiCapabilities:
     can_start: bool=False; can_resume: bool=False; can_recover: bool=False
     can_retry: bool=False; can_cancel: bool=False; can_assemble: bool=False
+    supported_parameters: tuple[str,...]=()
+    reference_slots: tuple[str,...]=()
 
 def select_active_cancellation_target(execution):
     """Return exactly one current actionable pending external reference."""
@@ -57,7 +59,9 @@ def derive_capabilities(execution, *, can_cancel_candidate=False, retryable=Fals
         can_resume=state in ('running','failed'), can_recover=state in ('running','failed'),
         can_retry=state=='failed' and bool(retryable),
         can_cancel=state in ('pending','running','failed') and bool(can_cancel_candidate),
-        can_assemble=state=='succeeded' and bool(assemble))
+        can_assemble=state=='succeeded' and bool(assemble),
+        supported_parameters=('megapixels','length','steps','fps','ref_image_size','also_ref_first_frame'),
+        reference_slots=())
 
 class InputMaterializationService:
     """Single authority for static inputs and exact N-1 transition frames."""

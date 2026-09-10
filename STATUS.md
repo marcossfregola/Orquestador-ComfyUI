@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-10
-**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**; F11.1B **CLOSED — APPROVED**; F11.2A **CLOSED — HUMAN-VALIDATED**.
-**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**, commit `b642af94a1091f1f4e1d71912f61d3b9c756ce86`; F11.1B **CLOSED — APPROVED**, commits `dc2c0e9fc17c4fa9cf0b1809342d3fd10d1ae997` y `97b1f6acb7fd8d558712d8e873f62f03eabf40c4`; F11.2A **CLOSED — HUMAN-VALIDATED**, con evidencia automatizada fresca registrada abajo.
+**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**; F11.1B **CLOSED — APPROVED**; F11.2A **CLOSED — HUMAN-VALIDATED**; F11.3 **CLOSED — APPROVED** (`HUMAN_WINDOWS_VALIDATION=APPROVED`).
+**Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**, commit `b642af94a1091f1f4e1d71912f61d3b9c756ce86`; F11.1B **CLOSED — APPROVED**, commits `dc2c0e9fc17c4fa9cf0b1809342d3fd10d1ae997` y `97b1f6acb7fd8d558712d8e873f62f03eabf40c4`; F11.2A **CLOSED — HUMAN-VALIDATED**; F11.3 **CLOSED — APPROVED**, con evidencia automatizada y VALIDACIÓN HUMANA WINDOWS registradas abajo.
 
 ## Fotografía viva
 
@@ -35,6 +35,12 @@ Regla operativa: cada slice debe cerrarse con implementación, pruebas, evidenci
 ### F11.2A — preparación visual (2026-09-10)
 
 **CLOSED — HUMAN-VALIDATED.** La validación humana explícita confirmó preview inicial; 0, 1 y 6 referencias; agregar/reemplazar/quitar; recortes manuales con ratios, movimiento y resize; paths seleccionados y preferencias por defecto; y `Prepare` completado sin el crash nativo de Qt. Esta evidencia humana no sustituye ni amplía la evidencia automatizada.
+
+### F11.3 — configuración H3 ampliada
+
+**CLOSED — APPROVED (2026-09-10).** Se exponen `ref_image_size` (únicamente `match`) y `also_ref_first_frame`, con defaults canónicos, normalización existente e invalidación de preparación. La proyección pública de capacidades informa exactamente los seis parámetros H3 soportados. La evidencia automatizada es satisfactoria y la VALIDACIÓN HUMANA WINDOWS confirmó los controles en una instancia fresca de la GUI. F11.3 queda cerrada/aprobada con el commit de cierre de esta fase.
+
+**VALIDACIÓN HUMANA WINDOWS:** `Reference image size` visible con valor canónico `match`; `Also reference first frame` visible e inicialmente desmarcado; `Megapixels`, `Length`, `Steps` y `FPS` permanecen visibles; no aparece `lens`. Con proyecto válido y prompts no vacíos, `Preflight → Prepare` habilitó `Start chain`; después de `Prepare`, marcar `Also reference first frame` deshabilitó inmediatamente `Start chain`. `Start chain` no fue pulsado, no se generó ningún video y la GUI se cerró después de la validación. Esta evidencia humana está separada de los tests automáticos y no constituye un E2E real de generación.
 
 
 ## Histórico F1–F10

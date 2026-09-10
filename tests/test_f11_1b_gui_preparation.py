@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from orquestador.domain.config import (
     DEFAULT_FPS, DEFAULT_LENGTH, DEFAULT_MEGAPIXELS, DEFAULT_STEPS,
-    GenerationConfig,
+    DEFAULT_REF_IMAGE_SIZE, DEFAULT_ALSO_REF_FIRST_FRAME, GenerationConfig,
 )
 from orquestador.application.prepare_gui import PreflightGuiUseCase, PreparationError, effective_generation_config
 from orquestador.profiles.minimax_h3 import H3_PROFILE
@@ -132,8 +132,40 @@ class F111BGuiPreparationTests(unittest.TestCase):
 
     def test_gui_M_out_of_scope_controls_absent(self):
         w=self._window(); self.addCleanup(w.close)
-        for name in ("seed","sampler","scheduler","ref_image_size","also_ref_first_frame"):
+        for name in ("seed","sampler","scheduler","lens","manual_width","manual_height"):
             self.assertFalse(hasattr(w,name)); self.assertEqual(w.findChildren(type(w.start), name), [])
+        for name in ("width", "height"):
+            self.assertEqual(w.findChildren(type(w.start), name), [])
+
+    def test_gui_f113_controls_defaults_inputs_and_capabilities(self):
+        w=self._window(); self.addCleanup(w.close)
+        self.assertTrue(hasattr(w, "ref_image_size")); self.assertTrue(hasattr(w, "also_ref_first_frame"))
+        self.assertEqual(w.ref_image_size.currentText(), DEFAULT_REF_IMAGE_SIZE)
+        self.assertEqual(DEFAULT_REF_IMAGE_SIZE, "match")
+        self.assertFalse(w.also_ref_first_frame.isChecked())
+        self.assertFalse(DEFAULT_ALSO_REF_FIRST_FRAME)
+        self.assertEqual(w._inputs()["ref_image_size"], "match")
+        self.assertEqual(w._inputs()["also_ref_first_frame"], False)
+        w.also_ref_first_frame.setChecked(True)
+        self.assertEqual(w._inputs()["also_ref_first_frame"], True)
+        w.also_ref_first_frame.setChecked(False)
+        self.assertEqual(w._inputs()["also_ref_first_frame"], False)
+
+        from orquestador.application.f11_1b import derive_capabilities
+        execution = type("Execution", (), {"state": "pending"})()
+        capabilities = derive_capabilities(execution)
+        self.assertEqual(capabilities.supported_parameters,
+                         ("megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame"))
+        self.assertEqual(capabilities.reference_slots, ())
+
+    def test_gui_f113_edits_invalidate_prepared_state_and_disable_start(self):
+        w=self._window(); self.addCleanup(w.close)
+        for edit in (
+            lambda: w.ref_image_size.currentTextChanged.emit("match"),
+            lambda: w.also_ref_first_frame.setChecked(not w.also_ref_first_frame.isChecked()),
+        ):
+            w._prepared_key=w._form_key(); w._auth_can_start=True; w._update_start(); self.assertTrue(w.start.isEnabled())
+            edit(); self.assertIsNone(w._prepared_key); self.assertFalse(w.start.isEnabled())
 
     def test_gui_N_start_gating_and_no_implicit_prepare(self):
         w=self._window(); self.addCleanup(w.close); self.assertFalse(w.start.isEnabled())
