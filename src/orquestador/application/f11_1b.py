@@ -173,6 +173,15 @@ class F11_1BOrchestrator:
     def route_chain_chunk(self, chunk):
         if chunk.state.value == 'succeeded': return ChainRoutingDecision(ChainRoutingAction.COMPLETE)
         if chunk.state.value == 'cancelled': return ChainRoutingDecision(ChainRoutingAction.BLOCK, 'cancelled')
+        # A durable external binding is authoritative even when the chunk
+        # lifecycle is still PENDING (the crash window between binding and
+        # lifecycle promotion).  Observe/reconcile that job; never submit a
+        # second prompt merely because the chunk was reopened from disk.
+        if any(getattr(a, 'external_job_ref', None) is not None
+               and getattr(getattr(a, 'state', None), 'value', getattr(a, 'state', None))
+               in {'pending', 'running'}
+               for a in (getattr(chunk, 'attempts', ()) or ())):
+            return ChainRoutingDecision(ChainRoutingAction.RECOVER_RESUME)
         if chunk.state.value in {'failed','running'}: return ChainRoutingDecision(ChainRoutingAction.RECOVER_RESUME)
         return ChainRoutingDecision(ChainRoutingAction.FRESH_EXECUTE)
 

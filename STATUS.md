@@ -1,7 +1,9 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-09-10
-**Fase:** F10 **CLOSED — APPROVED** (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**; F11.1B **CLOSED — APPROVED**; F11.2A **CLOSED — HUMAN-VALIDATED**; F11.3 **CLOSED — APPROVED** (`HUMAN_WINDOWS_VALIDATION=APPROVED`).
+**Última actualización:** 2026-09-11
+**Fase:** F10 **CLOSED — APPROVED**; F11.0–F11.3 cerradas según historial; F11.4 **CLOSED — APPROVED**; F11.5 **CLOSED — APPROVED**.
+
+F11.4/F11.5 correction5: cobertura SQLite, superficie de acciones Qt, contrato Prepare/Start/invalidation/re-Prepare, recovery/retry y chaining durable verificados automáticamente; la validación humana Windows combinada quedó aprobada.
 **Estado:** F0–F8 cerradas; F9 **CLOSED — APPROVED WITH OBSERVATIONS**; F10 **CLOSED — APPROVED**; F11.0 **CLOSED — APPROVED**; F11.1A **CLOSED — APPROVED**, commit `b642af94a1091f1f4e1d71912f61d3b9c756ce86`; F11.1B **CLOSED — APPROVED**, commits `dc2c0e9fc17c4fa9cf0b1809342d3fd10d1ae997` y `97b1f6acb7fd8d558712d8e873f62f03eabf40c4`; F11.2A **CLOSED — HUMAN-VALIDATED**; F11.3 **CLOSED — APPROVED**, con evidencia automatizada y VALIDACIÓN HUMANA WINDOWS registradas abajo.
 
 ## Fotografía viva
@@ -113,3 +115,13 @@ El E2E FAST real usó `facade.prepare` → `facade.start_chain(..., fast_e2e=Tru
 La evidencia `seam-comparison.json` demostró que node 127 es pixel-idéntico a `TRANSITION_INPUT.png` y que esa transición coincide byte/pixel a pixel con el frame 55 exacto de chunk 0. El frame 0 de chunk 1 conserva dimensiones pero no identidad pixel; la diferencia residual queda clasificada como causa D del modelo H3. El control local H.264 mostró una degradación menor que la observada en H3, reforzando esa clasificación.
 
 Evaluación vigente de F10: **CLOSED — APPROVED**. `HUMAN_VISUAL_VALIDATION=APPROVED`; `VISUAL_CONTINUITY=APPROVED`.
+## Cierre F11.4/F11.5 (2026-09-11)
+
+F11.4 y F11.5 quedan **CLOSED — APPROVED**. La evidencia automatizada y la evidencia humana Windows se mantienen separadas:
+
+- Automated validation: suite por módulos `unittest` con **614 tests**, **613 OK** y **1 skip** ambiental; F7, F6, recovery/restart y las matrices F11.4/F11.5 quedaron verdes. `compileall` y `git diff --check` pasan.
+- Human Windows validation: se confirmó el layout y las operaciones de chunks, crop sin cambios, `Prepare → Start`, invalidación inmediata al editar y re-Prepare; recovery real en `yy/yy` reutilizó `MiniMax_H3_00286_.mp4`, completó el chunk siguiente como `00287_.mp4`, y el ensamblado fue aprobado como perfecto; una generación fresca de dos chunks con `Start Chain` continuó automáticamente después del chunk 1.
+- Observación aceptada, no bloqueante: después del ensamblado algunas miniaturas de referencias pueden no rehidratarse visualmente. Queda documentada para F11.6; no se modifica en este cierre.
+- Visual polish diferido: rehidratación de miniaturas, settings de chunks horizontales, IDs permanentes visibles, paneles inferiores lado a lado, previews mayores y legibilidad adicional de spinboxes. No forman parte de esta aprobación.
+
+No se cierra F11.6 ni se declara una nueva generación real ejecutada durante este turno; F11.4/F11.5 permanecen cerradas y aprobadas con la evidencia humana aportada y la regresión automatizada local.

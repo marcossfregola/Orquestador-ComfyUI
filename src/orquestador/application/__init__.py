@@ -11,3 +11,5 @@ __all__ += ["ChainExecutionUseCase", "ChainExecutionResult", "ChainOutcome"]
 from .f11_1b import F11_1BOrchestrator, InputMaterializationService, MaterializedInputs
 from .submit_boundary import SubmitBoundary
 __all__ += ["F11_1BOrchestrator", "InputMaterializationService", "MaterializedInputs", "SubmitBoundary"]
+from .edit_chunk_sequence import EditChunkSequenceUseCase
+__all__ += ["EditChunkSequenceUseCase"]

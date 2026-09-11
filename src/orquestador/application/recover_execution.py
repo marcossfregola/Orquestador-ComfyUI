@@ -90,10 +90,23 @@ class ResumeExecutionUseCase:
     def _manual(self, e, c=None, a=None, reason=''):
         return RecoveryExecutionResult(RecoveryOutcome.NEEDS_MANUAL_REVIEW, str(e.id), str(c.id) if c else None, str(a.id) if a else None, reason)
 
+    def _output_root_error(self):
+        """Validate the explicit ComfyUI output trust root before I/O."""
+        if self.output_root is None:
+            return 'configured ComfyUI output root is required'
+        try:
+            self.output_root = validate_configured_output_root(self.output_root)
+        except (TypeError, ValueError, OSError, RuntimeError) as exc:
+            return f'configured output root is invalid: {exc}'
+        return None
+
     def retry_existing_pending(self, project, execution, chunk, attempt, prompt=None):
         """Submit the exact durable Attempt 2 selected by explicit Retry."""
         if attempt.external_job_ref is not None:
             return self._manual(execution, chunk, attempt, 'retry attempt already bound; observe existing job')
+        output_error = self._output_root_error()
+        if output_error:
+            return self._manual(execution, chunk, attempt, output_error)
         result = self.submit_boundary.submit_existing_pending_attempt(
             project, execution, chunk.id, attempt.id, prompt)
         if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None:
@@ -136,6 +149,9 @@ class ResumeExecutionUseCase:
         if c is None: return self._manual(e,reason='no actionable chunk')
         a=c.attempts[-1] if c.attempts else None
         if a is None: return self._manual(e,c,a,'actionable attempt has no trustworthy external_job_ref')
+        output_error = self._output_root_error()
+        if output_error:
+            return self._manual(e, c, a, output_error)
         # Definite local submit rejection has no backend reference by design;
         # it is safe to enter the existing bounded retry path directly.
         if a.external_job_ref is None:
@@ -202,9 +218,6 @@ class ResumeExecutionUseCase:
             clone=_clone_execution(e); cc=next(x for x in clone.chunks if str(x.id)==str(c.id)); aa=next(x for x in cc.attempts if str(x.id)==str(a.id));
             if aa.state is Lifecycle.RUNNING: aa.transition(Lifecycle.FAILED,error=ErrorRecord('backend_failed','backend reported FAILED'))
             self.repository.save(project,[clone]); _copy_execution_state(e,clone); a=next(x for x in c.attempts if str(x.id)==str(a.id))
-        if self.output_root is not None and isinstance(self.output_root, (str, bytes, __import__('os').PathLike)):
-            try: validate_configured_output_root(self.output_root)
-            except ValueError as exc: return self._manual(e,c,a,str(exc))
         result=self.submit_boundary.submit(project,e,c.id,prompt)
         if result.outcome is not SubmitOutcome.SUCCEEDED or result.job_ref is None: return self._manual(e,c,a,result.outcome.value)
         # A retry reopens the failed chunk before completion orchestration; the

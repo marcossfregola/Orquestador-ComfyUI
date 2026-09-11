@@ -144,6 +144,8 @@ def merge_chunk_overrides(*scopes, strict: bool = True) -> dict:
             if key in CHUNK_OVERRIDE_KEYS:
                 if key == "prompt":
                     validate_prompt(value)
+                elif key in {"megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame"}:
+                    value = validate_parameter(key, value)
                 merged[key] = value
                 continue
             if key in FORBIDDEN_CONFIG_KEYS or strict:
@@ -193,8 +195,8 @@ class GenerationConfig:
         chunk_count = self.chunk_count
         if chunk_count is None:
             chunk_count = len(prompts)
-        if type(chunk_count) is not int or chunk_count not in (2, 3):
-            raise GenerationConfigError("chunk_count must be two or three")
+        if type(chunk_count) is not int or chunk_count < 2:
+            raise GenerationConfigError("chunk_count must be at least two")
         if len(prompts) != chunk_count:
             raise GenerationConfigError("one nonblank prompt is required per chunk")
         megapixels = validate_parameter("megapixels", self.megapixels)

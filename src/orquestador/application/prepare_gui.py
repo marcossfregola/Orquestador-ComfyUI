@@ -8,6 +8,7 @@ from ..domain.config import (
     GenerationConfig,
     GenerationConfigError,
     merge_generation_mappings,
+    merge_chunk_overrides,
 )
 from ..domain.core import Chunk, Execution, ExecutionId, Project, ProjectId, WorkflowProfileRef
 from ..persistence.sqlite import PersistenceError
@@ -17,7 +18,7 @@ from ..profiles.minimax_h3 import H3_PROFILE
 class PreparationError(ValueError):
     pass
 
-_GUI_KEYS = {"config", "generation_config", "initial_image", "prompts", "references", "chunk_count", "megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame", "orchestration_timeout_seconds"}
+_GUI_KEYS = {"config", "generation_config", "initial_image", "prompts", "references", "chunk_count", "megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame", "chunk_overrides", "orchestration_timeout_seconds"}
 
 def normalize_gui_updates(**kwargs):
     if kwargs.get("config") is not None and kwargs.get("generation_config") is not None:
@@ -29,7 +30,20 @@ def normalize_gui_updates(**kwargs):
         try: values = merge_generation_mappings(source, strict=True)
         except GenerationConfigError as exc: raise PreparationError(str(exc)) from exc
     else: raise PreparationError("generation config must be a mapping or GenerationConfig")
-    values.update({k: kwargs[k] for k in _GUI_KEYS - {"config", "generation_config"} if kwargs.get(k) is not None})
+    # chunk_overrides is a per-chunk surface, never part of GenerationConfig.
+    values.update({k: kwargs[k] for k in _GUI_KEYS - {"config", "generation_config", "chunk_overrides"} if kwargs.get(k) is not None})
+    if kwargs.get("chunk_overrides") is not None:
+        raw = kwargs["chunk_overrides"]
+        if not isinstance(raw, (list, tuple)):
+            raise PreparationError("chunk_overrides must be a sequence")
+        normalized = []
+        for i, item in enumerate(raw):
+            if item in (None, {}): normalized.append({}); continue
+            if not isinstance(item, Mapping):
+                raise PreparationError(f"chunk override {i} must be a mapping or empty")
+            try: normalized.append(merge_chunk_overrides(item, strict=True))
+            except GenerationConfigError as exc: raise PreparationError(f"chunk override {i}: {exc}") from exc
+        values["chunk_overrides"] = normalized
     return values
 
 def effective_generation_config(*scopes):
@@ -57,8 +71,8 @@ class PreflightGuiUseCase:
         prompts = generation.prompts
         refs = generation.references
         count = generation.chunk_count
-        if type(count) is not int or count not in (2, 3):
-            raise PreparationError("chunk count must be two or three")
+        if type(count) is not int or count < 2:
+            raise PreparationError("chunk count must be at least two")
         if not isinstance(prompts, (list, tuple)) or len(prompts) != count or any(not isinstance(p, str) or not p.strip() for p in prompts):
             raise PreparationError("one nonblank prompt is required per chunk")
         if not isinstance(refs, (list, tuple)) or len(refs) > 6:
@@ -74,7 +88,7 @@ class PreflightGuiUseCase:
             except OSError as exc: raise PreparationError(f"{label} is inaccessible") from exc
         readable(generation.initial_image, "initial image")
         for i, ref in enumerate(refs): readable(ref, f"reference slot {i}")
-        generation = effective_generation_config(project_defaults, execution_defaults, {**updates, "chunk_count": count})
+        generation = effective_generation_config(project_defaults, execution_defaults, {k: v for k, v in updates.items() if k != "chunk_overrides"} | {"chunk_count": count})
         if generation.profile_ref != H3_PROFILE.name: raise PreparationError("execution is not prepared for minimax-h3-ui")
         return {"state": "preflight", "valid": True, "errors": (), "generation_config": generation.to_mapping()}
 
@@ -115,10 +129,11 @@ class PrepareGuiUseCase:
         fps=None,
         ref_image_size=None,
         also_ref_first_frame=None,
+        chunk_overrides=None,
         orchestration_timeout_seconds=None,
         extra=None,
     ):
-        return normalize_gui_updates(config=config, generation_config=generation_config, initial_image=initial_image, prompts=prompts, references=references, chunk_count=chunk_count, megapixels=megapixels, length=length, steps=steps, fps=fps, ref_image_size=ref_image_size, also_ref_first_frame=also_ref_first_frame, orchestration_timeout_seconds=orchestration_timeout_seconds, **extra)
+        return normalize_gui_updates(config=config, generation_config=generation_config, initial_image=initial_image, prompts=prompts, references=references, chunk_count=chunk_count, megapixels=megapixels, length=length, steps=steps, fps=fps, ref_image_size=ref_image_size, also_ref_first_frame=also_ref_first_frame, orchestration_timeout_seconds=orchestration_timeout_seconds, chunk_overrides=chunk_overrides, **extra)
 
     def __call__(
         self,
@@ -136,6 +151,7 @@ class PrepareGuiUseCase:
         fps=None,
         ref_image_size=None,
         also_ref_first_frame=None,
+        chunk_overrides=None,
         orchestration_timeout_seconds=None,
         **extra,
     ):
@@ -152,6 +168,7 @@ class PrepareGuiUseCase:
             fps=fps,
             ref_image_size=ref_image_size,
             also_ref_first_frame=also_ref_first_frame,
+            chunk_overrides=chunk_overrides,
             orchestration_timeout_seconds=orchestration_timeout_seconds,
             extra=extra,
         )
@@ -170,7 +187,7 @@ class PrepareGuiUseCase:
         scopes = [project.defaults]
         if existing is not None:
             scopes.append(existing.defaults)
-        scopes.append(updates)
+        scopes.append({k: v for k, v in updates.items() if k != "chunk_overrides"})
         values = effective_generation_config(*scopes).to_mapping()
         prompts_value = values.get("prompts", ())
         refs_value = values.get("references", ())
@@ -183,8 +200,8 @@ class PrepareGuiUseCase:
             raise PreparationError("references must be a sequence")
         prompts_value = list(prompts_value)
         refs_value = list(refs_value)
-        if type(count_value) is not int or count_value not in (2, 3):
-            raise PreparationError("chunk count must be two or three")
+        if type(count_value) is not int or count_value < 2:
+            raise PreparationError("chunk count must be at least two")
         if len(prompts_value) != count_value or any(
             not isinstance(value, str) or not value.strip() for value in prompts_value
         ):
@@ -221,6 +238,9 @@ class PrepareGuiUseCase:
                 "chunk_count": count_value,
             }
         )
+        overrides = updates.get("chunk_overrides")
+        if overrides is not None and len(overrides) != count_value:
+            raise PreparationError("chunk_overrides must align with chunk_count/prompts")
         try:
             generation = GenerationConfig.from_mapping(values, strict=True)
         except GenerationConfigError as exc:
@@ -238,8 +258,11 @@ class PrepareGuiUseCase:
             if (existing.artifacts or any(c.attempts or c.first_frame is not None for c in existing.chunks)
                     or str(existing.state.value if hasattr(existing.state, 'value') else existing.state) in started_states):
                 raise PreparationError("cannot re-prepare execution after real execution evidence")
-            if len(existing.chunks) != count_value:
-                raise PreparationError("existing execution conflicts with preparation")
+            if len(existing.chunks) > count_value:
+                existing.chunks = list(existing.chunks[:count_value])
+                for index, chunk in enumerate(existing.chunks): chunk.order = index
+            while len(existing.chunks) < count_value:
+                existing.add_chunk(Chunk(order=len(existing.chunks)))
         else:
             existing = Execution(
                 project.id,
@@ -265,10 +288,23 @@ class PrepareGuiUseCase:
                     made.append(target)
             if dict(existing.defaults) != generation.to_mapping():
                 existing.defaults = generation.to_mapping()
+            # Materialize the complete per-position override set before the
+            # single transactional preparation save.  Failed validation above
+            # leaves the prior aggregate untouched.
+            for index, chunk in enumerate(existing.chunks):
+                ov = (overrides[index] if overrides is not None else dict(chunk.defaults))
+                chunk.defaults = merge_chunk_overrides(ov, strict=True)
+                # Execution prompts remain authoritative unless a chunk draft
+                # explicitly supplied its own prompt.
+                if "prompt" not in chunk.defaults:
+                    chunk.defaults = {**dict(chunk.defaults), "prompt": prompts_value[index]}
             if not matches:
                 self.repository.save(project, [*executions, existing])
             else:
-                self.repository.save(project, executions)
+                if hasattr(self.repository, "save_preparation_sequence"):
+                    self.repository.save_preparation_sequence(project, existing)
+                else:
+                    self.repository.save(project, executions)
         except Exception as exc:
             existing.defaults = previous_defaults
             for target in made:

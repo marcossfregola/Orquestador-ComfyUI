@@ -52,7 +52,7 @@ class StaleNotFoundRecoveryTests(unittest.TestCase):
             # Restart/reopen, then definitively retire Attempt 1 and persist unbound Attempt 2.
             repo = SQLiteProjectRepository(root, 'integrated.sqlite3'); lp, les = repo.load(project.id); le = les[0]
             backend = Mock(); backend.observe.return_value = HistoryResult(BackendJobRef('stale-ref'), HistoryState.NOT_FOUND, {})
-            first = ResumeExecutionUseCase(repo, backend, Mock(), Mock()).resume(lp.id, le.id)
+            first = ResumeExecutionUseCase(repo, backend, Mock(), Mock(), output_root=root).resume(lp.id, le.id)
             self.assertEqual(first.outcome, RecoveryOutcome.NEEDS_MANUAL_REVIEW)
             repo.close(); repo = SQLiteProjectRepository(root, 'integrated.sqlite3'); _, es = repo.load(project.id); le = es[0]
             target = le.chunks[1]; attempt2_id = target.attempts[1].id
@@ -64,7 +64,7 @@ class StaleNotFoundRecoveryTests(unittest.TestCase):
             transport = Mock(); transport.submit.return_value = BackendJobRef('retry-ref')
             submitter = SubmitBoundary(transport, repository=repo); backend = Mock()
             backend.observe.return_value = BackendJobObservation(str(lp.id), str(le.id), str(target.id), str(attempt2_id), BackendJobState.RUNNING, BackendJobRef('retry-ref'))
-            resume = ResumeExecutionUseCase(repo, backend, Mock(), submitter)
+            resume = ResumeExecutionUseCase(repo, backend, Mock(), submitter, output_root=root)
             retried = RetryExecutionUseCase(repo, resume).retry(lp.id, le.id)
             self.assertEqual((retried.outcome, retried.attempt_id), (RecoveryOutcome.RETRIED_WAIT, str(attempt2_id)))
             submitted_prompt = transport.submit.call_args.args[0]
@@ -80,8 +80,8 @@ class StaleNotFoundRecoveryTests(unittest.TestCase):
             extractor = Mock(); extractor.extract_last_frame.return_value = type('Frame', (), {'frame_index': 19, 'frame_count': 20})()
             history = HistoryResult(BackendJobRef('retry-ref'), HistoryState.SUCCEEDED, {'outputs': {}})
             backend = Mock(); backend.observe.return_value = history
-            coordinator = ChunkExecutionCoordinator(repo, Mock(), history, extractor=extractor, trusted_root=root, correlator=lambda *_: corr, physical_validator=lambda *_: phys)
-            completed = ResumeExecutionUseCase(repo, backend, coordinator, Mock()).resume(lp.id, le.id)
+            coordinator = ChunkExecutionCoordinator(repo, Mock(), history, extractor=extractor, trusted_root=root, comfyui_output_root=root, correlator=lambda *_: corr, physical_validator=lambda *_: phys)
+            completed = ResumeExecutionUseCase(repo, backend, coordinator, Mock(), output_root=root).resume(lp.id, le.id)
             self.assertEqual((completed.outcome, completed.attempt_id), (RecoveryOutcome.RETRIED_COMPLETE, str(attempt2_id)))
             repo.close()
 
@@ -134,7 +134,7 @@ class StaleNotFoundRecoveryTests(unittest.TestCase):
             a2 = e.chunks[1].new_attempt(); a2.assign_external_job_ref(BackendJobRef('retry'))
             return SubmitAttemptResult(SubmitOutcome.SUCCEEDED, str(a2.id), a2.external_job_ref)
         submitter.submit.side_effect = do_submit
-        return ResumeExecutionUseCase(repo, backend, Mock(), submitter), submitter
+        return ResumeExecutionUseCase(repo, backend, Mock(), submitter, output_root=Path.cwd()), submitter
 
     def test_valid_not_found_creates_only_attempt2_and_preserves_predecessor(self):
         p,e,prev,target,current,repo = self.make()
@@ -227,10 +227,10 @@ class StaleNotFoundRecoveryTests(unittest.TestCase):
         p, e, prev, target, current, repo = self.make()
         backend = Mock()
         backend.observe.return_value = HistoryResult(current.external_job_ref, HistoryState.NOT_FOUND, {})
-        ResumeExecutionUseCase(repo, backend, Mock(), Mock()).resume(p.id, e.id)
+        ResumeExecutionUseCase(repo, backend, Mock(), Mock(), output_root=Path.cwd()).resume(p.id, e.id)
         transport = Mock()
         submitter = SubmitBoundary(transport, repository=repo)
-        resume = ResumeExecutionUseCase(repo, Mock(), Mock(), submitter)
+        resume = ResumeExecutionUseCase(repo, Mock(), Mock(), submitter, output_root=Path.cwd())
         with self.assertRaisesRegex(ValueError, 'retry prompt reconstruction failed'):
             RetryExecutionUseCase(repo, resume).retry(p.id, e.id)
         transport.submit.assert_not_called()

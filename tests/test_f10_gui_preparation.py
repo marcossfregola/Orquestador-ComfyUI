@@ -120,10 +120,10 @@ class F10GuiMatrixTests(unittest.TestCase):
             def __init__(self): self.calls=[]
             def extract_last_frame(self, source, destination):
                 destination=Path(destination); self.calls.append((Path(source),destination)); destination.parent.mkdir(parents=True,exist_ok=True); destination.write_bytes(b'frame'); return VideoFrame(destination,4,5)
-        c1=Client('x'); c1.root=self.root; e1=Extractor(); f1,r1=compose(AppConfig(self.root),client_factory=lambda _:c1,extractor_factory=lambda:e1)
+        c1=Client('x'); c1.root=self.root; e1=Extractor(); f1,r1=compose(AppConfig(self.root, comfyui_output_root=self.root),client_factory=lambda _:c1,extractor_factory=lambda:e1)
         p=f1.prepare(project_id='p-real',execution_id='e-real',initial_image=str(self.root/'start.png'),prompts=['p0','p1'],references=self.refs,chunk_count=2); self.assertTrue(p.success,p.message)
         pid,eid=p.snapshot.project_id,p.snapshot.execution_id; project,es=r1['repository'].load(pid); ex=es[0]; self.assertEqual(ex.workflow_profile_ref.value,H3_PROFILE.name); self.assertEqual(r1['repository'].load_transitions(eid),[]); r1['repository'].close()
-        c2=Client('x'); c2.root=self.root; e2=Extractor(); facade,res=compose(AppConfig(self.root),client_factory=lambda _:c2,extractor_factory=lambda:e2); self.res=res
+        c2=Client('x'); c2.root=self.root; e2=Extractor(); facade,res=compose(AppConfig(self.root, comfyui_output_root=self.root),client_factory=lambda _:c2,extractor_factory=lambda:e2); self.res=res
         self.assertEqual(type(res['repository']).__name__,'SQLiteProjectRepository'); self.assertEqual(type(res['chain']).__name__,'ChainExecutionUseCase'); self.assertEqual(type(res['coordinator']).__name__,'ChunkExecutionCoordinator'); self.assertEqual(type(facade).__name__,'GuiFacade'); self.assertEqual(facade.refresh(pid,eid).state,'pending')
         out=facade.start_chain(pid,eid); self.assertTrue(out.success,out.message); self.assertEqual(len(c2.submits),2)
         a,b=c2.submits; self.assertEqual(a['129']['inputs']['prompt'],'p0'); self.assertEqual(b['129']['inputs']['prompt'],'p1'); self.assertEqual([b['129']['inputs'][f'ref_images.ref_image_{i}'] for i in range(6)],[['156',0],['157',0],['158',0],['159',0],['161',0],['160',0]])
@@ -187,7 +187,7 @@ class F10GuiMatrixTests(unittest.TestCase):
             def extract_last_frame(self, source, destination):
                 destination=Path(destination); destination.parent.mkdir(parents=True,exist_ok=True); destination.write_bytes(b'frame'); return VideoFrame(destination,4,5)
         client=Client('x'); client.root=self.root
-        facade,res=compose(AppConfig(self.root),client_factory=lambda _:client,extractor_factory=Extractor)
+        facade,res=compose(AppConfig(self.root, comfyui_output_root=self.root),client_factory=lambda _:client,extractor_factory=Extractor)
         prepared=facade.prepare(project_id='p-fail',execution_id='e-fail',initial_image=str(self.root/'start.png'),prompts=['p0','p1'],references=self.refs,chunk_count=2)
         self.assertTrue(prepared.success, prepared.message); pid,eid=prepared.snapshot.project_id,prepared.snapshot.execution_id
         # Instrument the actual lifecycle use-case boundaries.  Start-chain
@@ -214,7 +214,7 @@ class F10GuiMatrixTests(unittest.TestCase):
         transitions=res['repository'].load_transitions(eid); self.assertEqual(len(transitions),1)
         transition=transitions[0]; self.assertEqual(transition.source_output.uri,'outputs/job-1.mp4'); self.assertIsNone(transition.materialized_ref)
         res['repository'].close()
-        _, reopened=compose(AppConfig(self.root),client_factory=lambda _:client,extractor_factory=Extractor)
+        _, reopened=compose(AppConfig(self.root, comfyui_output_root=self.root),client_factory=lambda _:client,extractor_factory=Extractor)
         _, reread=reopened['repository'].load(pid); durable=reread[0]; self.assertEqual(len(durable.chunks[1].attempts),0)
         self.assertEqual(reopened['repository'].load_transitions(eid)[0].source_output.uri,'outputs/job-1.mp4'); reopened['repository'].close()
 

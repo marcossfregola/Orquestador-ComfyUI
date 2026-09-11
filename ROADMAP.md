@@ -119,6 +119,10 @@ El control de codec separado dio PSNR 40,894518 dB y media absoluta 1,772694, po
 
 ## F11 — GUI operativa incremental y configuración de generación
 
+### F11.5 — Operación, recuperación y resultados desde GUI
+
+**Estado:** **CLOSED — APPROVED (2026-09-11)**. La GUI expone reapertura durable, Resume/Recover, Retry, cancelación fail-closed, ensamblado/reensamblado por F8 y visibilidad de chunks, transiciones, intermedios y resultados. La evidencia automatizada y la validación humana Windows combinada constan en `TESTING.md`.
+
 Convertir la GUI técnica ya existente en una interfaz Windows realmente utilizable para preparar, ejecutar, seguir y recuperar generaciones de video sin depender de consola ni de edición manual de archivos de configuración.
 
 F11 se desarrolla por **slices verticales utilizables**. Cada slice cerrado debe dejar una aplicación que siga pudiendo generar videos reales; las capacidades nuevas se agregan sobre contratos ya estabilizados, sin rehacer la lógica anterior. La configuración de generación debe tener una única fuente de verdad compartida por aplicación y GUI: la interfaz no debe duplicar reglas de defaults, validación, herencia o bindings, ni hablar directamente con ComfyUI, FFmpeg o persistencia.
@@ -140,7 +144,7 @@ Decisiones formalizadas para el diseño de F11:
 
 - existe un único contrato conceptual `GenerationConfig`, compartido por GUI, aplicación y profile/bindings; la GUI no mantiene una segunda lógica de defaults o validación;
 - se conserva la precedencia `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk, y cada ejecución guarda un snapshot durable de su configuración efectiva;
-- F11.1 exige imagen inicial, referencias H3 opcionales (0..6), ordenadas y densas para la serialización de producto, 2 o 3 chunks y un prompt no vacío por chunk;
+- F11.1 exige imagen inicial, referencias H3 opcionales (0..6), ordenadas y densas para la serialización de producto, N>=2 chunks sin máximo arbitrario y un prompt no vacío por chunk;
 - F11.1 expone resolución mediante una única política de megapíxeles, además de `length`, `steps` y FPS; los destinos, defaults y la distinción externa/interna de `first_frame` son autoridad de [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md);
 - width/height siguen siendo derivados por el workflow y no se crea una política manual concurrente; la forma de scopes, snapshot y validación es autoridad de [DATA_MODEL.md](DATA_MODEL.md);
 - seed, sampler, scheduler, IA y demás backlog quedan fuera; `ref_image_size` y `also_ref_first_frame` usan defaults sin controles hasta F11.3;
@@ -194,7 +198,7 @@ Seed, sampler, scheduler u otros parámetros no se exponen mientras no sean bind
 
 **Criterio de cierre:** todos los parámetros H3 decididos para uso normal pueden configurarse desde GUI, con validación previa y sin duplicar lógica de bindings.
 
-**Estado:** **CLOSED — APPROVED (2026-09-10)**. La evidencia automatizada F11.3 es satisfactoria y la VALIDACIÓN HUMANA WINDOWS confirmó los controles en una instancia fresca de la GUI. No se inicia F11.4 como parte de este cierre.
+**Estado:** **CLOSED — APPROVED (2026-09-10)**. La evidencia automatizada F11.3 es satisfactoria y la VALIDACIÓN HUMANA WINDOWS confirmó los controles en una instancia fresca de la GUI. Captura histórica; el cierre combinado F11.4/F11.5 está registrado abajo.
 
 ### F11.4 — Editor de secuencia de chunks
 
@@ -209,6 +213,8 @@ Mejorar la preparación de sesiones de más de dos chunks:
 
 **Criterio de cierre:** una sesión multi-chunk puede prepararse y revisarse completamente desde la GUI antes de enviarse a generación.
 
+**Estado:** **CLOSED — APPROVED (2026-09-11)**. La edición durable de chunks, herencia/overrides, duplicación, eliminación, reordenamiento por ID y la invalidación `Prepare → Start` pasaron la regresión automatizada y la validación humana Windows combinada documentada en `STATUS.md` y `TESTING.md`.
+
 ### F11.5 — Operación, recuperación y resultados desde GUI
 
 Llevar a la experiencia gráfica las capacidades ya existentes del núcleo:
@@ -222,6 +228,8 @@ Llevar a la experiencia gráfica las capacidades ya existentes del núcleo:
 - acceso claro a chunks, transiciones, intermedios y resultado final.
 
 **Criterio de cierre:** las operaciones normales de continuidad, fallo y recuperación pueden ejecutarse desde Windows sin recurrir a herramientas técnicas externas.
+
+**Estado:** **CLOSED — APPROVED (2026-09-11)**. Resume/Recover/Retry, cancelación fail-closed, chaining automático de dos chunks, ensamblado y resultados visibles quedaron verificados automáticamente y aprobados en la validación humana Windows combinada.
 
 ### F11.6 — Pulido de UX y validación Windows
 
@@ -240,3 +248,8 @@ Con las capacidades anteriores ya funcionales:
 Cada slice sigue el flujo obligatorio: **inspección → diagnóstico/diseño → implementación → pruebas → evidencia → auditoría → validación humana cuando corresponda → aprobación → commit**.
 
 No se inicia automáticamente la slice siguiente. Una slice aprobada debe quedar utilizable por sí misma, de forma que el usuario pueda generar videos con la aplicación mientras continúa el desarrollo posterior.
+F11.4 correction3/4/5 evidence above is historical and is superseded by the combined approval below. The exact automated counts, environmental skip and separate human evidence remain in `TESTING.md`.
+
+## Cierre combinado F11.4/F11.5 (2026-09-11)
+
+F11.4 y F11.5: **CLOSED — APPROVED**. La validación humana Windows confirmó crop sin cambios, edición y navegación de chunks, `Prepare → Start`, invalidación/re-Prepare, recovery real `yy/yy` con `MiniMax_H3_00286_.mp4` y `00287_.mp4`, ensamblado perfecto y una generación fresca de dos chunks que continuó automáticamente. La suite automatizada quedó en **614 tests (613 OK, 1 skip ambiental)**; no se ejecutó generación real nueva durante este cierre. La observación no bloqueante sobre rehidratación de miniaturas y el pulido visual restante se trasladan a F11.6.

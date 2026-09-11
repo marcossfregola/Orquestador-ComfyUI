@@ -28,7 +28,16 @@ class ChunkExecutionCoordinator:
         # Legacy test seams may provide a submit-like double; production
         # composition always supplies SubmitBoundary.
         self.repository,self.submit_boundary,self.monitor=repository, (submit_boundary if hasattr(submit_boundary, 'submit') else SubmitBoundary(submit_boundary)), monitor
-        self.extractor,self.trusted_root,self.comfyui_output_root,self.correlator,self.physical_validator,self.importer=extractor,Path(trusted_root),Path(comfyui_output_root or trusted_root),correlator,physical_validator,importer
+        self.extractor = extractor
+        self.trusted_root = Path(trusted_root).resolve()
+        # These roots are deliberately distinct trust boundaries.  An omitted
+        # ComfyUI output root stays unavailable; it must never silently become
+        # the project root used for durable imports.
+        self.comfyui_output_root = (
+            Path(comfyui_output_root).expanduser().resolve()
+            if comfyui_output_root is not None else None
+        )
+        self.correlator,self.physical_validator,self.importer = correlator,physical_validator,importer
     @property
     def submitter(self):
         return self.submit_boundary
@@ -37,6 +46,8 @@ class ChunkExecutionCoordinator:
         self.submit_boundary = value if hasattr(value, 'submit') else SubmitBoundary(value)
     def submit_new(self, project, execution, chunk_id, prompt, **submit_kwargs):
         """Validate the operation-time output boundary before any new submit."""
+        if self.comfyui_output_root is None:
+            return None, "configured ComfyUI output root is required"
         try: self.comfyui_output_root = validate_configured_output_root(self.comfyui_output_root)
         except ValueError as exc: return None, str(exc)
         return self.submit_boundary.submit(project, execution, chunk_id, prompt, **submit_kwargs), None
@@ -69,7 +80,13 @@ class ChunkExecutionCoordinator:
         corr=self.correlator(observed,ref)
         if getattr(corr,'status',None).value!='valid' or len(corr.descriptors)!=1: return ChunkExecutionResult(False,'output absent or ambiguous',str(attempt.id))
         evidence = replace(evidence, logical_outputs=tuple(corr.descriptors))
-        physical=self.physical_validator(corr.descriptors[0],self.comfyui_output_root)
+        if self.comfyui_output_root is None:
+            return ChunkExecutionResult(False,'configured ComfyUI output root is required',str(attempt.id))
+        try:
+            self.comfyui_output_root = validate_configured_output_root(self.comfyui_output_root)
+            physical=self.physical_validator(corr.descriptors[0],self.comfyui_output_root)
+        except (TypeError, ValueError, OSError, RuntimeError) as exc:
+            return ChunkExecutionResult(False,f'configured output root is invalid: {exc}',str(attempt.id))
         obs=map_verified_artifact_observation(evidence=evidence,physical=physical,project_id=project.id,execution_id=execution.id,chunk_id=chunk.id,attempt_id=attempt.id,job_ref=ref)
         if obs is None: return ChunkExecutionResult(False,'physical/provenance validation failed',str(attempt.id))
         # Import before extraction so recovery no longer depends on ComfyUI storage.

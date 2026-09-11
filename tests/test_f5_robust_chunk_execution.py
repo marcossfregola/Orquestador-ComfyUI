@@ -1,3 +1,4 @@
+import os
 import tempfile
 from dataclasses import dataclass
 import unittest
@@ -28,8 +29,9 @@ class FaultRepo:
 
 class RobustContractTests(unittest.TestCase):
     def setUp(self):
-        Path('C:\\Temp\\orq-f5-final-tests').mkdir(parents=True,exist_ok=True)
-        self.tmp=tempfile.TemporaryDirectory(dir='C:\\Temp\\orq-f5-final-tests'); self.root=Path(self.tmp.name); (self.root/'out.mp4').write_bytes(b'x')
+        base=Path(os.environ.get('ORQ_TEST_TMP', tempfile.gettempdir())).resolve()
+        base.mkdir(parents=True,exist_ok=True)
+        self.tmp=tempfile.TemporaryDirectory(dir=str(base)); self.root=Path(self.tmp.name); (self.root/'out.mp4').write_bytes(b'x')
         self.repo=SQLiteProjectRepository(self.root); self.project=Project(); self.execution=Execution(self.project.id); self.chunk=Chunk(order=0); self.execution.add_chunk(self.chunk); self.repo.save(self.project,[self.execution])
     def tearDown(self):
         try:self.repo.close()
@@ -41,7 +43,7 @@ class RobustContractTests(unittest.TestCase):
         def corr(h,ref): return OutputCorrelationResult(ref,OutputCorrelationStatus.VALID,(OutputDescriptor(ref,'node','out.mp4','','video'),))
         def physical(d,root): return PhysicalOutputEvidence(d,PhysicalOutputStatus.EXISTS,Path(root),self.root/'out.mp4')
         extractor=Mock(); extractor.extract_last_frame.return_value=type('F',(),{'frame_index':0,'frame_count':1})()
-        core=ChunkExecutionCoordinator(repo,submit,monitor,extractor=extractor,trusted_root=self.root,correlator=corr,physical_validator=physical)
+        core=ChunkExecutionCoordinator(repo,submit,monitor,extractor=extractor,trusted_root=self.root,comfyui_output_root=self.root,correlator=corr,physical_validator=physical)
         return RobustChunkExecutionCoordinator(core,sleeper=lambda _:None,poll_interval=.01),client
     def reopen(self): self.repo.close(); self.repo=SQLiteProjectRepository(self.root); return self.repo.load(self.project.id)[1][0]
     def policy(self, robust):

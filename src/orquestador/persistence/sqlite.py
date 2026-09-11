@@ -62,7 +62,7 @@ class SQLiteProjectRepository:
   for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256'):
    if c not in cols: self.db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL')
  def close(self):self.db.close()
- def save(self,p,es,artifacts=(),errors=(),transitions=(),*,allow_retry_reopen=False):
+ def save(self,p,es,artifacts=(),errors=(),transitions=(),*,allow_retry_reopen=False,_in_transaction=False):
   try:
    owners={str(a.id):(e,c) for e in es for c in e.chunks for a in c.attempts}
    for ar in artifacts:
@@ -70,13 +70,25 @@ class SQLiteProjectRepository:
     if ar.project_id!=p.id or not own or str(own[0].id)!=str(ar.execution_id) or str(own[1].id)!=str(ar.chunk_id): raise PersistenceDataError('artifact provenance')
     old=self.db.execute('SELECT phase,output FROM artifacts WHERE id=?',(str(ar.id),)).fetchone()
     if old and old!=(ar.phase.value,ar.output.uri): raise PersistenceConflictError('immutable artifact conflict')
-   self.db.execute('BEGIN'); self.db.execute('INSERT INTO projects VALUES(?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults',(str(p.id),_json(dict(p.defaults))))
+   if not _in_transaction: self.db.execute('BEGIN')
+   self.db.execute('INSERT INTO projects VALUES(?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults',(str(p.id),_json(dict(p.defaults))))
    for e in es:
     prof=e.workflow_profile_ref.value if e.workflow_profile_ref else None; old=self.db.execute('SELECT state,workflow_profile_ref FROM executions WHERE id=?',(str(e.id),)).fetchone()
     if old and (not _legal(Lifecycle(old[0]),e.state,allow_retry_reopen=allow_retry_reopen) or old[1]!=prof):raise PersistenceConflictError('execution lifecycle/profile conflict')
     self.db.execute('INSERT INTO executions VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults,state=excluded.state,workflow_profile_ref=excluded.workflow_profile_ref',(str(e.id),str(p.id),_json(dict(e.defaults)),e.state.value,prof))
+    # Generic save never infers deletion from an incomplete aggregate.
+    ids=[str(c.id) for c in e.chunks]
+    if ids:
+     # Partial aggregates may only rewrite their own rows; never steal an
+     # ordinal belonging to an omitted historical chunk.
+     occupied={r[0] for r in self.db.execute('SELECT ord FROM chunks WHERE execution_id=? AND id NOT IN (%s)' % ','.join('?'*len(ids)), (str(e.id), *ids))}
+     if any(c.order in occupied for c in e.chunks): raise PersistenceConflictError('partial sequence ordinal collision')
+     self.db.execute('UPDATE chunks SET ord=ord+1000000 WHERE execution_id=? AND id IN (%s)' % ','.join('?'*len(ids)), (str(e.id), *ids))
     for c in e.chunks:
-     self.db.execute('INSERT INTO chunks VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults,state=excluded.state',(str(c.id),str(e.id),c.order,_json(dict(c.defaults)),c.state.value))
+     if str(c.execution_id) != str(e.id): raise PersistenceConflictError('chunk execution ownership mismatch')
+     existing=self.db.execute('SELECT execution_id FROM chunks WHERE id=?',(str(c.id),)).fetchone()
+     if existing and existing[0] != str(e.id): raise PersistenceConflictError('chunk id belongs to another execution')
+     self.db.execute('INSERT INTO chunks VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET ord=excluded.ord,defaults=excluded.defaults,state=excluded.state',(str(c.id),str(e.id),c.order,_json(dict(c.defaults)),c.state.value))
      for a in c.attempts:
       old_attempt=self.db.execute('SELECT state,external_job_ref FROM attempts WHERE id=?',(str(a.id),)).fetchone()
       if old_attempt and Lifecycle(old_attempt[0]) is Lifecycle.FAILED and a.state in {Lifecycle.RUNNING,Lifecycle.PENDING}:
@@ -95,13 +107,32 @@ class SQLiteProjectRepository:
      self.db.execute('DELETE FROM transitions WHERE execution_id=? AND source_chunk_id=? AND source_attempt_id=? AND target_chunk_id IS NULL',(str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)))
     m=getattr(t,'materialized_ref',None)
     self.db.execute('INSERT OR REPLACE INTO transitions(project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(str(t.project_id),str(t.execution_id),str(t.target_chunk_id) if t.target_chunk_id is not None else None,str(t.source_chunk_id),str(t.source_attempt_id),t.source_output.uri,t.source_frame_index,t.frame_count, getattr(m,'type',None),getattr(m,'subfolder',None),getattr(m,'name',None),getattr(m,'source_sha256',None)))
-   self.db.execute('COMMIT')
+   if not _in_transaction: self.db.execute('COMMIT')
   except PersistenceError:
-   if self.db.in_transaction:self.db.execute('ROLLBACK')
+   if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
    raise
   except Exception as e:
-   if self.db.in_transaction:self.db.execute('ROLLBACK')
+   if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
    raise PersistenceError(str(e))
+ def save_preparation_sequence(self, project, execution, *, allow_retry_reopen=False):
+  eid=str(execution.id); self.db.execute('BEGIN')
+  try:
+   row=self.db.execute('SELECT state FROM executions WHERE id=?',(eid,)).fetchone()
+   if row and Lifecycle(row[0]) is not Lifecycle.PENDING: raise PersistenceConflictError('preparation sequence is not virgin')
+   if self.db.execute('SELECT 1 FROM transitions WHERE execution_id=?',(eid,)).fetchone(): raise PersistenceConflictError('preparation sequence has transitions')
+   if self.db.execute('SELECT 1 FROM chunks WHERE execution_id=? AND state<>?',(eid,Lifecycle.PENDING.value)).fetchone(): raise PersistenceConflictError('preparation sequence has non-pending chunk')
+   if self.db.execute('SELECT 1 FROM attempts a JOIN chunks c ON c.id=a.chunk_id WHERE c.execution_id=?',(eid,)).fetchone(): raise PersistenceConflictError('preparation sequence has attempts')
+   if self.db.execute('SELECT 1 FROM artifacts WHERE execution_id=?',(eid,)).fetchone() or self.db.execute('SELECT 1 FROM errors WHERE execution_id=?',(eid,)).fetchone(): raise PersistenceConflictError('preparation sequence has artifacts or errors')
+   # Inline generic persistence while retaining transaction ownership.
+   self.db.execute('UPDATE chunks SET ord=ord+1000000 WHERE execution_id=?',(eid,))
+   self.save(project,[execution],allow_retry_reopen=allow_retry_reopen,_in_transaction=True)
+   keep={str(c.id) for c in execution.chunks}
+   for (cid,) in self.db.execute('SELECT id FROM chunks WHERE execution_id=?',(eid,)).fetchall():
+    if cid not in keep: self.db.execute('DELETE FROM chunks WHERE id=?',(cid,))
+   self.db.execute('COMMIT')
+  except Exception:
+   if self.db.in_transaction:self.db.execute('ROLLBACK')
+   raise
  def load(self,pid):
   row=self.db.execute('SELECT defaults FROM projects WHERE id=?',(str(pid),)).fetchone()
   if not row:raise PersistenceError('project not found')

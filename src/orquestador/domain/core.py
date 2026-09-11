@@ -126,6 +126,26 @@ class Execution:
   if chunk.execution_id not in (None,self.id): raise DomainError('chunk belongs to another execution')
   if chunk.order!=len(self.chunks): raise DomainError('chunk orders must be contiguous and zero-based')
   chunk.execution_id=self.id; self.chunks.append(chunk)
+ def _editable(self):
+  if self.artifacts or self.errors or self.state is not Lifecycle.PENDING or any(c.attempts or c.first_frame is not None or c.state is not Lifecycle.PENDING for c in self.chunks):
+   raise DomainError('chunk sequence is locked after runtime evidence')
+ def reorder_chunks(self, order):
+  self._editable(); ids=list(order)
+  if len(ids)!=len(self.chunks) or set(map(str,ids))!={str(c.id) for c in self.chunks}: raise DomainError('invalid chunk order')
+  by={str(c.id):c for c in self.chunks}; self.chunks=[by[str(i)] for i in ids]
+  for n,c in enumerate(self.chunks): c.order=n
+ def duplicate_chunk(self, chunk_id):
+  self._editable(); src=next((c for c in self.chunks if str(c.id)==str(chunk_id)),None)
+  if src is None: raise DomainError('chunk not found')
+  copy=Chunk(order=src.order+1, execution_id=self.id, defaults=dict(src.defaults)); self.chunks.insert(src.order+1,copy)
+  for n,c in enumerate(self.chunks): c.order=n
+  return copy
+ def remove_chunk(self, chunk_id):
+  self._editable()
+  if len(self.chunks)<=2: raise DomainError('minimum two chunks required')
+  before=len(self.chunks); self.chunks=[c for c in self.chunks if str(c.id)!=str(chunk_id)]
+  if len(self.chunks)==before: raise DomainError('chunk not found')
+  for n,c in enumerate(self.chunks): c.order=n
  def transition(self,target):
   allowed={Lifecycle.PENDING:{Lifecycle.RUNNING,Lifecycle.CANCELLED},Lifecycle.RUNNING:{Lifecycle.SUCCEEDED,Lifecycle.FAILED,Lifecycle.CANCELLED}}
   if target not in allowed.get(self.state,set()): raise DomainError(f'illegal execution transition {self.state}->{target}')

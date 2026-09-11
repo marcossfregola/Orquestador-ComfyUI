@@ -43,16 +43,18 @@ class GenerationConfigTests(unittest.TestCase):
         self.assertEqual(config, GenerationConfig.from_json(config.to_json()))
         self.assertEqual(json.loads(config.to_json())["references"], list(config.references))
 
-    def test_two_and_three_chunks(self):
+    def test_general_chunk_count(self):
         two = GenerationConfig.from_mapping(valid_values())
         three = GenerationConfig.from_mapping(
             valid_values(chunk_count=3, prompts=["one", "two", "three"])
         )
         self.assertEqual((two.chunk_count, len(two.prompts)), (2, 2))
         self.assertEqual((three.chunk_count, len(three.prompts)), (3, 3))
+        four = GenerationConfig.from_mapping(valid_values(chunk_count=4, prompts=["a", "b", "c", "d"]))
+        self.assertEqual(four.chunk_count, 4)
 
     def test_invalid_shape_and_prompts(self):
-        for count, prompts in ((1, ["one"]), (4, ["a", "b", "c", "d"])):
+        for count, prompts in ((1, ["one"]), (0, [])):
             with self.subTest(count=count):
                 with self.assertRaises(GenerationConfigError):
                     GenerationConfig.from_mapping(valid_values(chunk_count=count, prompts=prompts))

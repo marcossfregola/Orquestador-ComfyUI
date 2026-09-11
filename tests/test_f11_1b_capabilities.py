@@ -32,7 +32,7 @@ class F111BCapabilityTests(unittest.TestCase):
     def test_productive_snapshot_computes_retryable_before_canonical_derivation(self):
         tree = ast.parse(Path('src/orquestador/ui/app.py').read_text(encoding='utf-8'))
         snapshot = next(n for n in ast.walk(tree)
-                        if isinstance(n, ast.FunctionDef) and n.name == 'snapshot')
+                        if isinstance(n, ast.FunctionDef) and n.name == '_snapshot_for_repo')
         assigns = [n for n in snapshot.body if isinstance(n, ast.Assign)]
         retry_index = next(i for i, n in enumerate(assigns)
                            if any(isinstance(t, ast.Name) and t.id == 'retryable' for t in n.targets))

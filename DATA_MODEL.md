@@ -38,7 +38,7 @@ F11 adopta un único contrato conceptual, `GenerationConfig`, que se serializa y
 profile_ref
 inputs.initial_image
 inputs.references[0..6] (opcional, ordenadas)
-chunk_plan.count (2 | 3)
+chunk_plan.count (N >= 2; sin máximo de producto)
 chunk_plan.chunks[].prompt
 parameters.megapixels
 parameters.length
@@ -59,7 +59,7 @@ La resolución de valores sigue siendo `project.defaults → execution.defaults 
 
 Para F11.1 el contrato exige una imagen inicial, referencias H3 opcionales (de 0 a 6, ordenadas y densas para la serialización de producto), 2 o 3 chunks y un prompt no vacío por chunk. La resolución usa una única política basada en megapíxeles; width y height efectivos continúan siendo derivados por el workflow. `ref_image_size` y `also_ref_first_frame` conservan sus defaults sin controles gráficos hasta F11.3. Seed, sampler, scheduler, IA y demás parámetros de backlog no forman parte de la superficie pública F11.1.
 
-La validación contractual es fail-closed: `profile_ref` debe identificar una versión/hash compatible; las rutas de inputs deben ser relativas, contenidas, existentes y legibles; las referencias son opcionales (0..6), ordenadas y densas para la serialización de producto, y los prompts no pueden estar vacíos; `chunk_plan.count` sólo admite 2 o 3. `megapixels` debe ser numérico finito y positivo, sujeto al límite del profile; `length`, `steps` y `fps` deben ser enteros positivos (un `bool` no es un entero válido) y respetar los límites declarados por el profile/backend. `ref_image_size` se valida contra los valores admitidos por H3, `also_ref_first_frame` es booleano y `orchestration_timeout_seconds` es un entero positivo con default 1800. Claves desconocidas, combinaciones de resolución con dos políticas simultáneas o cualquier path inseguro rechazan la configuración antes del submit.
+La validación contractual es fail-closed: `profile_ref` debe identificar una versión/hash compatible; las rutas de inputs deben ser relativas, contenidas, existentes y legibles; las referencias son opcionales (0..6), ordenadas y densas para la serialización de producto, y los prompts no pueden estar vacíos; `chunk_plan.count` debe ser un entero N >= 2, sin máximo de producto. `megapixels` debe ser numérico finito y positivo, sujeto al límite del profile; `length`, `steps` y `fps` deben ser enteros positivos (un `bool` no es un entero válido) y respetar los límites declarados por el profile/backend. `ref_image_size` se valida contra los valores admitidos por H3, `also_ref_first_frame` es booleano y `orchestration_timeout_seconds` es un entero positivo con default 1800. Claves desconocidas, combinaciones de resolución con dos políticas simultáneas o cualquier path inseguro rechazan la configuración antes del submit.
 
 ## Conceptos relacionados
 
@@ -193,3 +193,5 @@ ComfyUI querying pertenece al adaptador F3; F6 consume una observación backend 
 `MaterializedInputRef` es la referencia efectiva que ComfyUI devuelve para un input subido: `type="input"`, `subfolder`, `name` y `source_sha256`. `TransitionFrame.materialized_ref` es opcional para conservar esa referencia junto con el frame N-1 y su procedencia; se valida que el nombre/subcarpeta no permitan escapes y que el hash sea SHA-256 hexadecimal. La persistencia schema v2 guarda esos cuatro campos sin convertir el path absoluto del backend en autoridad durable.
 
 En el E2E real de dos chunks, el frame `293/294` de chunk 0 se persistió con hash `ff3326b0fd903e2f6680d3985ea5afc17f4199533b20f8843faeeaeb49da0978` y referencia `orquestador/transitions/transition-52b5ac2a-0d2e-4e54-bc7c-2a79314f87e8-ff3326b0fd903e2f.png`. Tras cerrar/reabrir, esa referencia se reutilizó para bindear chunk 1 sin reupload; los dos chunks, dos artefactos y dos transiciones quedaron durables y la ejecución terminó `succeeded`.
+
+**Contrato F11.4 actual:** la secuencia durable admite N >= 2 chunks, sin máximo de producto. Las menciones históricas de F11.1/F7 a '2 o 3 chunks' describen únicamente aquellas slices y no limitan F11.4.

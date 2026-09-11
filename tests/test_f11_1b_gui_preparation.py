@@ -65,7 +65,7 @@ class F111BGuiPreparationTests(unittest.TestCase):
             self.assertTrue(use(**self.candidate(refs=self.files[1:1+n]))["valid"])
     def test_chunk_and_prompt_validation(self):
         use=PreflightGuiUseCase(Repo(), self.root)
-        for count in (1,4):
+        for count in (1,):
             with self.assertRaises(PreparationError): use(**self.candidate(count=count, prompts=["a"]*count))
         with self.assertRaises(PreparationError): use(**self.candidate(prompts=["a", ""]))
     def test_missing_or_directory_inputs_rejected(self):
@@ -126,9 +126,9 @@ class F111BGuiPreparationTests(unittest.TestCase):
 
     def test_gui_K_prompt_visibility_and_inputs(self):
         w=self._window(); self.addCleanup(w.close)
-        w.chunk_count.setCurrentText("2"); self.app.processEvents(); self.assertFalse(w.prompts[2].isVisible()); self.assertFalse(w.prompts[2].isEnabled()); self.assertEqual(len(w._inputs()["prompts"]),2)
-        w.chunk_count.setCurrentText("3"); self.app.processEvents(); w.prompts[2].setText("third"); self.assertTrue(w.prompts[2].isVisible()); self.assertTrue(w.prompts[2].isEnabled()); self.assertEqual(w._inputs()["prompts"], ["","","third"])
-        w.chunk_count.setCurrentText("2"); self.app.processEvents(); self.assertFalse(w.prompts[2].isVisible()); self.assertFalse(w.prompts[2].isEnabled()); self.assertEqual(len(w._inputs()["prompts"]),2)
+        w.chunk_count.setCurrentText("2"); self.app.processEvents(); self.assertEqual(len(w.prompts),2); self.assertEqual(w.chunk_tabs.count(),2); self.assertEqual(len(w._inputs()["prompts"]),2)
+        w.chunk_count.setCurrentText("3"); self.app.processEvents(); w.tabs.setCurrentIndex(2); w.chunk_tabs.setCurrentIndex(2); w.prompts[2].setText("third"); self.assertTrue(w.prompts[2].isVisible()); self.assertTrue(w.prompts[2].isEnabled()); self.assertEqual(w._inputs()["prompts"], ["","","third"])
+        w.chunk_count.setCurrentText("2"); self.app.processEvents(); self.assertEqual(len(w.prompts),2); self.assertEqual(w.chunk_tabs.count(),2); self.assertEqual(len(w._inputs()["prompts"]),2)
 
     def test_gui_M_out_of_scope_controls_absent(self):
         w=self._window(); self.addCleanup(w.close)

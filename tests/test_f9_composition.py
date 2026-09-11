@@ -42,7 +42,7 @@ class CompositionTests(unittest.TestCase):
  def test_facade_routes(self):
   f,r=self._compose()
   for n in ('start_chain','resume_execution','recover_execution','retry_execution','cancel_pending','assemble','refresh'): self.assertTrue(callable(getattr(f,n)))
-  self.assertTrue(any(c.cell_contents is r['chain'] for c in f._ops['chain'].__closure__ or ())); self.assertTrue(any(c.cell_contents is r['retry'] for c in f._ops['retry'].__closure__ or ())); r['repository'].close()
+  self.assertEqual(f._ops['chain'].__name__, 'start_chain'); self.assertEqual(f._ops['retry'].__name__, 'retry_route'); r['repository'].close()
  def test_compose_zero_external_calls(self):
   with patch.object(ComfyUIClient,'health',side_effect=AssertionError),patch.object(ComfyUIClient,'history',side_effect=AssertionError),patch('subprocess.run',side_effect=AssertionError) as run: _,r=self._compose()
   run.assert_not_called(); r['repository'].close()

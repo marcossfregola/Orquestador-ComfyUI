@@ -38,6 +38,24 @@ class _Runner:
         return ChunkExecutionResult(True, 'completed', str(attempt.id), artifact, transition)
 
 
+class _DelegatingRepository:
+    def __init__(self, repository): self.repository = repository
+    def __getattr__(self, name): return getattr(self.repository, name)
+
+
+class _SaveFailRepository(_DelegatingRepository):
+    def save(self, *args, **kwargs): raise RuntimeError('SAVE_FAIL')
+
+
+class _ReloadFailRepository(_DelegatingRepository):
+    def __init__(self, repository):
+        super().__init__(repository); self.loads = 0
+    def load_transitions(self, execution_id):
+        self.loads += 1
+        if self.loads == 2: raise RuntimeError('RELOAD_FAIL')
+        return self.repository.load_transitions(execution_id)
+
+
 class F7ChainExecutionTests(unittest.TestCase):
     def make(self, n=2):
         root = Path(tempfile.mkdtemp()); (root/'media').mkdir()
@@ -52,10 +70,176 @@ class F7ChainExecutionTests(unittest.TestCase):
         out = ChainExecutionUseCase(repo, runner).run(p, e, lambda i, c: {'seed': i}, transition_materializer=lambda t: t.source_output.uri)
         return out, runner, repo, p, e
 
+    def reopened_provisional(self, *, include_artifact=True):
+        root, repo, p, e = self.make(2)
+        e.transition(Lifecycle.RUNNING); repo.save(p, [e])
+        first = _Runner(repo).execute(p, e, e.chunks[0].id, {'seed': 0})
+        frame = root / 'transitions' / f'{first.attempt_id}.png'
+        frame.parent.mkdir(parents=True, exist_ok=True); frame.write_bytes(b'n-minus-one')
+        kwargs = {'transitions': (first.transition,)}
+        if include_artifact: kwargs['artifacts'] = (first.artifact,)
+        repo.save(p, [e], **kwargs); repo.close()
+        repo = SQLiteProjectRepository(root, 'f7.sqlite3'); p, executions = repo.load(p.id)
+        return root, repo, p, executions[0]
+
     def test_clean_two_chunk_chain_exactly_one_ordered_link(self):
         out, r, repo, p, e = self.run_chain(2)
         self.assertEqual(out.outcome, ChainOutcome.COMPLETE); links = repo.load_transitions(e.id)
         self.assertEqual(len(links), 1); self.assertEqual((links[0].source_chunk_id, links[0].target_chunk_id), (e.chunks[0].id, e.chunks[1].id)); repo.close()
+
+    def test_fresh_completion_uses_durable_provisional_before_next_submit(self):
+        root, repo, p, e = self.make(2)
+
+        class PersistedProvisionalRunner(_Runner):
+            def execute(self, project, execution, chunk_id, prompt):
+                result = super().execute(project, execution, chunk_id, prompt)
+                if result.success:
+                    frame = self.repo.root / 'transitions' / f'{result.attempt_id}.png'
+                    frame.parent.mkdir(parents=True, exist_ok=True)
+                    frame.write_bytes(b'n-minus-one')
+                    self.repo.save(
+                        project,
+                        [execution],
+                        artifacts=(result.artifact,),
+                        transitions=(result.transition,),
+                    )
+                # Exercise the real crash-window contract: the durable F5
+                # checkpoint exists even if the transient return object loses
+                # its transition before F7 advances to the next chunk.
+                if len(self.calls) == 1:
+                    return ChunkExecutionResult(
+                        True, result.reason, result.attempt_id,
+                        result.artifact, None,
+                    )
+                return result
+
+        runner = PersistedProvisionalRunner(repo)
+        out = ChainExecutionUseCase(repo, runner).run(
+            p, e, lambda i, c: {"seed": i},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.COMPLETE)
+        self.assertEqual(runner.calls, [str(e.chunks[0].id), str(e.chunks[1].id)])
+        self.assertEqual(len(e.chunks[1].attempts), 1)
+        loaded_project, executions = repo.load(p.id)
+        loaded = executions[0]
+        self.assertEqual(len(loaded.chunks[1].attempts), 1)
+        self.assertEqual(len(loaded.artifacts), 2)
+        self.assertTrue(
+            (root / 'transitions' / f'{loaded.chunks[0].attempts[0].id}.png').is_file()
+        )
+        links = repo.load_transitions(loaded.id)
+        self.assertEqual(
+            len([t for t in links if t.target_chunk_id == loaded.chunks[1].id]),
+            1,
+        )
+        linked = next(t for t in links if t.target_chunk_id == loaded.chunks[1].id)
+        self.assertEqual(linked.source_frame_index, linked.frame_count - 1)
+        before = list(runner.calls)
+        again = ChainExecutionUseCase(repo, runner).run(
+            p, loaded, lambda i, c: {"seed": i},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(again.outcome, ChainOutcome.COMPLETE)
+        self.assertEqual(runner.calls, before)
+        repo.close()
+
+    def test_succeeded_provisional_matches_chunk_attempt_output_and_artifact(self):
+        root, repo, p, e = self.reopened_provisional()
+        runner = _Runner(repo)
+        out = ChainExecutionUseCase(repo, runner).run(
+            p, e, lambda i, c: {'seed': i},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.COMPLETE)
+        self.assertEqual(runner.calls, [str(e.chunks[1].id)])
+        self.assertEqual(len(e.chunks[1].attempts), 1)
+        link = next(t for t in repo.load_transitions(e.id) if t.target_chunk_id == e.chunks[1].id)
+        source = e.chunks[0].attempts[0]
+        self.assertEqual((link.source_chunk_id, link.source_attempt_id, link.source_output),
+                         (e.chunks[0].id, source.id, source.output))
+        before = list(runner.calls)
+        again = ChainExecutionUseCase(repo, runner).run(
+            p, e, lambda i, c: {'seed': i},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(again.outcome, ChainOutcome.COMPLETE)
+        self.assertEqual(runner.calls, before)
+        repo.close()
+
+    def test_succeeded_provisional_ambiguity_fails_closed(self):
+        root, repo, p, e = self.reopened_provisional()
+        source = e.chunks[0]
+        attempt = source.new_attempt(); attempt.assign_external_job_ref(BackendJobRef('job-alt'))
+        attempt.transition(Lifecycle.RUNNING)
+        alternate = OutputRef('media/chunk-0-alt.mp4'); (root / alternate.uri).write_bytes(b'alt')
+        attempt.transition(Lifecycle.SUCCEEDED, output=alternate, evidence=Evidence('alternate'))
+        artifact = Artifact(p.id, e.id, source.id, attempt.id, Phase.OUTPUT, alternate)
+        provisional = TransitionFrame(p.id, e.id, source.id, attempt.id, alternate, 4, 5)
+        repo.save(p, [e], artifacts=(artifact,), transitions=(provisional,))
+        runner = _Runner(repo)
+        out = ChainExecutionUseCase(repo, runner).run(
+            p, e, lambda i, c: {},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.BLOCKED)
+        self.assertIn('ambiguous', out.reason)
+        self.assertEqual(runner.calls, [])
+        repo.close()
+
+    def test_succeeded_provisional_foreign_source_fails_closed(self):
+        root, repo, p, e = self.reopened_provisional()
+        source = e.chunks[0]
+        foreign = TransitionFrame(
+            p.id, e.id, e.chunks[1].id, source.attempts[0].id,
+            source.attempts[0].output, 4, 5,
+        )
+        repo.load_transitions = lambda execution_id: [foreign]
+        runner = _Runner(repo)
+        out = ChainExecutionUseCase(repo, runner).run(
+            p, e, lambda i, c: {},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.BLOCKED)
+        self.assertIn('source continuity checkpoint', out.reason)
+        self.assertEqual(runner.calls, [])
+        repo.close()
+
+    def test_succeeded_provisional_without_matching_artifact_fails_closed(self):
+        root, repo, p, e = self.reopened_provisional(include_artifact=False)
+        runner = _Runner(repo)
+        out = ChainExecutionUseCase(repo, runner).run(
+            p, e, lambda i, c: {},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.BLOCKED)
+        self.assertIn('artifact', out.reason)
+        self.assertEqual(runner.calls, [])
+        repo.close()
+
+    def test_succeeded_provisional_save_failure_fails_closed(self):
+        root, repo, p, e = self.reopened_provisional()
+        failing = _SaveFailRepository(repo); runner = _Runner(failing)
+        out = ChainExecutionUseCase(failing, runner).run(
+            p, e, lambda i, c: {},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.BLOCKED)
+        self.assertIn('SAVE_FAIL', out.reason)
+        self.assertEqual(runner.calls, [])
+        repo.close()
+
+    def test_succeeded_provisional_reload_failure_fails_closed(self):
+        root, repo, p, e = self.reopened_provisional()
+        failing = _ReloadFailRepository(repo); runner = _Runner(failing)
+        out = ChainExecutionUseCase(failing, runner).run(
+            p, e, lambda i, c: {},
+            transition_materializer=lambda t: t.source_output.uri,
+        )
+        self.assertEqual(out.outcome, ChainOutcome.BLOCKED)
+        self.assertIn('RELOAD_FAIL', out.reason)
+        self.assertEqual(runner.calls, [])
+        repo.close()
 
     def test_clean_three_chunk_chain_n_minus_one_ordered_links(self):
         out, r, repo, p, e = self.run_chain(3); self.assertEqual(out.outcome, ChainOutcome.COMPLETE)
@@ -150,7 +334,7 @@ class F7ChainExecutionTests(unittest.TestCase):
         client, backend = Client(), Backend(); submitter=SubmitAttemptUseCase(repo, client)
         descriptor=OutputDescriptor(BackendJobRef('retry-2'),'1','chunk-0.mp4','media','video')
         extractor=type('X',(),{'extract_last_frame':lambda self,*a:type('F',(),{'frame_index':4,'frame_count':5})()})()
-        coordinator=ChunkExecutionCoordinator(repo,submitter,backend,extractor=extractor,trusted_root=root,
+        coordinator=ChunkExecutionCoordinator(repo,submitter,backend,extractor=extractor,trusted_root=root,comfyui_output_root=root,
             correlator=lambda o,r: OutputCorrelationResult(r,OutputCorrelationStatus.VALID,(descriptor,)),
             physical_validator=lambda d,r: PhysicalOutputEvidence(d,PhysicalOutputStatus.EXISTS,r,r/'media'/'chunk-0.mp4'))
         recovery=ResumeExecutionUseCase(repo,backend,coordinator,submitter); self.assertIsInstance(recovery, ResumeExecutionUseCase); r = _Runner(repo)
@@ -205,14 +389,14 @@ class F7ChainExecutionTests(unittest.TestCase):
             def __init__(self): self.submits=[]
             def submit(self,prompt,client_id=None): self.submits.append(prompt); return BackendJobRef('a2')
         b,c=B(),C()
-        with self.assertRaisesRegex(RuntimeError,'SIMULATED_PROCESS_CRASH'): ResumeExecutionUseCase(repo,b,object(),SubmitAttemptUseCase(repo,c)).resume(p.id,e.id,prompt={},project=p)
+        with self.assertRaisesRegex(RuntimeError,'SIMULATED_PROCESS_CRASH'): ResumeExecutionUseCase(repo,b,object(),SubmitAttemptUseCase(repo,c),output_root=root).resume(p.id,e.id,prompt={},project=p)
         repo.close(); repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; self.assertEqual(len(e.chunks[0].attempts),2); self.assertEqual(e.chunks[0].state,Lifecycle.PENDING); self.assertEqual(e.chunks[0].attempts[-1].external_job_ref,BackendJobRef('a2')); self.assertEqual(b.n,2); self.assertEqual(b.refs[-1],BackendJobRef('a2'))
         class Queued:
             def __init__(self): self.refs=[]
             def observe(self,ref):
                 self.refs.append(ref); from orquestador.domain.recovery import BackendJobObservation,BackendJobState
                 a=e.chunks[0].attempts[1]; return BackendJobObservation(str(p.id),str(e.id),str(e.chunks[0].id),str(a.id),BackendJobState.QUEUED,ref)
-        qb=Queued(); sub=SubmitAttemptUseCase(repo,c); before_submits=len(c.submits); self.assertEqual(ResumeExecutionUseCase(repo,qb,object(),sub).resume(p.id,e.id,prompt={}).outcome,RecoveryOutcome.WAIT); self.assertEqual(qb.refs,[BackendJobRef('a2')]); self.assertEqual(len(c.submits),before_submits)
+        qb=Queued(); sub=SubmitAttemptUseCase(repo,c); before_submits=len(c.submits); self.assertEqual(ResumeExecutionUseCase(repo,qb,object(),sub,output_root=root).resume(p.id,e.id,prompt={},project=p).outcome,RecoveryOutcome.WAIT); self.assertEqual(qb.refs,[BackendJobRef('a2')]); self.assertEqual(len(c.submits),before_submits)
 
         # B4: a completely fresh process observes the durable Attempt 2 as
         # completed and executes the real F5 completion path.
@@ -231,11 +415,11 @@ class F7ChainExecutionTests(unittest.TestCase):
         correlation=OutputCorrelationResult(BackendJobRef('a2'),OutputCorrelationStatus.VALID,(descriptor,))
         physical=PhysicalOutputEvidence(descriptor,PhysicalOutputStatus.EXISTS,root,root/'media'/'chunk-0.mp4')
         extractor=type('X',(),{'extract_last_frame':lambda self,*args:type('F',(),{'frame_index':4,'frame_count':5})()})()
-        coordinator=ChunkExecutionCoordinator(repo,submitter,backend,extractor=extractor,trusted_root=root,
+        coordinator=ChunkExecutionCoordinator(repo,submitter,backend,extractor=extractor,trusted_root=root,comfyui_output_root=root,
             correlator=lambda observed,ref: correlation,
             physical_validator=lambda descriptor,root_path: physical)
-        production=ResumeExecutionUseCase(repo,backend,coordinator,submitter)
-        completed=production.resume(p.id,e.id,prompt={})
+        production=ResumeExecutionUseCase(repo,backend,coordinator,submitter,output_root=root)
+        completed=production.resume(p.id,e.id,prompt={},project=p)
         self.assertEqual(completed.outcome,RecoveryOutcome.RETRIED_COMPLETE)
         self.assertEqual(backend.refs,[BackendJobRef('a2')]); self.assertEqual(client.calls,[])
         p,es=repo.load(p.id); e=es[0]
@@ -246,10 +430,10 @@ class F7ChainExecutionTests(unittest.TestCase):
         # B5: another fresh process resumes the completed execution idempotently.
         repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; a2=e.chunks[0].attempts[1]
         backend2=CompletedBackend(); client2=FreshSubmitter(); submitter2=SubmitAttemptUseCase(repo,client2)
-        coordinator2=ChunkExecutionCoordinator(repo,submitter2,backend2,extractor=extractor,trusted_root=root,
+        coordinator2=ChunkExecutionCoordinator(repo,submitter2,backend2,extractor=extractor,trusted_root=root,comfyui_output_root=root,
             correlator=lambda observed,ref: correlation, physical_validator=lambda descriptor,root_path: physical)
-        production2=ResumeExecutionUseCase(repo,backend2,coordinator2,submitter2)
-        again=production2.resume(p.id,e.id,prompt={})
+        production2=ResumeExecutionUseCase(repo,backend2,coordinator2,submitter2,output_root=root)
+        again=production2.resume(p.id,e.id,prompt={},project=p)
         self.assertEqual(again.outcome,RecoveryOutcome.COMPLETE); self.assertEqual(backend2.refs,[]); self.assertEqual(client2.calls,[])
         p,es=repo.load(p.id); e=es[0]
         self.assertEqual(len(e.chunks[0].attempts),2); self.assertEqual(len(e.artifacts),1); self.assertEqual(len(repo.load_transitions(e.id)),1); self.assertEqual((e.chunks[0].attempts[1].id,e.chunks[0].attempts[1].number,e.chunks[0].attempts[1].external_job_ref,e.chunks[0].attempts[1].output),(a2.id,a2.number,BackendJobRef('a2'),OutputRef('media/chunk-0.mp4'))); self.assertEqual(e.state,Lifecycle.SUCCEEDED); repo.close()
@@ -288,10 +472,10 @@ class F7ChainExecutionTests(unittest.TestCase):
         def composition(r,b,s):
             d=OutputDescriptor(BackendJobRef('a2'),'1','chunk-0.mp4','media','video'); corr=OutputCorrelationResult(BackendJobRef('a2'),OutputCorrelationStatus.VALID,(d,)); phys=PhysicalOutputEvidence(d,PhysicalOutputStatus.EXISTS,root,root/'media'/'chunk-0.mp4')
             ex=type('X',(),{'extract_last_frame':lambda self,*x:type('F',(),{'frame_index':4,'frame_count':5})()})()
-            co=ChunkExecutionCoordinator(r,s,b,extractor=ex,trusted_root=root,correlator=lambda *_:corr,physical_validator=lambda *_:phys)
+            co=ChunkExecutionCoordinator(r,s,b,extractor=ex,trusted_root=root,comfyui_output_root=root,correlator=lambda *_:corr,physical_validator=lambda *_:phys)
             return co
-        repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; c=e.chunks[0]; a2=c.attempts[1]; b=B('wait'); s=S(); u=ResumeExecutionUseCase(repo,b,composition(repo,b,s),SubmitAttemptUseCase(repo,s)); w=u.resume(p.id,e.id,prompt={}); self.assertEqual(w.outcome,RecoveryOutcome.WAIT); self.assertEqual(len(s.calls),0); repo.close()
-        repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; c=e.chunks[0]; a2=c.attempts[1]; b=B('done'); s=S(); u=ResumeExecutionUseCase(repo,b,composition(repo,b,s),SubmitAttemptUseCase(repo,s)); done=u.resume(p.id,e.id,prompt={}); self.assertEqual(done.outcome,RecoveryOutcome.RETRIED_COMPLETE); self.assertEqual(len(s.calls),0); repo.close(); repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; a2=e.chunks[0].attempts[1]; self.assertEqual(len(e.artifacts),1); self.assertEqual(len(repo.load_transitions(e.id)),1); ids=(a2.id,a2.number,a2.external_job_ref); repo.close()
-        repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; b=B('done'); s=S(); u=ResumeExecutionUseCase(repo,b,composition(repo,b,s),SubmitAttemptUseCase(repo,s)); again=u.resume(p.id,e.id); self.assertEqual(again.outcome,RecoveryOutcome.COMPLETE); self.assertEqual(len(s.calls),0); self.assertEqual(len(e.artifacts),1); self.assertEqual(len(repo.load_transitions(e.id)),1); self.assertEqual((e.chunks[0].attempts[1].id,e.chunks[0].attempts[1].number,e.chunks[0].attempts[1].external_job_ref),ids); self.assertEqual(len(e.chunks[0].attempts),2); repo.close()
+        repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; c=e.chunks[0]; a2=c.attempts[1]; b=B('wait'); s=S(); u=ResumeExecutionUseCase(repo,b,composition(repo,b,s),SubmitAttemptUseCase(repo,s),output_root=root); w=u.resume(p.id,e.id,prompt={}); self.assertEqual(w.outcome,RecoveryOutcome.WAIT); self.assertEqual(len(s.calls),0); repo.close()
+        repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; c=e.chunks[0]; a2=c.attempts[1]; b=B('done'); s=S(); u=ResumeExecutionUseCase(repo,b,composition(repo,b,s),SubmitAttemptUseCase(repo,s),output_root=root); done=u.resume(p.id,e.id,prompt={}); self.assertEqual(done.outcome,RecoveryOutcome.RETRIED_COMPLETE); self.assertEqual(len(s.calls),0); repo.close(); repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; a2=e.chunks[0].attempts[1]; self.assertEqual(len(e.artifacts),1); self.assertEqual(len(repo.load_transitions(e.id)),1); ids=(a2.id,a2.number,a2.external_job_ref); repo.close()
+        repo=SQLiteProjectRepository(root,'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; b=B('done'); s=S(); u=ResumeExecutionUseCase(repo,b,composition(repo,b,s),SubmitAttemptUseCase(repo,s),output_root=root); again=u.resume(p.id,e.id); self.assertEqual(again.outcome,RecoveryOutcome.COMPLETE); self.assertEqual(len(s.calls),0); self.assertEqual(len(e.artifacts),1); self.assertEqual(len(repo.load_transitions(e.id)),1); self.assertEqual((e.chunks[0].attempts[1].id,e.chunks[0].attempts[1].number,e.chunks[0].attempts[1].external_job_ref),ids); self.assertEqual(len(e.chunks[0].attempts),2); repo.close()
 
 if __name__ == '__main__': unittest.main()

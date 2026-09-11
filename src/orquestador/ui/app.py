@@ -49,9 +49,16 @@ class AppConfig:
         template = self.workflow_template
         if template is not None and (not template.is_absolute() or not template.is_file()):
             raise StartupConfigurationError("--workflow-template must be an existing absolute file")
-        output_root = (self.comfyui_output_root or root).expanduser()
-        try: output_root = validate_configured_output_root(output_root)
-        except ValueError as exc: raise StartupConfigurationError(str(exc)) from exc
+        # ComfyUI's output tree is a separate trust boundary.  Never infer it
+        # from the project root: an omitted value remains unavailable and the
+        # execution boundary will fail closed before observing/importing an
+        # output.  When supplied, validate it once at composition time.
+        output_root = self.comfyui_output_root.expanduser() if self.comfyui_output_root is not None else None
+        if output_root is not None:
+            if not output_root.is_absolute():
+                raise StartupConfigurationError("--comfyui-output-root must be an absolute existing directory")
+            try: output_root = validate_configured_output_root(output_root)
+            except ValueError as exc: raise StartupConfigurationError(str(exc)) from exc
         return AppConfig(root, self.comfyui_endpoint.strip(), template, self.ffmpeg, self.ffprobe, output_root)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -109,24 +116,28 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         chain_kwargs.pop('orchestrator')
     chain_real = (ChainExecutionUseCase(repository, chain_coordinator, **chain_kwargs)
         if chain_usecase is None else chain_usecase)
+    assembly_roots = (cfg.project_root,) if cfg.comfyui_output_root is None else (cfg.project_root, cfg.comfyui_output_root)
     assembly_real = AssembleExecutionUseCase(
         assembler, cfg.project_root,
-        source_roots=(cfg.project_root, cfg.comfyui_output_root))
+        source_roots=assembly_roots)
     retry_real = RetryExecutionUseCase(repository, resume_real)
     chain_usecase = chain_real
     resume_usecase = resume_usecase or resume_real
     recover_usecase = recover_usecase or recover_real
     retry_usecase = retry_usecase or retry_real
     assembly_usecase = assembly_usecase or assembly_real
-    def snapshot(project_id=None, execution_id=None):
+    def _snapshot_for_repo(repo, project_id=None, execution_id=None):
         if not project_id: return {"state":"unavailable","errors":("select a project",)}
-        project, executions = repository.load(project_id)
+        project, executions = repo.load(project_id)
         matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
         if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
         e=matches[0]; chunks=[]; outputs=[]
         for c in e.chunks:
             a=c.attempts[-1] if c.attempts else None
-            chunks.append({"order":c.order,"state":c.state.value,"attempt_ref":str(a.id) if a else None,"error":a.error.message if a and a.error else None,"output":a.output.uri if a and a.output else None})
+            transition = c.first_frame
+            materialized = getattr(transition, "materialized_ref", None) if transition else None
+            transition_uri = "/".join(x for x in (materialized.subfolder, materialized.name) if x) if materialized else (transition.source_output.uri if transition else None)
+            chunks.append({"order":c.order,"chunk_id":str(c.id),"state":c.state.value,"attempt_ref":str(a.id) if a else None,"error":a.error.message if a and a.error else None,"output":a.output.uri if a and a.output else None,"transition":transition_uri,"prompt":str(dict(c.defaults).get("prompt", "")),"overrides":tuple((str(k),v) for k,v in dict(c.defaults).items() if k != "prompt")})
             if a and a.output and a.state is Lifecycle.SUCCEEDED: outputs.append(a.output.uri)
         target=select_active_cancellation_target(e)
         retryable = (retry_usecase is not None and e.state is Lifecycle.FAILED and
@@ -134,7 +145,26 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                          c.attempts[0].state is Lifecycle.FAILED for c in e.chunks))
         caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
             startable=True, assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
-        return {"project_id":str(project_id),"execution_id":str(e.id),"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
+        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
+        snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
+        durable_defaults = dict(e.defaults)
+        config_keys = ("profile_ref", "chunk_count", "megapixels", "length", "steps",
+                       "fps", "ref_image_size", "also_ref_first_frame",
+                       "orchestration_timeout_seconds")
+        snapshot["configuration"] = tuple(
+            (key, durable_defaults[key]) for key in config_keys if key in durable_defaults
+        )
+        return snapshot
+    def snapshot(project_id=None, execution_id=None):
+        # Snapshot reads can be requested from MainWindow's worker thread.
+        # Use a short-lived repository there (and on the GUI thread as well)
+        # instead of crossing SQLite's thread-affine connection boundary.
+        op_repo = repository_factory(cfg.project_root)
+        try:
+            return _snapshot_for_repo(op_repo, project_id, execution_id)
+        finally:
+            if op_repo is not repository:
+                op_repo.close()
     def cancel(project_id, execution_id):
         s=snapshot(project_id,execution_id)
         if not s["can_cancel"]: raise ValueError(s.get("cancel_reason","cancellation unavailable"))
@@ -202,7 +232,9 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     startable=True,
                     assemble=False,
                 )
-                return {"project_id":str(project_id),"execution_id":str(execution_id),"state":e.state.value,"chunks":[],"artifacts":[],**caps.__dict__}
+                snapshot = {"project_id":str(project_id),"execution_id":str(execution_id),"state":e.state.value,"chunks":[],"artifacts":[],**caps.__dict__}
+                snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
+                return snapshot
             return PrepareGuiUseCase(op_repo, cfg.project_root, op_snapshot)(**kwargs)
         finally:
             op_repo.close()
@@ -220,28 +252,102 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         if health is False or (isinstance(health, dict) and health.get("healthy") is False):
             raise RuntimeError("backend health check reported unhealthy")
         return result
+
+    def _require_output_root():
+        """Return the explicit ComfyUI output root or fail before any I/O."""
+        if cfg.comfyui_output_root is None:
+            raise ValueError("configured ComfyUI output root is required")
+        try:
+            return validate_configured_output_root(cfg.comfyui_output_root)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _run_durable_chain(project_id, execution_id, *, require_output_root=False, **kwargs):
+        """Continue a prepared chain from its durable snapshot.
+
+        This is shared by Start and the ID-first Resume/Recover routes.  The
+        latter call it only after their fresh capability check, and therefore
+        never reconstruct a transient GUI form or create a second recovery
+        implementation.
+        """
+        if chain_usecase is None:
+            raise RuntimeError("chain unavailable")
+        if require_output_root:
+            _require_output_root()
+        op_repo = _operation_repository()
+        try:
+            # Every invocation owns its repository and backend/materialization
+            # services.  Nothing SQLite-bound or network-bound from the GUI
+            # composition crosses into the operation worker.
+            worker = _worker_services(op_repo) if not injected_chain else None
+            op_chain = chain_usecase if injected_chain else worker[0]
+            if op_chain is None:
+                raise RuntimeError("chain unavailable")
+            if worker is not None:
+                op_materializer = worker[4].materializer
+            else:
+                op_client = client_factory(cfg.comfyui_endpoint)
+                op_materializer = InputMaterializationService(op_client, cfg.project_root)
+
+            def materialize_transition(transition):
+                ref = transition.materialized_ref if hasattr(transition, 'materialized_ref') else None
+                if ref is not None:
+                    return ref
+                # The N-1 extractor writes the continuity frame to the
+                # project transition namespace, keyed by the successful
+                # source attempt.  The video output URI is not that PNG path.
+                attempt = getattr(transition, 'source_attempt_id', None)
+                attempt_id = getattr(attempt, 'value', attempt)
+                if not isinstance(attempt_id, str) or not attempt_id.strip():
+                    raise ValueError('transition source attempt is invalid')
+                source_path = (cfg.project_root / 'transitions' / f'{attempt_id}.png').resolve()
+                if not source_path.is_relative_to(cfg.project_root.resolve()):
+                    raise ValueError('transition path escapes project root')
+                return op_materializer.materialize_transition(source_path)
+
+            op_start = StartGuiChainUseCase(
+                op_repo,
+                cfg.project_root,
+                op_chain,
+                cfg.workflow_template,
+                op_materializer,
+                materialize_transition,
+            )
+            return op_start(project_id, execution_id, **kwargs)
+        finally:
+            op_repo.close()
+
     def resume_route(project_id, execution_id=None, **kwargs):
         if resume_usecase is None: raise RuntimeError("resume unavailable")
         op_repo = _operation_repository()
         try:
-            if injected_resume:
-                recovery = resume_usecase
-                chain = chain_usecase
-            else:
-                chain, recovery, _, _, orchestrator = _worker_services(op_repo)
-            if chain is None:
-                return recovery.resume(project_id, execution_id, **kwargs)
-            # Resume / Recover is a higher-level route: F6 recovery remains
-            # single-chunk, while this seam explicitly continues F7 when safe.
-            return orchestrator.resume(project_id, execution_id, **kwargs)
+            fresh = _snapshot_for_repo(op_repo, project_id, execution_id)
+            if fresh.get("state") in {"error", "unavailable"}:
+                raise ValueError("authoritative execution snapshot is missing or invalid")
+            if not fresh.get("can_resume", False):
+                raise ValueError("no safe resume capability is available")
         finally: op_repo.close()
+        # Preserve explicit injected seams used by focused unit tests.  The
+        # concrete production path continues all chunks through the existing
+        # StartGuiChainUseCase -> ChainExecutionUseCase orchestration.
+        if injected_resume:
+            return resume_usecase.resume(project_id, execution_id, **kwargs)
+        return _run_durable_chain(project_id, execution_id, require_output_root=True)
+
     def recover_route(project_id, execution_id=None, **_):
         if recover_usecase is None: raise RuntimeError("recover unavailable")
         op_repo = _operation_repository()
         try:
-            if injected_recover: return recover_usecase.recover(project_id, execution_id)
-            return _worker_services(op_repo)[4].recover(project_id, execution_id)
+            fresh = _snapshot_for_repo(op_repo, project_id, execution_id)
+            if fresh.get("state") in {"error", "unavailable"}:
+                raise ValueError("authoritative execution snapshot is missing or invalid")
+            if not fresh.get("can_recover", False):
+                raise ValueError("no safe recover capability is available")
         finally: op_repo.close()
+        if injected_recover:
+            return recover_usecase.recover(project_id, execution_id)
+        return _run_durable_chain(project_id, execution_id, require_output_root=True)
+
     def retry_route(project_id, execution_id=None, **kwargs):
         if retry_usecase is None: raise RuntimeError("retry unavailable")
         op_repo = _operation_repository()
@@ -259,49 +365,16 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             return assembly_usecase.execute(outputs, destination or f"assembled-{e.id}.mp4")
         finally: op_repo.close()
     # Keep the composition route as a thin closure; all validation/binding remains
-    # owned by the application-layer use case.
+    # owned by the application-layer use case.  Start and ID-first recovery use
+    # the same durable chain path; only the latter require an explicit output
+    # trust root before any recovery I/O.
     def start_chain(project_id, execution_id, **kwargs):
-        if chain_usecase is None: raise RuntimeError("chain unavailable")
-        op_repo = _operation_repository()
-        try:
-            # Every Start invocation runs in OperationWorker's QThread.  Bind
-            # validation/context to the operation-local repository even when
-            # the chain execution seam is injected, so the persistent GUI
-            # thread connection is never touched by worker code.
-            start_repo = op_repo
-            worker = _worker_services(op_repo) if not injected_chain else None
-            op_chain = chain_usecase if injected_chain else worker[0]
-            # Materialization is operation-local as well: the same service
-            # instance handles static inputs and N-1 transition uploads, and
-            # no GUI-thread service or SQLite-bound use case crosses QThread.
-            op_materializer = (worker[4].materializer if worker is not None
-                               else InputMaterializationService(client, cfg.project_root))
-            def materialize_transition(transition):
-                ref = transition.materialized_ref if hasattr(transition, 'materialized_ref') else None
-                if ref is not None:
-                    return ref
-                # The N-1 extractor writes the continuity frame to the
-                # project transition namespace, keyed by the successful
-                # source attempt.  ``source_output.uri`` is the video
-                # artifact (and may live under ComfyUI's output root); it is
-                # not the physical transition-frame path.
-                attempt = getattr(transition, 'source_attempt_id', None)
-                attempt_id = getattr(attempt, 'value', attempt)
-                if not isinstance(attempt_id, str) or not attempt_id.strip():
-                    raise ValueError('transition source attempt is invalid')
-                source_path = (cfg.project_root / 'transitions' / f'{attempt_id}.png').resolve()
-                if not source_path.is_relative_to(cfg.project_root.resolve()):
-                    raise ValueError('transition path escapes project root')
-                return op_materializer.materialize_transition(source_path)
-            op_start = StartGuiChainUseCase(start_repo, cfg.project_root, op_chain, cfg.workflow_template, op_materializer, materialize_transition)
-            if worker is not None:
-                worker[4].start_usecase = op_start
-                return worker[4].start(project_id, execution_id, **kwargs)
-            return op_start(project_id, execution_id, **kwargs)
-        finally: op_repo.close()
+        return _run_durable_chain(project_id, execution_id, **kwargs)
+    from ..application.edit_chunk_sequence import EditChunkSequenceUseCase
+    sequence_edit = EditChunkSequenceUseCase(repository_factory=lambda: repository_factory(cfg.project_root))
     facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
-                       cancel=cancel, snapshot=snapshot)
+                       cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit)
     return facade, {"repository": repository, "client": client, "cancellation": cancellation,
                     "assembler": assembler, "submitter": submitter, "coordinator": coordinator,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,

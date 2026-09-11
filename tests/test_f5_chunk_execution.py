@@ -12,14 +12,14 @@ class F5ChunkTests(unittest.TestCase):
         p=Project(); e=Execution(p.id); c=Chunk(order=0); e.add_chunk(c)
         ref=BackendJobRef('r'); a=c.new_attempt(); a.assign_external_job_ref(ref)
         submit=Mock(); submit.submit.return_value=SubmitAttemptResult(SubmitOutcome.SUCCEEDED,str(a.id),ref)
-        coord=ChunkExecutionCoordinator(Mock() if save is None else save,submit,HistoryResult(ref,state),extractor=Mock(),trusted_root=tempfile.gettempdir())
+        coord=ChunkExecutionCoordinator(Mock() if save is None else save,submit,HistoryResult(ref,state),extractor=Mock(),trusted_root=tempfile.gettempdir(),comfyui_output_root=tempfile.gettempdir())
         return coord,p,e,c,submit
 
     def test_monitor_unknown_never_succeeds(self):
         p=Project(); e=Execution(p.id); c=Chunk(order=0); e.add_chunk(c)
         ref=BackendJobRef('r'); a=c.new_attempt(); a.assign_external_job_ref(ref)
         submit=Mock(); submit.submit.return_value=SubmitAttemptResult(SubmitOutcome.SUCCEEDED,str(a.id),ref)
-        coord=ChunkExecutionCoordinator(Mock(),submit,HistoryResult(ref,HistoryState.UNKNOWN),extractor=Mock(),trusted_root=tempfile.gettempdir())
+        coord=ChunkExecutionCoordinator(Mock(),submit,HistoryResult(ref,HistoryState.UNKNOWN),extractor=Mock(),trusted_root=tempfile.gettempdir(),comfyui_output_root=tempfile.gettempdir())
         self.assertFalse(coord.execute(p,e,c.id,'x').success)
 
     def test_monitor_failed_cancelled_and_nonterminal_never_retry(self):
@@ -47,7 +47,7 @@ class F5ChunkTests(unittest.TestCase):
           corr=Mock(status=type('S',(),{'value':'valid'})(),descriptors=(Mock(),))
           phys=Mock(resolved_path=Path(tempfile.gettempdir())/'x')
           extractor=Mock(); extractor.extract_last_frame.return_value=type('F',(),{'frame_index':0,'frame_count':1})()
-          coord=ChunkExecutionCoordinator(repo,submit,HistoryResult(ref,HistoryState.SUCCEEDED,{}),extractor=extractor,trusted_root=tempfile.gettempdir(),correlator=lambda *_:corr,physical_validator=lambda *_:phys)
+          coord=ChunkExecutionCoordinator(repo,submit,HistoryResult(ref,HistoryState.SUCCEEDED,{}),extractor=extractor,trusted_root=tempfile.gettempdir(),comfyui_output_root=Path(d),correlator=lambda *_:corr,physical_validator=lambda *_:phys)
           result=coord.execute(p,e,c.id,'x')
           self.assertFalse(result.success); submit.submit.assert_called_once()
           repo.close()
@@ -78,7 +78,7 @@ class F5ChunkTests(unittest.TestCase):
               desc=OutputDescriptor(ref,'1','clip.mp4','media','video')
               extractor=Mock(); extractor.extract_last_frame.return_value=type('F',(),{'frame_index':4,'frame_count':5})()
               corr=OutputCorrelationResult(ref,OutputCorrelationStatus.VALID,(desc,))
-              coord=ChunkExecutionCoordinator(repo,submitter,HistoryResult(ref,HistoryState.SUCCEEDED,{'outputs':{}}),extractor=extractor,trusted_root=root,correlator=lambda *_:corr)
+              coord=ChunkExecutionCoordinator(repo,submitter,HistoryResult(ref,HistoryState.SUCCEEDED,{'outputs':{}}),extractor=extractor,trusted_root=root,comfyui_output_root=root,correlator=lambda *_:corr)
               result=coord.execute(p,e,c.id,'prompt')
               self.assertTrue(result.success, result.reason); repo.close()
               repo2=SQLiteProjectRepository(root)

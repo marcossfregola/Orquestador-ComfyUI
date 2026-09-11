@@ -6,6 +6,8 @@ the transport-to-durable-attempt port used by the policy owner and primitives.
 from pathlib import Path
 
 def validate_configured_output_root(root):
+    if root is None:
+        raise ValueError("configured ComfyUI output root is required")
     p = Path(root).expanduser().resolve()
     if not p.exists() or not p.is_dir():
         raise ValueError("configured output root must be an existing directory")
