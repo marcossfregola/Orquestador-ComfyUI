@@ -19,6 +19,7 @@ DEFAULT_STEPS = 20
 DEFAULT_FPS = 24
 DEFAULT_REF_IMAGE_SIZE = "match"
 DEFAULT_ALSO_REF_FIRST_FRAME = False
+DEFAULT_FIRST_FRAME_AS_PRIMARY_REFERENCE = False
 DEFAULT_ORCHESTRATION_TIMEOUT_SECONDS = ORCHESTRATION_TIMEOUT_DEFAULT_SECONDS
 SUPPORTED_REF_IMAGE_SIZES = frozenset({"match"})
 
@@ -35,6 +36,7 @@ SUPPORTED_CONFIG_KEYS = frozenset(
         "fps",
         "ref_image_size",
         "also_ref_first_frame",
+        "first_frame_as_primary_reference",
         "orchestration_timeout_seconds",
     }
 )
@@ -88,6 +90,10 @@ def validate_parameter(name: str, value):
     if name == "also_ref_first_frame":
         if type(value) is not bool:
             raise GenerationConfigError("also_ref_first_frame must be boolean")
+        return value
+    if name == "first_frame_as_primary_reference":
+        if type(value) is not bool:
+            raise GenerationConfigError("first_frame_as_primary_reference must be boolean")
         return value
     raise GenerationConfigError(f"unsupported generation parameter: {name}")
 
@@ -173,6 +179,7 @@ class GenerationConfig:
     fps: int = DEFAULT_FPS
     ref_image_size: str = DEFAULT_REF_IMAGE_SIZE
     also_ref_first_frame: bool = DEFAULT_ALSO_REF_FIRST_FRAME
+    first_frame_as_primary_reference: bool = DEFAULT_FIRST_FRAME_AS_PRIMARY_REFERENCE
     orchestration_timeout_seconds: int = DEFAULT_ORCHESTRATION_TIMEOUT_SECONDS
 
     def __post_init__(self):
@@ -207,6 +214,9 @@ class GenerationConfig:
         also_ref_first_frame = validate_parameter(
             "also_ref_first_frame", self.also_ref_first_frame
         )
+        first_frame_as_primary_reference = validate_parameter("first_frame_as_primary_reference", self.first_frame_as_primary_reference)
+        if first_frame_as_primary_reference and also_ref_first_frame:
+            raise GenerationConfigError("first_frame_as_primary_reference conflicts with also_ref_first_frame")
         timeout = validate_parameter(
             "orchestration_timeout_seconds", self.orchestration_timeout_seconds
         )
@@ -221,6 +231,7 @@ class GenerationConfig:
         object.__setattr__(self, "fps", fps)
         object.__setattr__(self, "ref_image_size", ref_image_size)
         object.__setattr__(self, "also_ref_first_frame", also_ref_first_frame)
+        object.__setattr__(self, "first_frame_as_primary_reference", first_frame_as_primary_reference)
         object.__setattr__(self, "orchestration_timeout_seconds", timeout)
 
     @classmethod
@@ -261,6 +272,7 @@ class GenerationConfig:
             "fps": self.fps,
             "ref_image_size": self.ref_image_size,
             "also_ref_first_frame": self.also_ref_first_frame,
+            "first_frame_as_primary_reference": self.first_frame_as_primary_reference,
             "orchestration_timeout_seconds": self.orchestration_timeout_seconds,
         }
 

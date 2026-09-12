@@ -60,7 +60,7 @@ def derive_capabilities(execution, *, can_cancel_candidate=False, retryable=Fals
         can_retry=state=='failed' and bool(retryable),
         can_cancel=state in ('pending','running','failed') and bool(can_cancel_candidate),
         can_assemble=state=='succeeded' and bool(assemble),
-        supported_parameters=('megapixels','length','steps','fps','ref_image_size','also_ref_first_frame'),
+        supported_parameters=('megapixels','length','steps','fps','ref_image_size','also_ref_first_frame','first_frame_as_primary_reference'),
         reference_slots=())
 
 class InputMaterializationService:

@@ -125,3 +125,7 @@ F11.4 y F11.5 quedan **CLOSED — APPROVED**. La evidencia automatizada y la evi
 - Visual polish diferido: rehidratación de miniaturas, settings de chunks horizontales, IDs permanentes visibles, paneles inferiores lado a lado, previews mayores y legibilidad adicional de spinboxes. No forman parte de esta aprobación.
 
 No se cierra F11.6 ni se declara una nueva generación real ejecutada durante este turno; F11.4/F11.5 permanecen cerradas y aprobadas con la evidencia humana aportada y la regresión automatizada local.
+
+## F12 correction pass (2026-09-12)
+
+`first_frame_as_primary_reference` remains experimental/global and default OFF. The correction uses a dense reduced bound graph: ON links Picture1 to the same authoritative `119:0` IMAGE output as `first_frame`, then shifts the six user-reference IMAGE branches to Pictures2..7. The six-reference chunk2+ rebind case is covered after this correction; native `also_ref_first_frame` conflicts fail closed. No ComfyUI launch or real generation was performed; see TESTING.md for concrete automated evidence.

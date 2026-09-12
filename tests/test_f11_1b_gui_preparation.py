@@ -139,23 +139,28 @@ class F111BGuiPreparationTests(unittest.TestCase):
 
     def test_gui_f113_controls_defaults_inputs_and_capabilities(self):
         w=self._window(); self.addCleanup(w.close)
-        self.assertTrue(hasattr(w, "ref_image_size")); self.assertTrue(hasattr(w, "also_ref_first_frame"))
+        self.assertTrue(hasattr(w, "ref_image_size")); self.assertTrue(hasattr(w, "also_ref_first_frame")); self.assertTrue(hasattr(w, "first_frame_as_primary_reference"))
         self.assertEqual(w.ref_image_size.currentText(), DEFAULT_REF_IMAGE_SIZE)
         self.assertEqual(DEFAULT_REF_IMAGE_SIZE, "match")
         self.assertFalse(w.also_ref_first_frame.isChecked())
         self.assertFalse(DEFAULT_ALSO_REF_FIRST_FRAME)
         self.assertEqual(w._inputs()["ref_image_size"], "match")
         self.assertEqual(w._inputs()["also_ref_first_frame"], False)
+        self.assertFalse(w.first_frame_as_primary_reference.isChecked())
+        self.assertEqual(w._inputs()["first_frame_as_primary_reference"], False)
+        self.assertEqual(w.override_key.findText("first_frame_as_primary_reference"), -1)
         w.also_ref_first_frame.setChecked(True)
         self.assertEqual(w._inputs()["also_ref_first_frame"], True)
         w.also_ref_first_frame.setChecked(False)
         self.assertEqual(w._inputs()["also_ref_first_frame"], False)
+        w.first_frame_as_primary_reference.setChecked(True)
+        self.assertEqual(w._inputs()["first_frame_as_primary_reference"], True)
 
         from orquestador.application.f11_1b import derive_capabilities
         execution = type("Execution", (), {"state": "pending"})()
         capabilities = derive_capabilities(execution)
         self.assertEqual(capabilities.supported_parameters,
-                         ("megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame"))
+                     ("megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame", "first_frame_as_primary_reference"))
         self.assertEqual(capabilities.reference_slots, ())
 
     def test_gui_f113_edits_invalidate_prepared_state_and_disable_start(self):
@@ -163,6 +168,7 @@ class F111BGuiPreparationTests(unittest.TestCase):
         for edit in (
             lambda: w.ref_image_size.currentTextChanged.emit("match"),
             lambda: w.also_ref_first_frame.setChecked(not w.also_ref_first_frame.isChecked()),
+            lambda: w.first_frame_as_primary_reference.setChecked(not w.first_frame_as_primary_reference.isChecked()),
         ):
             w._prepared_key=w._form_key(); w._auth_can_start=True; w._update_start(); self.assertTrue(w.start.isEnabled())
             edit(); self.assertIsNone(w._prepared_key); self.assertFalse(w.start.isEnabled())

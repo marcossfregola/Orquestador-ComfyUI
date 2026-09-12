@@ -29,6 +29,10 @@ class F111BCapabilityTests(unittest.TestCase):
         self.assertTrue(caps.can_resume)
         self.assertTrue(caps.can_recover)
 
+    def test_global_primary_reference_is_advertised_but_not_a_chunk_override(self):
+        caps = derive_capabilities(self.execution(Lifecycle.PENDING))
+        self.assertIn('first_frame_as_primary_reference', caps.supported_parameters)
+
     def test_productive_snapshot_computes_retryable_before_canonical_derivation(self):
         tree = ast.parse(Path('src/orquestador/ui/app.py').read_text(encoding='utf-8'))
         snapshot = next(n for n in ast.walk(tree)

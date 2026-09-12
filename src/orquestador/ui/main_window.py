@@ -149,7 +149,7 @@ class MainWindow(QMainWindow):
         [controls.addWidget(x) for x in (self.add_chunk_button,self.remove_chunk_button,self.move_up_button,self.move_down_button,self.duplicate_button)]
         for label, x in (("Megapixels",self.megapixels),("Length / Frames",self.length),("Steps",self.steps),("FPS",self.fps)):
             cell=QWidget(); cl=QVBoxLayout(cell); cl.setContentsMargins(2,0,2,0); cl.addWidget(QLabel(label)); cl.addWidget(x); controls.addWidget(cell)
-        chunks_lay.addLayout(controls); h3_controls=QHBoxLayout(); h3_controls.addWidget(QLabel("Reference image size")); self.ref_image_size=QComboBox(); self.ref_image_size.addItems(sorted(SUPPORTED_REF_IMAGE_SIZES)); self.ref_image_size.setCurrentText(DEFAULT_REF_IMAGE_SIZE); h3_controls.addWidget(self.ref_image_size); self.also_ref_first_frame=QCheckBox("Also reference first frame"); self.also_ref_first_frame.setChecked(DEFAULT_ALSO_REF_FIRST_FRAME); h3_controls.addWidget(self.also_ref_first_frame); chunks_lay.addLayout(h3_controls)
+        chunks_lay.addLayout(controls); h3_controls=QHBoxLayout(); h3_controls.addWidget(QLabel("Reference image size")); self.ref_image_size=QComboBox(); self.ref_image_size.addItems(sorted(SUPPORTED_REF_IMAGE_SIZES)); self.ref_image_size.setCurrentText(DEFAULT_REF_IMAGE_SIZE); h3_controls.addWidget(self.ref_image_size); self.also_ref_first_frame=QCheckBox("Also reference first frame"); self.also_ref_first_frame.setChecked(DEFAULT_ALSO_REF_FIRST_FRAME); h3_controls.addWidget(self.also_ref_first_frame); self.first_frame_as_primary_reference=QCheckBox("Use current first frame as Reference 1"); self.first_frame_as_primary_reference.setToolTip("User references shift to Reference 2 onward."); h3_controls.addWidget(self.first_frame_as_primary_reference); chunks_lay.addLayout(h3_controls)
         self.prompts=[]; self._sequence_ids=[]; self._drafts=[ChunkDraft(),ChunkDraft()]; self.chunk_tabs=QTabWidget(); self.chunk_tabs.setObjectName("chunkTabs"); self.chunk_tabs.setTabsClosable(False); self.chunk_tabs.setUsesScrollButtons(True); chunks_lay.addWidget(self.chunk_tabs,1)
         self.parameters=QLabel("Supported parameters: provided by profile"); self.parameters.setObjectName("supportedParameters"); chunks_lay.addWidget(self.parameters)
         override_row=QHBoxLayout(); override_row.addWidget(QLabel("Chunk override (approved H3 only)")); self.override_key=QComboBox(); self.override_key.setObjectName("chunkOverrideKey"); self.override_key.addItems(["prompt","megapixels","length","steps","fps","ref_image_size","also_ref_first_frame"]); override_row.addWidget(self.override_key); self.override_value=QLineEdit(); self.override_value.setObjectName("chunkOverrideValue"); override_row.addWidget(self.override_value); self.set_override_button=QPushButton("Set override"); self.clear_override_button=QPushButton("Restore inherited"); override_row.addWidget(self.set_override_button); override_row.addWidget(self.clear_override_button); chunks_lay.addLayout(override_row)
@@ -161,6 +161,7 @@ class MainWindow(QMainWindow):
         self.move_up_button.clicked.connect(lambda:self._move_sequence(-1)); self.move_down_button.clicked.connect(lambda:self._move_sequence(1)); self.duplicate_button.clicked.connect(self._duplicate_sequence); self.chunk_tabs.currentChanged.connect(lambda i: (self._show_provenance(), self._update_sequence_controls()))
         self.set_override_button.clicked.connect(self._set_override); self.clear_override_button.clicked.connect(lambda _=False: self._clear_override()); self.chunks.currentRowChanged.connect(lambda i: self.chunk_tabs.setCurrentIndex(i))
         self._prompt_timer=QTimer(self); self._prompt_timer.setSingleShot(True); self._prompt_timer.setInterval(400); self._prompt_timer.timeout.connect(self._flush_prompt); self._prompt_dirty=None; self._pending_action=None; self._continuation=None
+        self.first_frame_as_primary_reference.toggled.connect(self._general_value_changed)
         self.refresh()
 
     def _persist_prompt_edit(self):
@@ -257,7 +258,7 @@ class MainWindow(QMainWindow):
     def _effective_value(self,i,key):
         return self._drafts[i].overrides.get(key, self._general_value(key))
     def _general_value(self,key):
-        return {"megapixels":self.megapixels.value(),"length":self.length.value(),"steps":self.steps.value(),"fps":self.fps.value(),"ref_image_size":self.ref_image_size.currentText(),"also_ref_first_frame":self.also_ref_first_frame.isChecked()}[key]
+        return {"megapixels":self.megapixels.value(),"length":self.length.value(),"steps":self.steps.value(),"fps":self.fps.value(),"ref_image_size":self.ref_image_size.currentText(),"also_ref_first_frame":self.also_ref_first_frame.isChecked(),"first_frame_as_primary_reference":self.first_frame_as_primary_reference.isChecked()}[key]
     def _set_editor_value(self,e,v):
         e.blockSignals(True)
         if hasattr(e,"setValue"): e.setValue(v)
@@ -292,7 +293,7 @@ class MainWindow(QMainWindow):
         self._ensure_prompt_count(); prompts=[self.prompts[i].toPlainText() for i in range(self.chunk_count.value())]
         refs=[self.references.item(i).text().strip() for i in range(min(6,self.references.count())) if self.references.item(i) and self.references.item(i).text().strip()]
         overrides=[dict(d.overrides) for d in self._drafts[:self.chunk_count.value()]]
-        return dict(project_id=self.project.text(), execution_id=self.execution.text(), initial_image=self.initial.text(), prompts=prompts, references=refs, chunk_count=self.chunk_count.value(), megapixels=self.megapixels.value(), length=self.length.value(), steps=self.steps.value(), fps=self.fps.value(), ref_image_size=self.ref_image_size.currentText(), also_ref_first_frame=self.also_ref_first_frame.isChecked(), chunk_overrides=overrides)
+        return dict(project_id=self.project.text(), execution_id=self.execution.text(), initial_image=self.initial.text(), prompts=prompts, references=refs, chunk_count=self.chunk_count.value(), megapixels=self.megapixels.value(), length=self.length.value(), steps=self.steps.value(), fps=self.fps.value(), ref_image_size=self.ref_image_size.currentText(), also_ref_first_frame=self.also_ref_first_frame.isChecked(), first_frame_as_primary_reference=self.first_frame_as_primary_reference.isChecked(), chunk_overrides=overrides)
     def _choose_initial(self):
         p,_=QFileDialog.getOpenFileName(self,"Initial image",resolve_folder(INPUT_KEY, project_root=self.project_root, initial_image=self.initial.text()));
         if p: self.initial.setText(p)
@@ -477,6 +478,7 @@ class MainWindow(QMainWindow):
                 ("fps", self.fps),
                 ("ref_image_size", self.ref_image_size),
                 ("also_ref_first_frame", self.also_ref_first_frame),
+                ("first_frame_as_primary_reference", self.first_frame_as_primary_reference),
             ):
                 if key in values:
                     self._set_editor_value(widget, values[key])

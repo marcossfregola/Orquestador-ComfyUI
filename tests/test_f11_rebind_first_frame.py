@@ -3,10 +3,12 @@ import unittest
 
 from orquestador.profiles.minimax_h3 import (
     IncompatibleWorkflowError,
+    _validate_reduced_bound_graph,
     bind_inputs,
     load_api_template,
     rebind_first_frame,
 )
+from orquestador.application.submit_boundary import SubmitBoundary
 
 
 class RebindFirstFrameTests(unittest.TestCase):
@@ -29,6 +31,74 @@ class RebindFirstFrameTests(unittest.TestCase):
         full = bind_inputs(self.template, prompt="p", first_frame="old.png", references=[f"r{i}" for i in range(6)])
         self.assertEqual(rebind_first_frame(full, "frame.png")["114"]["inputs"]["image"], "frame.png")
 
+    def test_off_reference_cardinalities_keep_baseline_slots(self):
+        for count in (0, 1, 6):
+            with self.subTest(count=count):
+                bound = bind_inputs(self.template, first_frame="initial.png", references=[f"u{i}.png" for i in range(count)])
+                refs = bound["129"]["inputs"]
+                self.assertEqual(sorted(k for k in refs if k.startswith("ref_images.ref_image_")),
+                                 [f"ref_images.ref_image_{i}" for i in range(count)])
+                if count:
+                    self.assertEqual(bound["130"]["inputs"]["image"], "u0.png")
+
+    def test_primary_binding_has_dense_effective_order_and_no_node129_flag(self):
+        for count in (0, 1, 3, 6):
+            with self.subTest(count=count):
+                users = [f"u{i}.png" for i in range(count)]
+                bound = bind_inputs(self.template, first_frame="initial.png", references=users,
+                                    first_frame_as_primary_reference=True)
+                refs = bound["129"]["inputs"]
+                self.assertEqual(sorted(k for k in refs if k.startswith("ref_images.ref_image_")),
+                                 [f"ref_images.ref_image_{i}" for i in range(count + 1)])
+                self.assertEqual(refs["ref_images.ref_image_0"], refs["first_frame"])
+                self.assertNotIn("first_frame_as_primary_reference", refs)
+                outputs = (["156",0],["157",0],["158",0],["159",0],["161",0],["160",0])
+                for i in range(count):
+                    self.assertEqual(refs[f"ref_images.ref_image_{i + 1}"], outputs[i])
+                    self.assertEqual(bound[str((130,131,132,150,151,152)[i])]["inputs"]["image"], users[i])
+
+    def test_primary_rebind_preserves_all_user_references_at_every_cardinality(self):
+        for count in (0, 1, 3, 6):
+            with self.subTest(count=count):
+                users = [f"u{i}.png" for i in range(count)]
+                bound = bind_inputs(self.template, first_frame="__ORQ_FIRST_FRAME__", references=users,
+                                    first_frame_as_primary_reference=True)
+                rebound = rebind_first_frame(bound, "transition.png", first_frame_as_primary_reference=True)
+                refs = rebound["129"]["inputs"]
+                self.assertEqual(rebound["114"]["inputs"]["image"], "transition.png")
+                self.assertEqual(refs["ref_images.ref_image_0"], refs["first_frame"])
+                for i in range(count):
+                    self.assertEqual(rebound[str((130,131,132,150,151,152)[i])]["inputs"]["image"], users[i])
+
+    def test_primary_rebind_reduced_zero_refs_materializes_transition(self):
+        bound = bind_inputs(self.template, first_frame=None, references=[], first_frame_as_primary_reference=True)
+        rebound = rebind_first_frame(bound, "transition.png", first_frame_as_primary_reference=True)
+        self.assertEqual(rebound["114"]["inputs"]["image"], "transition.png")
+        self.assertEqual(rebound["129"]["inputs"]["ref_images.ref_image_0"], ["119", 0])
+
+    def test_former_six_ref_primary_rebind_blocker_is_fixed(self):
+        users = [f"u{i}.png" for i in range(6)]
+        bound = bind_inputs(self.template, first_frame="__ORQ_FIRST_FRAME__", references=users,
+                            first_frame_as_primary_reference=True)
+        rebound = rebind_first_frame(bound, "transition-2.png", first_frame_as_primary_reference=True)
+        self.assertEqual(rebound["129"]["inputs"]["ref_images.ref_image_0"], ["119", 0])
+        self.assertEqual(rebound["129"]["inputs"]["ref_images.ref_image_6"], ["160", 0])
+
+    def test_submit_boundary_rejects_unresolved_marker(self):
+        with self.assertRaises(ValueError):
+            SubmitBoundary(object())._reject_unresolved_markers({"114": {"image": "__ORQ_FIRST_FRAME__"}})
+
+    def test_primary_flag_is_strict_and_conflicts_fail_closed_at_binding_boundaries(self):
+        with self.assertRaises(Exception):
+            bind_inputs(self.template, references=[], first_frame_as_primary_reference="false")
+        with self.assertRaises(Exception):
+            bind_inputs(self.template, references=[], first_frame_as_primary_reference=True,
+                        also_ref_first_frame=True)
+        bound = bind_inputs(self.template, references=[], first_frame_as_primary_reference=True)
+        bound["129"]["inputs"]["also_ref_first_frame"] = True
+        with self.assertRaises(Exception):
+            rebind_first_frame(bound, "transition.png", first_frame_as_primary_reference=True)
+
     def test_malformed_reduced_graph_fails_closed(self):
         bound = bind_inputs(self.template, references=["r0", "r1"])
         missing = copy.deepcopy(bound)
@@ -39,6 +109,20 @@ class RebindFirstFrameTests(unittest.TestCase):
         foreign["130"]["class_type"] = "Foreign.Node"
         with self.assertRaises(IncompatibleWorkflowError):
             rebind_first_frame(foreign, "frame.png")
+
+    def test_reduced_validator_rejects_sparse_wrong_and_dangling_reference_topology(self):
+        dynamic = bind_inputs(self.template, references=["u0.png", "u1.png"],
+                              first_frame_as_primary_reference=True)
+        _validate_reduced_bound_graph(dynamic)
+        sparse = copy.deepcopy(dynamic); sparse["129"]["inputs"].pop("ref_images.ref_image_1")
+        wrong = copy.deepcopy(dynamic); wrong["129"]["inputs"]["ref_images.ref_image_1"] = ["130", 0]
+        dangling = copy.deepcopy(dynamic); dangling["129"]["inputs"]["ref_images.ref_image_1"] = ["999", 0]
+        for invalid in (sparse, wrong, dangling):
+            with self.subTest(invalid=invalid["129"]["inputs"]):
+                with self.assertRaises(IncompatibleWorkflowError): _validate_reduced_bound_graph(invalid)
+        unsupported = bind_inputs(self.template, references=[f"u{i}.png" for i in range(6)])
+        unsupported["129"]["inputs"]["ref_images.ref_image_5"] = "direct-string.png"
+        with self.assertRaises(IncompatibleWorkflowError): _validate_reduced_bound_graph(unsupported)
 
 
 if __name__ == "__main__":

@@ -149,7 +149,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
         config_keys = ("profile_ref", "chunk_count", "megapixels", "length", "steps",
-                       "fps", "ref_image_size", "also_ref_first_frame",
+                       "fps", "ref_image_size", "also_ref_first_frame", "first_frame_as_primary_reference",
                        "orchestration_timeout_seconds")
         snapshot["configuration"] = tuple(
             (key, durable_defaults[key]) for key in config_keys if key in durable_defaults

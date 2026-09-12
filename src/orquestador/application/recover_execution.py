@@ -416,6 +416,7 @@ class RetryExecutionUseCase:
                 steps=effective.steps, fps=effective.fps,
                 ref_image_size=effective.ref_image_size,
                 also_ref_first_frame=effective.also_ref_first_frame,
+                first_frame_as_primary_reference=effective.first_frame_as_primary_reference,
             )
         except (GenerationConfigError, ValueError, TypeError, AttributeError, OSError) as exc:
             raise ValueError(f'retry prompt reconstruction failed: {exc}') from exc

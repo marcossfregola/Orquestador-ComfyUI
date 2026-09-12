@@ -18,7 +18,7 @@ from ..profiles.minimax_h3 import H3_PROFILE
 class PreparationError(ValueError):
     pass
 
-_GUI_KEYS = {"config", "generation_config", "initial_image", "prompts", "references", "chunk_count", "megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame", "chunk_overrides", "orchestration_timeout_seconds"}
+_GUI_KEYS = {"config", "generation_config", "initial_image", "prompts", "references", "chunk_count", "megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame", "first_frame_as_primary_reference", "chunk_overrides", "orchestration_timeout_seconds"}
 
 def normalize_gui_updates(**kwargs):
     if kwargs.get("config") is not None and kwargs.get("generation_config") is not None:

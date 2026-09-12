@@ -59,7 +59,7 @@ def validate_ui_workflow_structure(mapping, *, verified_sha256=H3_CANONICAL_SHA2
  for i in range(6):
   lid=ins[REQUIRED_REFS[i]].get('link')
   if lid not in ls or ls[lid][3:5]!=[129,5+i]: raise IncompatibleWorkflowError('reference mismatch','workflow.reference_topology')
- if ins[REQUIRED_REFS[6]].get('link') is not None: raise IncompatibleWorkflowError('ref6 connected','workflow.ref6_connected')
+ if ins.get(REQUIRED_REFS[6], {}).get('link') is not None: raise IncompatibleWorkflowError('ref6 connected','workflow.ref6_connected')
  for lid,(_,o,os,t,ts,_) in ls.items():
   if ns[t]['inputs'][ts].get('link')!=lid or lid not in (ns[o]['outputs'][os].get('links') or []): raise IncompatibleWorkflowError('link consistency mismatch','workflow.link_consistency')
  return CompatibilityReport(H3_PROFILE,digest,tuple(sorted(ns)),tuple(sorted(ls)))
@@ -137,10 +137,23 @@ def _validate_reduced_bound_graph(d):
  if not isinstance(d,dict) or not d: raise IncompatibleWorkflowError('reduced graph required','template.reduced_shape')
  core={'92','114','119','120','127','129','136','137','138','139','142','143','144','145','146','147','148'}
  refs=sorted((k for k in d.get('129',{}).get('inputs',{}) if k.startswith('ref_images.ref_image_')), key=lambda k:int(k.rsplit('_',1)[1]))
- if refs != [f'ref_images.ref_image_{i}' for i in range(len(refs))] or len(refs)>6:
+ if refs != [f'ref_images.ref_image_{i}' for i in range(len(refs))] or len(refs)>7:
   raise IncompatibleWorkflowError('reduced graph reference keys are not dense','template.references')
+ h3=d['129']['inputs'] if isinstance(d.get('129'),dict) and isinstance(d['129'].get('inputs'),dict) else {}
+ first_frame=h3.get('first_frame')
+ primary=bool(refs) and h3.get('ref_images.ref_image_0') == first_frame == ['119',0]
+ branch_links=[['156',0],['157',0],['158',0],['159',0],['161',0],['160',0]]
+ expected_ref_links=([['119',0]] + branch_links[:len(refs)-1]) if primary else branch_links[:len(refs)]
+ if len(expected_ref_links) != len(refs):
+  raise IncompatibleWorkflowError('reduced graph reference topology invalid','template.references')
+ for i,key in enumerate(refs):
+  # H3 declares every Picture socket as IMAGE: a filename/direct string is
+  # never a valid API value here.
+  if h3.get(key) != expected_ref_links[i]:
+   raise IncompatibleWorkflowError('reduced graph reference binding invalid','template.references')
+ branch_count=len(refs)-1 if primary else len(refs)
  expected=set(core)
- for i in range(len(refs)):
+ for i in range(branch_count):
   expected.update((str((130,131,132,150,151,152)[i]),str((133,134,135,153,154,155)[i]),str((156,157,158,159,161,160)[i])))
  if set(d)!=expected: raise IncompatibleWorkflowError('reduced graph node set mismatch','template.reduced_node')
  for node_id,node in d.items():
@@ -148,6 +161,7 @@ def _validate_reduced_bound_graph(d):
    raise IncompatibleWorkflowError('reduced graph node mismatch','template.reduced_node')
  expected_links={(consumer,name): list(value) for key,value in _API_LINKS.items()
                  for consumer,name in [key.split('.',1)] if consumer in d and value[0] in d}
+ for i,key in enumerate(refs): expected_links[('129',key)]=expected_ref_links[i]
  for consumer,node in d.items():
   for name,value in node['inputs'].items():
    if isinstance(value,list) and len(value)==2 and isinstance(value[0],str) and type(value[1]) is int:
@@ -176,6 +190,11 @@ def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, *
  """Return a copy of the API prompt with only declared H3 inputs overridden."""
  _validate_api_template(api_prompt)
  out=json.loads(json.dumps(api_prompt)); ins=out['129']['inputs']
+ primary=values.pop('first_frame_as_primary_reference', False)
+ try: primary=validate_parameter('first_frame_as_primary_reference', primary)
+ except GenerationConfigError as exc: raise WorkflowProfileError(str(exc),'binding.invalid_value') from exc
+ if primary and values.get('also_ref_first_frame') is True:
+  raise WorkflowProfileError('first_frame_as_primary_reference conflicts with also_ref_first_frame','binding.invalid_value')
  allowed={'prompt','first_frame','megapixels','steps','width','height','length','ref_image_size','also_ref_first_frame','fps'}
  if prompt is not None: values['prompt']=prompt
  if first_frame is not None: values['first_frame']=first_frame
@@ -198,27 +217,41 @@ def bind_inputs(api_prompt, *, prompt=None, first_frame=None, references=None, *
   else: ins[k]=v
  if references is not None:
   if not isinstance(references,(list,tuple)) or len(references)>6: raise WorkflowProfileError('references must contain 0 to 6 images','binding.references')
-  refs=list(references)
+  user_refs=list(references)
+  if primary:
+   if first_frame is None: first_frame = '__ORQ_FIRST_FRAME__'
+   refs=[first_frame, *user_refs]
+  else: refs=user_refs
   if any(not isinstance(v,str) or not v.strip() for v in refs): raise WorkflowProfileError('reference image paths must be nonblank','binding.references')
-  for i,v in enumerate(refs):
-   if not isinstance(v,str) or not v.strip(): raise WorkflowProfileError('reference image paths must be nonblank','binding.references')
-   out[str((130,131,132,150,151,152)[i])]['inputs']['image']=v
-  # Compact the product binding: omit absent reference slots and their branch.
-  if len(refs) < 6:
-   branch_nodes=((130,133,156),(131,134,157),(132,135,158),(150,153,159),(151,154,161),(152,155,160))
-   for nodes in branch_nodes[len(refs):]:
+  # H3 Picture sockets are IMAGE.  ON fans out the same authoritative
+  # first-frame IMAGE link to Picture1, then shifts the six existing
+  # user-reference processing branches to Pictures2..7.
+  linked=range(len(user_refs))
+  branch_nodes=((130,133,156),(131,134,157),(132,135,158),(150,153,159),(151,154,161),(152,155,160))
+  for i in linked: out[str(branch_nodes[i][0])]['inputs']['image']=user_refs[i]
+  if primary:
+   ins['ref_images.ref_image_0']=ins['first_frame']
+   image_outputs=(['156',0],['157',0],['158',0],['159',0],['161',0],['160',0])
+   for i in range(len(user_refs)): ins[f'ref_images.ref_image_{i + 1}']=image_outputs[i]
+  for i,nodes in enumerate(branch_nodes):
+   if i not in linked:
     for nid in nodes: out.pop(str(nid),None)
-   for key in list(ins):
-    if key.startswith('ref_images.ref_image_') and int(key.rsplit('_',1)[1]) >= len(refs): ins.pop(key)
- if references is None or len(references)==6:
+  for key in list(ins):
+   if key.startswith('ref_images.ref_image_') and int(key.rsplit('_',1)[1]) >= len(refs): ins.pop(key)
+ if references is None:
   _validate_api_template(out, bound=True)
  else:
   _validate_reduced_bound_graph(out)
  return out
 
-def rebind_first_frame(bound_prompt, first_frame):
+def rebind_first_frame(bound_prompt, first_frame, *, first_frame_as_primary_reference=False):
  """Copy an H3 API prompt and replace its authoritative first-frame input."""
- validator = _validate_api_template if isinstance(bound_prompt, dict) and set(bound_prompt) == set(map(str, H3_NODE_TYPES)) else _validate_reduced_bound_graph
+ try: first_frame_as_primary_reference=validate_parameter('first_frame_as_primary_reference', first_frame_as_primary_reference)
+ except GenerationConfigError as exc: raise WorkflowProfileError(str(exc),'binding.invalid_value') from exc
+ validator = (_validate_reduced_bound_graph if first_frame_as_primary_reference else
+              (_validate_api_template if isinstance(bound_prompt, dict) and set(bound_prompt) == set(map(str, H3_NODE_TYPES)) else _validate_reduced_bound_graph))
+ if first_frame_as_primary_reference and bound_prompt.get('129',{}).get('inputs',{}).get('also_ref_first_frame') is True:
+  raise WorkflowProfileError('first_frame_as_primary_reference conflicts with also_ref_first_frame','binding.invalid_value')
  if validator is _validate_api_template:
   validator(bound_prompt, bound=True)
  else:

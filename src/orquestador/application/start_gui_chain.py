@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from pathlib import Path
+from functools import partial
 
 from ..domain.config import (
     GenerationConfig,
@@ -260,8 +261,9 @@ class StartGuiChainUseCase:
                 bind_inputs(
                     template,
                     prompt=chunk_config.prompts[index],
-                    first_frame=image if index == 0 else None,
+                    first_frame=(image if index == 0 else ("__ORQ_FIRST_FRAME__" if selected.first_frame_as_primary_reference else None)),
                     references=refs,
+                    first_frame_as_primary_reference=selected.first_frame_as_primary_reference,
                     **chunk_values,
                 )
             )
@@ -280,6 +282,6 @@ class StartGuiChainUseCase:
             project,
             execution,
             bound,
-            transition_rebinder=rebind_first_frame,
+            transition_rebinder=partial(rebind_first_frame, first_frame_as_primary_reference=selected.first_frame_as_primary_reference),
             transition_materializer=self.transition_materializer,
         )
