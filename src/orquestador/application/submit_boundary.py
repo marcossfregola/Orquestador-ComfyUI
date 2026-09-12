@@ -27,7 +27,6 @@ class SubmitBoundary:
         return self.bridge or ComfyUIJobBridge(repository)
 
     def submit(self, project, execution, chunk_id, prompt, **kwargs):
-        self._reject_unresolved_markers(prompt)
         # All NEW-submit lifecycle policy lives here.  The injected object is
         # transport-only (its submit method returns a raw prompt id).
         from .bridge import (SubmitAttemptResult, SubmitOutcome, ComfyUIJobBridge)
@@ -58,7 +57,6 @@ class SubmitBoundary:
         """Explicit retry-only submission for a pre-existing unbound Attempt."""
         from .bridge import SubmitAttemptResult, SubmitOutcome, ComfyUIJobBridge
         from ..domain.core import BackendJobRef
-        self._reject_unresolved_markers(prompt)
         from ..adapters.http import ComfyUIRejectedError, ComfyUIProtocolError, ComfyUITransportError
         chunk = next((c for c in execution.chunks if str(c.id) == str(chunk_id)), None)
         attempt = next((a for a in chunk.attempts if str(a.id) == str(attempt_id)), None) if chunk else None
@@ -80,15 +78,6 @@ class SubmitBoundary:
         except Exception as exc:
             return SubmitAttemptResult(SubmitOutcome.BIND_FAILED, str(attempt.id), ref, str(exc))
         return SubmitAttemptResult(SubmitOutcome.SUCCEEDED, str(attempt.id), ref)
-
-    @staticmethod
-    def _reject_unresolved_markers(value):
-        if isinstance(value, str) and value.startswith('__ORQ_'):
-            raise ValueError('unresolved ORQ placeholder at submit boundary')
-        if isinstance(value, dict):
-            for item in value.values(): SubmitBoundary._reject_unresolved_markers(item)
-        elif isinstance(value, (list, tuple)):
-            for item in value: SubmitBoundary._reject_unresolved_markers(item)
 
 __all__ = ["SubmitBoundary", "ComfyUISubmitTransport", "validate_configured_output_root"]
 

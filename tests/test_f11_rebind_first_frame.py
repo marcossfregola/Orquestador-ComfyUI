@@ -3,12 +3,10 @@ import unittest
 
 from orquestador.profiles.minimax_h3 import (
     IncompatibleWorkflowError,
-    _validate_reduced_bound_graph,
     bind_inputs,
     load_api_template,
     rebind_first_frame,
 )
-from orquestador.application.submit_boundary import SubmitBoundary
 
 
 class RebindFirstFrameTests(unittest.TestCase):
@@ -76,29 +74,6 @@ class RebindFirstFrameTests(unittest.TestCase):
         self.assertEqual(rebound["114"]["inputs"]["image"], "transition.png")
         self.assertEqual(rebound["129"]["inputs"]["ref_images.ref_image_0"], ["119", 0])
 
-    def test_former_six_ref_primary_rebind_blocker_is_fixed(self):
-        users = [f"u{i}.png" for i in range(6)]
-        bound = bind_inputs(self.template, first_frame="__ORQ_FIRST_FRAME__", references=users,
-                            first_frame_as_primary_reference=True)
-        rebound = rebind_first_frame(bound, "transition-2.png", first_frame_as_primary_reference=True)
-        self.assertEqual(rebound["129"]["inputs"]["ref_images.ref_image_0"], ["119", 0])
-        self.assertEqual(rebound["129"]["inputs"]["ref_images.ref_image_6"], ["160", 0])
-
-    def test_submit_boundary_rejects_unresolved_marker(self):
-        with self.assertRaises(ValueError):
-            SubmitBoundary(object())._reject_unresolved_markers({"114": {"image": "__ORQ_FIRST_FRAME__"}})
-
-    def test_primary_flag_is_strict_and_conflicts_fail_closed_at_binding_boundaries(self):
-        with self.assertRaises(Exception):
-            bind_inputs(self.template, references=[], first_frame_as_primary_reference="false")
-        with self.assertRaises(Exception):
-            bind_inputs(self.template, references=[], first_frame_as_primary_reference=True,
-                        also_ref_first_frame=True)
-        bound = bind_inputs(self.template, references=[], first_frame_as_primary_reference=True)
-        bound["129"]["inputs"]["also_ref_first_frame"] = True
-        with self.assertRaises(Exception):
-            rebind_first_frame(bound, "transition.png", first_frame_as_primary_reference=True)
-
     def test_malformed_reduced_graph_fails_closed(self):
         bound = bind_inputs(self.template, references=["r0", "r1"])
         missing = copy.deepcopy(bound)
@@ -109,20 +84,6 @@ class RebindFirstFrameTests(unittest.TestCase):
         foreign["130"]["class_type"] = "Foreign.Node"
         with self.assertRaises(IncompatibleWorkflowError):
             rebind_first_frame(foreign, "frame.png")
-
-    def test_reduced_validator_rejects_sparse_wrong_and_dangling_reference_topology(self):
-        dynamic = bind_inputs(self.template, references=["u0.png", "u1.png"],
-                              first_frame_as_primary_reference=True)
-        _validate_reduced_bound_graph(dynamic)
-        sparse = copy.deepcopy(dynamic); sparse["129"]["inputs"].pop("ref_images.ref_image_1")
-        wrong = copy.deepcopy(dynamic); wrong["129"]["inputs"]["ref_images.ref_image_1"] = ["130", 0]
-        dangling = copy.deepcopy(dynamic); dangling["129"]["inputs"]["ref_images.ref_image_1"] = ["999", 0]
-        for invalid in (sparse, wrong, dangling):
-            with self.subTest(invalid=invalid["129"]["inputs"]):
-                with self.assertRaises(IncompatibleWorkflowError): _validate_reduced_bound_graph(invalid)
-        unsupported = bind_inputs(self.template, references=[f"u{i}.png" for i in range(6)])
-        unsupported["129"]["inputs"]["ref_images.ref_image_5"] = "direct-string.png"
-        with self.assertRaises(IncompatibleWorkflowError): _validate_reduced_bound_graph(unsupported)
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ def validate_ui_workflow_structure(mapping, *, verified_sha256=H3_CANONICAL_SHA2
  for i in range(6):
   lid=ins[REQUIRED_REFS[i]].get('link')
   if lid not in ls or ls[lid][3:5]!=[129,5+i]: raise IncompatibleWorkflowError('reference mismatch','workflow.reference_topology')
- if ins.get(REQUIRED_REFS[6], {}).get('link') is not None: raise IncompatibleWorkflowError('ref6 connected','workflow.ref6_connected')
+ if ins[REQUIRED_REFS[6]].get('link') is not None: raise IncompatibleWorkflowError('ref6 connected','workflow.ref6_connected')
  for lid,(_,o,os,t,ts,_) in ls.items():
   if ns[t]['inputs'][ts].get('link')!=lid or lid not in (ns[o]['outputs'][os].get('links') or []): raise IncompatibleWorkflowError('link consistency mismatch','workflow.link_consistency')
  return CompatibilityReport(H3_PROFILE,digest,tuple(sorted(ns)),tuple(sorted(ls)))
