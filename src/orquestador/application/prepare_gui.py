@@ -173,14 +173,32 @@ class PrepareGuiUseCase:
             extra=extra,
         )
         pid = ProjectId(project_id.strip()) if isinstance(project_id, str) and project_id.strip() else ProjectId(str(uuid4()))
-        requested_eid = ExecutionId(execution_id.strip()) if isinstance(execution_id, str) and execution_id.strip() else ExecutionId(str(uuid4()))
+        requested_eid = ExecutionId(execution_id.strip()) if isinstance(execution_id, str) and execution_id.strip() else None
         try:
             project, executions = self.repository.load(pid)
         except PersistenceError as exc:
             if str(exc).strip().lower() != "project not found":
                 raise PreparationError(f"project load failed: {exc}") from exc
             project, executions = Project(pid), []
-        matches = [item for item in executions if str(item.id) == str(requested_eid)]
+        matches = [item for item in executions if requested_eid is not None and str(item.id) == str(requested_eid)]
+        if requested_eid is None:
+            reusable = [
+                item for item in executions
+                if item.workflow_profile_ref is not None
+                and item.workflow_profile_ref.value == H3_PROFILE.name
+                and not item.artifacts
+                and not item.errors
+                and str(item.state.value if hasattr(item.state, "value") else item.state) == "pending"
+                and all(
+                    not chunk.attempts
+                    and chunk.first_frame is None
+                    and str(chunk.state.value if hasattr(chunk.state, "value") else chunk.state) == "pending"
+                    for chunk in item.chunks
+                )
+            ]
+            if len(reusable) > 1:
+                raise PreparationError("multiple editable unstarted executions; specify an execution")
+            matches = reusable
         if len(matches) > 1:
             raise PreparationError("execution selection is ambiguous")
         existing = matches[0] if matches else None
@@ -266,7 +284,7 @@ class PrepareGuiUseCase:
         else:
             existing = Execution(
                 project.id,
-                requested_eid,
+                requested_eid or ExecutionId(str(uuid4())),
                 defaults=generation.to_mapping(),
                 workflow_profile_ref=WorkflowProfileRef(H3_PROFILE.name),
             )

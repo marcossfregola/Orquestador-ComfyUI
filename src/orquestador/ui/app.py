@@ -24,7 +24,8 @@ from ..domain.core import Lifecycle, MaterializedInputRef
 from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
-from ..persistence.sqlite import SQLiteProjectRepository
+from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
+from ..profiles.minimax_h3 import H3_PROFILE
 
 class StartupConfigurationError(ValueError):
     """Actionable configuration error raised before external service calls."""
@@ -128,8 +129,20 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     assembly_usecase = assembly_usecase or assembly_real
     def _snapshot_for_repo(repo, project_id=None, execution_id=None):
         if not project_id: return {"state":"unavailable","errors":("select a project",)}
-        project, executions = repo.load(project_id)
-        matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
+        try:
+            project, executions = repo.load(project_id)
+        except PersistenceError as exc:
+            if str(exc).strip().lower() == "project not found" and execution_id is None:
+                return {"project_id":str(project_id), "state":"new", "errors":()}
+            raise
+        if execution_id is None:
+            matches = [e for e in executions if e.workflow_profile_ref is not None and e.workflow_profile_ref.value == H3_PROFILE.name and not e.artifacts and not e.errors and e.state is Lifecycle.PENDING and all(c.state is Lifecycle.PENDING and not c.attempts and c.first_frame is None for c in e.chunks)]
+            if not matches:
+                return {"project_id":str(project_id), "state":"new", "errors":()}
+            if len(matches) > 1:
+                return {"project_id":str(project_id), "state":"error", "errors":("multiple editable unstarted executions; specify an execution",)}
+        else:
+            matches=[e for e in executions if str(e.id)==str(execution_id)]
         if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
         e=matches[0]; chunks=[]; outputs=[]
         for c in e.chunks:
@@ -148,6 +161,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
+        snapshot["initial_image"] = durable_defaults.get("initial_image")
         config_keys = ("profile_ref", "chunk_count", "megapixels", "length", "steps",
                        "fps", "ref_image_size", "also_ref_first_frame", "first_frame_as_primary_reference",
                        "orchestration_timeout_seconds")

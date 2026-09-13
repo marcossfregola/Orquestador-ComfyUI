@@ -157,7 +157,7 @@ class MainWindow(QMainWindow):
         acts=QHBoxLayout(); self.preferences=QPushButton("Preferences…"); self.preferences.clicked.connect(self._preferences); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.preferences,self.start,self.resume,self.retry,self.cancel,self.assemble)]; lay.addLayout(acts)
         self.status=QLabel("Ready"); self.status.setObjectName("durableStatus"); lay.addWidget(self.status); self.paths=QLabel("Chunks/intermediates/results: not loaded"); self.paths.setObjectName("resultPaths"); self.paths.setWordWrap(True); lay.addWidget(self.paths); self.chunks=QListWidget(); self.chunks.setObjectName("chunkResults"); lay.addWidget(self.chunks); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
         self.initial_confirmation=QLabel("Initial image: empty — choose a file"); self.initial_confirmation.setObjectName("initialImagePreview"); lay.insertWidget(1,self.initial_confirmation)
-        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(lambda:self._run(lambda:self.facade.retry_execution(self.project.text().strip(), self.execution.text().strip()))); self.cancel.clicked.connect(lambda:self._run(lambda:self.facade.cancel_pending(self.project.text().strip(), self.execution.text().strip()))); self.assemble.clicked.connect(self._assemble); self._sync_prompt_visibility(); self.start.setEnabled(False); self._update_resume_recover()
+        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(lambda:self._run(lambda:self.facade.retry_execution(self.project.text().strip(), self.execution.text().strip()))); self.cancel.clicked.connect(lambda:self._run(lambda:self.facade.cancel_pending(self.project.text().strip(), self.execution.text().strip()))); self.assemble.clicked.connect(self._assemble); self._sync_prompt_visibility(); self.start.setEnabled(False); self._update_resume_recover()
         self.move_up_button.clicked.connect(lambda:self._move_sequence(-1)); self.move_down_button.clicked.connect(lambda:self._move_sequence(1)); self.duplicate_button.clicked.connect(self._duplicate_sequence); self.chunk_tabs.currentChanged.connect(lambda i: (self._show_provenance(), self._update_sequence_controls()))
         self.set_override_button.clicked.connect(self._set_override); self.clear_override_button.clicked.connect(lambda _=False: self._clear_override()); self.chunks.currentRowChanged.connect(lambda i: self.chunk_tabs.setCurrentIndex(i))
         self._prompt_timer=QTimer(self); self._prompt_timer.setSingleShot(True); self._prompt_timer.setInterval(400); self._prompt_timer.timeout.connect(self._flush_prompt); self._prompt_dirty=None; self._pending_action=None; self._continuation=None
@@ -299,9 +299,11 @@ class MainWindow(QMainWindow):
         if p: self.initial.setText(p)
     def _update_initial_preview(self, path=""):
         path = path or self.initial.text()
-        if path and QPixmap(path).isNull() is False:
+        preview_path = Path(path)
+        if path and not preview_path.is_absolute(): preview_path = self.project_root / preview_path
+        if path and QPixmap(str(preview_path)).isNull() is False:
             self.initial_confirmation.setText(f"Initial image: {Path(path).name}")
-            self.initial_confirmation.setPixmap(QPixmap(path).scaled(180,120,Qt.KeepAspectRatio,Qt.SmoothTransformation))
+            self.initial_confirmation.setPixmap(QPixmap(str(preview_path)).scaled(180,120,Qt.KeepAspectRatio,Qt.SmoothTransformation))
             self.initial_confirmation.setToolTip(path)
         else: self.initial_confirmation.setText(f"Initial image: {path}" if path else "Initial image: empty — choose a file")
     def _choose_reference(self,index):
@@ -385,6 +387,12 @@ class MainWindow(QMainWindow):
         self.add_chunk_button.setEnabled(not self._busy); self.remove_chunk_button.setEnabled(not self._busy and n>2); self.remove_chunk_button.setToolTip("Minimum is 2 chunks" if n<=2 else "Remove selected chunk")
         self.move_up_button.setEnabled(not self._busy and idx>0); self.move_down_button.setEnabled(not self._busy and idx>=0 and idx<n-1); self.duplicate_button.setEnabled(not self._busy)
     def _preflight(self): self._run(lambda:self.facade.preflight(**self._inputs()), "preflight")
+    def _load_project(self):
+        project_id = self.project.text().strip()
+        if project_id:
+            self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
+            self.execution.blockSignals(True); self.execution.clear(); self.execution.blockSignals(False)
+            self._run(lambda: self.facade.load_project(project_id), "load_project")
     def _prepare(self):
         if self._flush_prompt_before_action(("prepare",None,{})): return
         # A new Prepare supersedes any older deferred restoration.  The
@@ -472,8 +480,11 @@ class MainWindow(QMainWindow):
         if reference_slots is not None:
             self.references.clear(); self.references.addItems(list(reference_slots))
         configuration = getattr(s, "configuration", None)
-        if isinstance(configuration, Mapping):
-            values = dict(configuration)
+        if configuration is not None:
+            try:
+                values = dict(configuration)
+            except (TypeError, ValueError):
+                values = {}
             for key, widget in (
                 ("megapixels", self.megapixels),
                 ("length", self.length),
@@ -486,6 +497,12 @@ class MainWindow(QMainWindow):
                 if key in values:
                     self._set_editor_value(widget, values[key])
             self._refresh_inherited_chunk_editors()
+        initial_image = getattr(s, "initial_image", None)
+        if isinstance(initial_image, str):
+            self.initial.blockSignals(True)
+            self.initial.setText(initial_image)
+            self.initial.blockSignals(False)
+            self._update_initial_preview(initial_image)
         self._update_reference_labels()
         self.parameters.setText("Supported parameters: " + (", ".join(s.supported_parameters) if s.supported_parameters else "none reported")); self.cancel.setEnabled(s.can_cancel and not self._busy); self.cancel.setToolTip("Cancel is disabled unless exactly one safe pending job is proven" if not s.can_cancel else "Cancel the uniquely identified pending job"); self.retry.setEnabled(s.can_retry and not self._busy); self.retry.setToolTip("Retry is disabled until the durable retry contract permits it" if not s.can_retry else "Retry the failed chunk while preserving completed work"); self.resume.setToolTip("Resume/recover the durable execution" if (s.can_resume or s.can_recover) else "Enter both IDs to request a fresh durable capability snapshot"); self.assemble.setEnabled(s.can_assemble and not self._busy); self.assemble.setToolTip("Assemble/reassemble through F8" if s.can_assemble else "Requires all chunks to have verified outputs");
         try: artifacts = tuple(s.artifacts or ())

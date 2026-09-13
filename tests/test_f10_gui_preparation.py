@@ -48,8 +48,10 @@ class F10GuiMatrixTests(unittest.TestCase):
     def test_generated_and_explicit_ids(self):
         a=self.prep(); self.assertTrue(a.snapshot.project_id.strip()); self.assertTrue(a.snapshot.execution_id.strip()); b=self.prep(project_id='P',execution_id='E'); self.assertEqual((b.snapshot.project_id,b.snapshot.execution_id),('P','E')); c=self.prep(project_id='Q'); self.assertEqual(c.snapshot.project_id,'Q'); self.assertTrue(c.snapshot.execution_id)
     def test_prepare_snapshot_includes_execution_number_and_gui_renders_it(self):
-        a=self.prep(project_id='prueba-a')
+        a=self.prep(project_id='prueba-a', megapixels=2.5, length=123, steps=17, fps=25)
         self.assertEqual(a.snapshot.execution_number,1)
+        self.assertEqual(a.snapshot.initial_image, 'inputs/start.png')
+        self.assertEqual(dict(a.snapshot.configuration)['megapixels'], 2.5)
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
         from orquestador.ui.main_window import MainWindow
@@ -57,8 +59,42 @@ class F10GuiMatrixTests(unittest.TestCase):
         window=MainWindow(self.facade); self.addCleanup(window.close)
         window.render(a.snapshot); app.processEvents()
         self.assertEqual(window.execution_number.text(),"Execution 1")
+        self.assertEqual(window.initial.text(), 'inputs/start.png')
+        self.assertEqual(window.initial_confirmation.text(), 'Initial image: inputs/start.png')
+        self.assertEqual((window.megapixels.value(),window.length.value(),window.steps.value(),window.fps.value()),(2.5,123,17,25))
+        reopened=self.prep(project_id='prueba-a')
+        self.assertEqual((reopened.snapshot.execution_id,reopened.snapshot.execution_number),(a.snapshot.execution_id,1))
+        self.assertEqual(len(self.res['repository'].load('prueba-a')[1]),1)
+    def test_reopened_window_loads_project_before_prepare_without_duplicate_execution(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtGui import QImage
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtTest import QTest
+        from orquestador.ui.main_window import MainWindow
+        self.assertTrue(QImage(8, 8, QImage.Format_RGB32).save(str(self.root/'start.png')))
+        prepared=self.prep(project_id='prueba-a', megapixels=2.5, length=123, steps=17, fps=25)
+        app=QApplication.instance() or QApplication([])
+        first=MainWindow(self.facade, self.root); first.close(); app.processEvents()
+        window=MainWindow(self.facade, self.root); self.addCleanup(window.close)
+        window.project.setText('prueba-a')
+        window._load_project()
+        for _ in range(300):
+            app.processEvents(); QTest.qWait(5)
+            if not window._busy and window._thread is None: break
+        self.assertFalse(window._busy)
+        self.assertEqual(window.execution.text(), prepared.snapshot.execution_id)
+        self.assertEqual(window.initial.text(), 'inputs/start.png')
+        self.assertFalse(window.initial_confirmation.pixmap().isNull())
+        self.assertEqual([p.toPlainText() for p in window.prompts], ['one', 'two'])
+        self.assertEqual((window.chunk_count.value(), window.megapixels.value(), window.length.value(), window.steps.value(), window.fps.value()), (2, 2.5, 123, 17, 25))
+        window._prepare()
+        for _ in range(300):
+            app.processEvents(); QTest.qWait(5)
+            if not window._busy and window._thread is None: break
+        self.assertEqual(window.execution.text(), prepared.snapshot.execution_id)
+        self.assertEqual(len(self.res['repository'].load('prueba-a')[1]), 1)
     def test_execution_numbers_are_project_local_and_survive_reload(self):
-        a1=self.prep(project_id='A'); b1=self.prep(project_id='B'); a2=self.prep(project_id='A')
+        a1=self.prep(project_id='A',execution_id='a1'); b1=self.prep(project_id='B',execution_id='b1'); a2=self.prep(project_id='A',execution_id='a2')
         repo=self.res['repository']; _, a_executions=repo.load('A'); _, b_executions=repo.load('B')
         self.assertEqual([e.execution_number for e in a_executions],[1,2])
         self.assertEqual([e.execution_number for e in b_executions],[1])
@@ -68,6 +104,15 @@ class F10GuiMatrixTests(unittest.TestCase):
             self.assertEqual([e.execution_number for e in reloaded['repository'].load('A')[1]],[1,2])
             self.assertEqual([e.execution_number for e in reloaded['repository'].load('B')[1]],[1])
         finally: reloaded['repository'].close()
+    def test_blank_execution_creates_when_no_candidate_and_rejects_multiple_candidates(self):
+        created=self.prep(project_id='empty')
+        self.assertEqual(created.snapshot.execution_number, 1)
+        self.prep(project_id='ambiguous',execution_id='one')
+        self.prep(project_id='ambiguous',execution_id='two')
+        ambiguous=self.prep(project_id='ambiguous')
+        self.assertFalse(ambiguous.success)
+        self.assertIn('multiple editable unstarted executions', ambiguous.message)
+        self.assertEqual(len(self.res['repository'].load('ambiguous')[1]),2)
     def test_existing_selection_preserves_state_and_conflict_fails(self):
         a=self.prep(project_id='p',execution_id='e'); r=self.res['repository']; before=repr(r.load('p')); self.assertTrue(self.prep(project_id='p',execution_id='e').success); self.assertEqual(before,repr(r.load('p'))); self.assertTrue(self.prep(project_id='p',execution_id='e',prompts=['changed','two']).success)
     def test_prepare_validation_matrix(self):
