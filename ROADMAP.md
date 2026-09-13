@@ -18,23 +18,23 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 
 ## F12 — first frame como referencia primaria
 
-**IMPLEMENTED, NOT CLOSED.** El código expone `first_frame_as_primary_reference`, pero la auditoría del HEAD `1d5589c8d1e74eabb53338509944bbc14f1d94ba` encontró que el template API versionado no coincide con el hash canónico esperado. F12 no puede darse por cerrada desde un checkout limpio hasta restablecer esa integridad y repetir la verificación aplicable.
+**IMPLEMENTED, F12.1 RESUELTA — LISTA PARA AUDITORÍA.** El código expone `first_frame_as_primary_reference` y F12.1 verificó, desde `main` en `ac77bc892f02641eaa6c4db7b6431ce25be98ae7`, que el template API versionado, la constante y el manifest coinciden en el SHA-256 canónico `4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25`. `load_api_template()` funciona; F10 pasó 19/19 en rerun aislada y persistencia 14/14. No se requirió cambio de workflow, topología ni bindings.
 
-### F12.1 — Restablecimiento de baseline verificable
+### F12.1 — Cierre documental de baseline verificable
 
-**Objetivo:** resolver la inconsistencia de hash del template API y obtener una baseline reproducible antes de sumar nuevas entidades o migraciones.
+**Objetivo:** corregir la afirmación documental falsa de una inconsistencia de hash y dejar registrada una baseline reproducible antes de sumar nuevas entidades o migraciones.
 
-**Incluye:** determinar cuál artefacto es canónico; alinear artefacto, constante y manifest sin alterar el workflow funcional; ejecutar pruebas focales F4/F7/F11/F12 y regresión Windows; actualizar evidencia de cierre.
+**Incluye:** verificar cuál artefacto es canónico, constante y manifest; ejecutar pruebas focales F4/F6/F7/F11/F12 y persistencia con entorno Windows; actualizar exclusivamente la evidencia documental de cierre.
 
 **No incluye:** cola, borradores nuevos, clonación, defaults, presets, plantillas, biblioteca de proyectos, cambios UX ni cambios funcionales al workflow.
 
-**Áreas probables:** `src/orquestador/profiles/artifacts/`, `src/orquestador/profiles/minimax_h3.py`, pruebas de profile/rebind/recovery y documentación de evidencia.
+**Áreas modificadas:** sólo documentación de evidencia. La verificación confirmó que `src/orquestador/profiles/artifacts/`, `src/orquestador/profiles/minimax_h3.py` y el manifest no requieren modificación.
 
 **Aceptación:** `load_api_template()` funciona desde checkout limpio; los tres valores de integridad coinciden; no cambia la topología/binding aprobado; pruebas focales y regresión Windows pasan; cualquier prueba omitida queda identificada.
 
 **Validación humana:** no requerida salvo que la investigación demuestre un cambio funcional del workflow.
 **Dependencias:** ninguna.
-**Cierre:** auditoría, aprobación y commit separados. No avanzar automáticamente a F13.0.
+**Cierre:** resuelto documentalmente y listo para auditoría independiente; sin commit, push ni avance automático a F13.0.
 
 ## F13 — Gestión durable de trabajos
 

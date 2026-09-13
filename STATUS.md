@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-13
-**Baseline auditada:** `main` en `1d5589c8d1e74eabb53338509944bbc14f1d94ba`
+**Baseline auditada:** `main` en `ac77bc892f02641eaa6c4db7b6431ce25be98ae7`
 **Estado de la evolución:** planificación documental de gestión de trabajos completada; implementación no iniciada.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
@@ -21,13 +21,9 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 
 El código actual contiene la opción global durable `first_frame_as_primary_reference`, default `false`, incompatible con `also_ref_first_frame=true`. Cuando está activa, el mismo IMAGE efectivo de `first_frame` ocupa la primera referencia y las referencias del usuario conservan orden denso.
 
-La fase no se considera cerrada documentalmente en este baseline. La auditoría directa de GitHub encontró una inconsistencia de integridad previa a esta planificación:
+**RESUELTO — listo para auditoría independiente.** F12.1 comprobó desde `main` en `ac77bc892f02641eaa6c4db7b6431ce25be98ae7` que el artifact versionado `src/orquestador/profiles/artifacts/minimax_h3_api_template.v1.json`, `H3_API_TEMPLATE_SHA256` y el manifest coinciden en SHA-256 `4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25`; `load_api_template()` carga correctamente. El supuesto hash `9F6B5785483D8FCC2C2ADBD0F574DD558BE1F605F2A8D64208AB86FC6FF4E508` fue una afirmación falsa limitada a documentación de planificación, no un estado del artifact, profile ni workflow. La repetición aislada de F10 pasó 19/19; persistencia pasó 14/14, `compileall` y `git diff --check` terminaron con código 0.
 
-- el blob remoto `src/orquestador/profiles/artifacts/minimax_h3_api_template.v1.json` tiene SHA-256 `9F6B5785483D8FCC2C2ADBD0F574DD558BE1F605F2A8D64208AB86FC6FF4E508`;
-- `H3_API_TEMPLATE_SHA256` y el manifest esperan `4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25`;
-- por lo tanto `load_api_template()` falla cerradamente desde un checkout limpio de `main`.
-
-No se corrigió porque este trabajo es exclusivamente documental. La primera etapa de implementación debe restablecer una baseline limpia y verificable antes de agregar funcionalidad.
+No hubo cambio de topología, bindings, producción, manifest, constantes, DB/schema, UX ni datos del proyecto. La evidencia automatizada de cierre queda en [TESTING.md](TESTING.md).
 
 ## Próxima evolución decidida
 
@@ -45,10 +41,10 @@ Decisiones centrales:
 
 ## Próximo paso
 
-Ejecutar únicamente **F12.1 — Restablecimiento de baseline verificable**, definida en [ROADMAP.md](ROADMAP.md). No comenzar F13 hasta que el checkout remoto limpio cargue el template canónico y pasen las pruebas focales y la regresión Windows acordada.
+Auditoría independiente de F12.1; no iniciar F13 como parte de este cierre.
 
 ## No verificado en esta auditoría
 
 - No se ejecutó ComfyUI real, FFmpeg/FFprobe real ni validación visual.
-- La regresión completa no pudo considerarse válida en el runtime Linux de Work: además del hash inválido, faltó PySide6 y varias pruebas son Windows/environment-specific. El resultado no sustituye la validación Windows.
+- No se ejecutó una regresión completa ni se revalidó el runtime Linux histórico; la evidencia nueva es la batería focal Windows documentada en `TESTING.md`, no la sustituye.
 - No se modificó código, schema, workflow ni runtime.

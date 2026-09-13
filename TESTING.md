@@ -281,22 +281,24 @@ Evidencia aportada por la validación Windows combinada: layout compacto/legible
 
 Esta evidencia humana no se presenta como una nueva ejecución real durante este turno. Se acepta como no bloqueante que algunas miniaturas de referencias no se rehidraten tras el ensamblado; se difiere junto con el pulido visual restante (settings horizontales, IDs permanentes, paneles inferiores lado a lado, previews mayores y spinboxes) a F11.6.
 
-## Auditoría Work del baseline remoto (2026-09-13)
+## Auditoría Work del baseline remoto (diagnóstico reemplazado por F12.1, 2026-09-13)
 
-Se auditó `main` en `1d5589c8d1e74eabb53338509944bbc14f1d94ba` desde un checkout limpio. No se modificó producción ni se ejecutó ComfyUI.
+El diagnóstico previo indicó erróneamente una discrepancia del artifact. F12.1 se ejecutó desde `main` en `ac77bc892f02641eaa6c4db7b6431ce25be98ae7`, con worktree e index limpios. No se modificó producción ni se ejecutó ComfyUI.
 
-La ejecución `PYTHONPATH=src python -B -m unittest discover -s tests` en Linux descubrió/ejecutó 534 tests y terminó con 8 failures y 30 errors; no constituye regresión válida del producto Windows porque faltó PySide6 y varias pruebas exigen `ORQ_TEST_TMP`/semántica Windows. Sin embargo reveló un bloqueo reproducible independiente del entorno GUI: `load_api_template()` rechaza el artifact versionado porque su SHA-256 real es `9F6B5785483D8FCC2C2ADBD0F574DD558BE1F605F2A8D64208AB86FC6FF4E508`, mientras código y manifest esperan `4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25`.
+El hash alegado `9F6B5785483D8FCC2C2ADBD0F574DD558BE1F605F2A8D64208AB86FC6FF4E508` no pertenece al artifact versionado de este checkout; fue una afirmación falsa sólo en planificación. La lectura canónica del artifact, `H3_API_TEMPLATE_SHA256` y el manifest coincide en `4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25`, y `load_api_template()` carga correctamente. No hubo cambio semántico de workflow, por lo que no se requiere validación humana.
 
-F12.1 debe verificar desde checkout limpio:
+F12.1 verificó desde checkout limpio:
 
 - hash del artifact, constante y manifest idénticos;
 - `load_api_template()` y validación de profile;
 - binding/rebind con 0, 1 y 6 referencias, flag OFF/ON y conflicto con `also_ref_first_frame`;
 - chaining/recovery que reconstruye prompts;
-- pruebas recientes de `execution_number`, reapertura e hidratación;
-- regresión completa en Windows con PySide6 y temp root explícito.
+- pruebas de `execution_number`, reapertura e hidratación;
+- suites focales separadas en Windows con `PYTHONPATH=src` y temp root explícito.
 
-No se requiere validación humana si el artifact canónico no cambia semánticamente.
+Las cinco primeras suites separadas pasaron: F4 workflow profile 32/32, F11 rebind first frame 7/7, F11.1B capabilities 3/3, F7 chain 26/26 y F6 stale provenance 11/11. La rerun autorizada de `python -m unittest tests.test_f10_gui_preparation`, en proceso Python nuevo con `PYTHONPATH=src`, `TEMP`/`TMP`/`TMPDIR`/`ORQ_TEST_TMP=C:\\Temp\\orq-f12-1-20260913` y `QT_QPA_PLATFORM=offscreen`, pasó 19/19 en 3.735 s. El aviso de Qt sobre fuentes no afectó el resultado. Después, `tests.test_persistence` aislada pasó 14/14 en 0.412 s; `python -B -m compileall -q src tests` terminó con código 0 sin cambios generados en el repo; la comprobación SHA-256 de artifact/constante/manifest fue idéntica al valor canónico; `load_api_template()` devolvió correctamente un `dict` de 35 nodos; y `git diff --check` terminó con código 0. F12.1 queda resuelta y lista para auditoría independiente.
+
+No se ejecutó ComfyUI real ni validación humana; ambos permanecen fuera de alcance porque el artifact canónico no cambió semánticamente.
 
 ## Matriz de pruebas decidida para F13
 
