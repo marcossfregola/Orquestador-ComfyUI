@@ -23,3 +23,5 @@ from .technical_presets import TechnicalPreset, TechnicalPresetError, TechnicalP
 __all__ += ["TechnicalPreset", "TechnicalPresetError", "TechnicalPresetsUseCase"]
 from .chunk_templates import ChunkTemplate, ChunkTemplateError, ChunkTemplatesUseCase
 __all__ += ["ChunkTemplate", "ChunkTemplateError", "ChunkTemplatesUseCase"]
+from .queue_operations import QueueControlSnapshot, QueueEntry, QueueOperationError, QueueOperationsUseCase, QueueSnapshot, QueuedClone
+__all__ += ["QueueControlSnapshot", "QueueEntry", "QueueOperationError", "QueueOperationsUseCase", "QueueSnapshot", "QueuedClone"]

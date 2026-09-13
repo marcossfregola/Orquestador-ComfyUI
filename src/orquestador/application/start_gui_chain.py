@@ -16,6 +16,7 @@ from ..profiles.minimax_h3 import (
     load_api_template,
     rebind_first_frame,
 )
+from ..persistence.sqlite import PersistenceError
 
 
 class StartPreparationError(ValueError):
@@ -179,6 +180,17 @@ class StartGuiChainUseCase:
         execution = matches[0]
         if execution.workflow_profile_ref is None or execution.workflow_profile_ref.value != H3_PROFILE.name:
             raise StartPreparationError("execution is not prepared for minimax-h3-ui")
+        # F13.7 deliberately has no scheduler yet.  A durable queued/active
+        # item therefore owns the next start decision; letting this legacy
+        # direct path submit it would bypass the queue and make an active item
+        # ambiguous.  Treat an unreadable queue state as unsafe as well.
+        try:
+            if self.repository.has_live_queue_item(execution.id):
+                raise StartPreparationError("execution has a live durable queue item")
+        except StartPreparationError:
+            raise
+        except (PersistenceError, OSError, ValueError, AttributeError) as exc:
+            raise StartPreparationError(f"queue state read failed: {exc}") from exc
         try:
             persisted = GenerationConfig.from_scopes(project.defaults, execution.defaults)
         except GenerationConfigError as exc:

@@ -340,6 +340,20 @@ El caso de uso no-UI crea, lista, lee, actualiza, renombra, duplica y elimina pl
 
 No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana. F13.6 permanece no iniciada.
 
+## Evidencia de cierre F13.7
+
+F13.7 está **CLOSED — APROBADA**. La fuente de verdad del repo confirmó que F13.6 aporta biblioteca e integración GUI de preparación, mientras F13.7 requiere las fundaciones backend F13.0/F13.1 y el clone canónico F13.2; la antigua mención de orden lineal no era una dependencia técnica. No se implementó F13.6 ni UI de cola.
+
+El caso de uso no-UI lista/selecciona, encola, reordena el conjunto completo de items `queued`, quita, salta, pausa/reanuda y duplica un item pendiente mediante el clone F13.2. `enqueue` exige una ejecución virgen/editable y sin item vivo. Remove/skip no borran proyecto, ejecución, chunks ni evidencia. El orden, clone+enqueue, revisión de pausa y la transición normal pending→running contra un item vivo se serializan con SQLite; los conflictos, corrupción y source no pendiente fallan cerradamente. `active` queda protegido. F13.7 no contiene claim, scheduler, submit automático, terminalización automática ni recovery de cola. El schema sigue siendo 7: F13.0 ya había creado los datos e índices necesarios.
+
+`python -m unittest -v tests.test_f13_0_queue_contracts tests.test_f13_1_drafts tests.test_f13_2_clone_configuration tests.test_f13_3_global_defaults tests.test_f13_4_technical_presets tests.test_f13_5_chunk_templates tests.test_f13_7_queue_operations tests.test_persistence` ejecutó **90 tests: 89 OK y 1 omitido no bloqueante** por `WinError 1314` al crear el symlink de F13.2. Cubre enqueue/select/reorder/reopen, terminalización sin borrar agregados, protección de active/runtime, pausa/revisión, clone por valor/rollback, dos conexiones SQLite, rollback del orden, corrupción fail-closed, schema 4→7 y preservación de globals/presets/templates/snapshots.
+
+`python -m unittest -v tests.test_f11_1a_generation_config tests.test_f11_4_sqlite_acceptance tests.test_f11_4_sequence_editor tests.test_f6_recover_execution tests.test_f7_chain_execution tests.test_f11_5_operations` ejecutó **97 tests, OK** para configuración, Prepare/Start, edición de secuencia, persistencia, recovery, chaining y operaciones. `python -m compileall -q src tests` y `git diff --check` terminaron con código 0.
+
+`python -m unittest -v tests.test_f10_gui_preparation tests.test_f11_1b_gui_preparation` ejecutó **52 tests, OK** y confirmó que el Start/Prepare normal y la composición GUI existente siguen funcionando. Durante esa batería aparecieron `ResourceWarning` no bloqueantes de conexiones SQLite de fixtures GUI fuera del diff; no hubo fallo ni cambio en esos módulos como parte de F13.7.
+
+No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana: F13.7 no agrega UI ni inicia una ejecución. La suite completa no se repitió; los tres errors históricos de la fixture F11.2A/crop permanecen fuera del diff y fuera de alcance.
+
 | Slice | Pruebas focales mínimas | Validación humana |
 |---|---|---|
 | F13.0 | invariantes QueueItem, migración schema 3, round-trip, corrupción, activo único | no |
@@ -349,7 +363,7 @@ No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación
 | F13.4 | schema 5→6, CRUD, corrupción durable, default único, aplicación por copia y no retroactividad | no; UI no iniciada |
 | F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | no; UI diferida a F13.6 |
 | F13.6 | facade/snapshots, Qt offscreen, navegación y capabilities | no iniciada |
-| F13.7 | enqueue/reorder/remove/skip/pause, restart, constraints y concurrencia SQLite | posterior al integrar UI |
+| F13.7 | enqueue/select/reorder/remove/skip/pause, clone por valor, restart, rollback, constraints y concurrencia SQLite | no; F13.6 UI continúa no iniciada |
 | F13.8 | claim atómico, activo único, pausa, terminalización, cero doble submit | smoke Windows con backend simulado |
 | F13.9 | crash matrix, backend reiniciado, artifacts discrepantes, active-first recovery | Windows + ComfyUI real acotado |
 | F13.10 | regresión, E2E de cola/restart, acciones Qt y sesión real representativa | Windows completa |

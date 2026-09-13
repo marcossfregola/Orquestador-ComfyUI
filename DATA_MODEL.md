@@ -57,7 +57,7 @@ Transiciones normales: `pending → running|cancelled` y `running → succeeded|
 
 ## Ejecución editable virgen
 
-F13 formalizará este predicado, ya implícito en código:
+F13.0 formalizó este predicado, antes implícito en código:
 
 ```text
 editable_virgin(execution) =
@@ -70,11 +70,11 @@ editable_virgin(execution) =
         first_frame is None
 ```
 
-Con F13 se añadirá además `and no existe QueueItem vigente` para distinguir draft de queued.
+La clasificación implementada añade `and no existe QueueItem vigente` para distinguir `draft` de `queued`.
 
 Una ejecución deja de ser estructuralmente editable al encolarse o al adquirir cualquier evidencia runtime. La comprobación no se duplica en GUI, repositorio y casos de uso: debe existir una regla canónica.
 
-## Draft decidido para F13
+## Draft durable de F13
 
 `Draft` es una clasificación derivada:
 
@@ -84,7 +84,7 @@ draft = editable_virgin(execution) and not queued(execution.id)
 
 No se crea tabla ni clase Draft. Crear un borrador crea una nueva Execution pendiente. Guardar/reabrir conserva la misma identidad. Encolar no crea otra ejecución: crea QueueItem.
 
-## QueueItem decidido para F13
+## QueueItem durable de F13
 
 Entidad durable mínima:
 
@@ -95,7 +95,7 @@ Entidad durable mínima:
 - `created_at` y `updated_at` en UTC para auditoría operativa mínima;
 - razón terminal opcional para remove/skip/failure de coordinación.
 
-Estados mínimos propuestos:
+Estados durables:
 
 - `queued`: pendiente y reordenable;
 - `active`: reclamado por la autoridad del scheduler;
@@ -116,7 +116,7 @@ Invariantes:
 7. `finished` requiere que Execution esté terminal y reconciliada.
 8. Borrar/quitar QueueItem nunca borra Project, Execution, chunks ni artifacts.
 
-La migración SQLite debe crear restricciones/índices que refuercen 3 y 4, además de validación de aplicación.
+El schema 4 ya contiene restricciones/índices que refuerzan 3 y 4, además de validación de aplicación. F13.7 no crea otra tabla ni otro lifecycle: operacionaliza estos registros sin reescribir filas históricas.
 
 ## Control de cola
 
@@ -127,6 +127,14 @@ Registro singleton durable con:
 - revisión/versión para updates transaccionales si la implementación lo necesita.
 
 Pausar impide iniciar el siguiente item. No cancela ni interrumpe el activo.
+
+## Operaciones manuales F13.7
+
+F13.7 opera sólo el conjunto `queued`; no reclama ni inicia trabajo. `enqueue` agrega al final una `Execution` editable virgen y sin item vivo. `reorder` recibe exactamente todos los IDs `queued` una vez y persiste el nuevo orden completo en una transacción SQLite. `remove` y `skip` sólo terminalizan un item `queued` con una razón explícita; nunca borran el agregado que referencia.
+
+La pausa/reanudación cambia el singleton `queue_control` de forma idempotente y admite una revisión esperada para detectar actualizaciones competidoras. Un `active` no se reordena, quita, salta ni duplica. La duplicación parte de un item `queued`, construye el clon de configuración F13.2 y agrega su nuevo item en la misma transacción; si la fuente deja de estar `queued` o el enqueue falla, no queda un proyecto/clon parcial. No se guarda una referencia dinámica entre el clone y la fuente.
+
+La cola bloquea cambios estructurales del snapshot: save/reapertura de draft, presets y plantillas ya exigen que no exista item vivo; F13.7 también bloquea la edición de secuencia y Start. La transición normal de Start de `pending` a `running` se serializa con el enqueue: un item vivo (`queued` o `active`) impide esa transición y una ejecución ya `running` deja de ser elegible para enqueue.
 
 ## Clasificación de biblioteca
 
@@ -206,7 +214,7 @@ Nunca se infiere éxito sólo porque ComfyUI no muestre el job.
 
 ## Persistencia y compatibilidad
 
-SQLite está en schema 7. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets` y F13.5 añadió en schema 7 `chunk_templates`; ninguna de esas migraciones reescribe Project, Execution, Chunk, Attempt ni evidencia histórica. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
+SQLite está en schema 7. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets` y F13.5 añadió en schema 7 `chunk_templates`; ninguna de esas migraciones reescribe Project, Execution, Chunk, Attempt ni evidencia histórica. F13.7 no requiere una nueva migración: las columnas, índices y control de schema 4 contienen los datos necesarios para sus operaciones manuales. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 

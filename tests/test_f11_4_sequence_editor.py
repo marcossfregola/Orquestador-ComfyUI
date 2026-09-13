@@ -9,6 +9,8 @@ class Repo:
         self.e.add_chunk(Chunk(order=0,defaults={'prompt':'a'})); self.e.add_chunk(Chunk(order=1,defaults={'prompt':'b'}))
     def load(self,pid): return self.p,[self.e]
     def save(self,p,es): self.p,self.e=p,es[0]
+    def save_preparation_sequence(self,p,e): self.save(p,[e])
+    def has_live_queue_item(self,eid): return False
     def load_transitions(self,eid): return []
 
 class FailingRepo(Repo):

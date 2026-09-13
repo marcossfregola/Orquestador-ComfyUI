@@ -67,7 +67,13 @@ class CloneConfigurationUseCase:
             raise CloneConfigurationError("source input path must be an existing regular file")
         return path.as_posix()
 
-    def __call__(self, source_project_id, source_execution_id):
+    def _build_clone(self, source_project_id, source_execution_id):
+        """Materialize a fresh configuration-only aggregate without persisting it.
+
+        Queue operations reuse this boundary so a selected queue item can be
+        cloned and enqueued in the same SQLite transaction.  The public call
+        below retains the original standalone clone behavior.
+        """
         source_project = self._id(source_project_id, "source project")
         source_execution = self._id(source_execution_id, "source execution")
         project, execution = self._load_source(source_project, source_execution)
@@ -99,9 +105,16 @@ class CloneConfigurationUseCase:
                 # smuggling them into the new public editable surface.
                 overrides = merge_chunk_overrides(source_chunk.defaults, strict=True)
                 target_execution.add_chunk(Chunk(order=source_chunk.order, defaults=overrides))
-            self.repository.save(target_project, [target_execution])
         except GenerationConfigError as exc:
             raise CloneConfigurationError(f"source chunk overrides are invalid: {exc}") from exc
+        return target_project, target_execution
+
+    def __call__(self, source_project_id, source_execution_id):
+        target_project, target_execution = self._build_clone(
+            source_project_id, source_execution_id
+        )
+        try:
+            self.repository.save(target_project, [target_execution])
         except PersistenceError as exc:
             raise CloneConfigurationError(f"clone persistence failed: {exc}") from exc
         if target_execution.execution_number is None:

@@ -12,6 +12,7 @@ class EditChunkSequenceUseCase:
             project,executions=self.repository.load(project_id); matches=[e for e in executions if str(e.id)==str(execution_id)]
             if len(matches)!=1: raise DomainError('execution selection is missing or ambiguous')
             e=matches[0]
+            if self.repository.has_live_queue_item(e.id): raise DomainError('live queue item locks sequence edits')
             if e.state is not Lifecycle.PENDING or self.repository.load_transitions(e.id) or any(c.state is not Lifecycle.PENDING or c.attempts or getattr(c,'artifacts',None) or getattr(c,'errors',None) for c in e.chunks): raise DomainError('started execution or runtime evidence locks sequence edits')
             before=[(c.id,c.order,dict(c.defaults),c.state,list(c.attempts),c.first_frame) for c in e.chunks]
             if operation=='add': e.add_chunk(Chunk(order=len(e.chunks),defaults=kwargs.get('defaults',{})))
@@ -37,7 +38,7 @@ class EditChunkSequenceUseCase:
                 if c is None: raise DomainError('chunk not found')
                 return c.effective_parameters(project,e.defaults)
             else: raise DomainError('unsupported sequence operation')
-            try: self.repository.save(project,executions)
+            try: self.repository.save_preparation_sequence(project,e)
             except Exception:
                 e.chunks[:]=e.chunks[:len(before)]
                 for c,s in zip(e.chunks,before): c.id,c.order,d,c.state,c.attempts,c.first_frame=s; c.defaults=d

@@ -45,8 +45,18 @@ class ChainExecutionUseCase:
         if execution.state is Lifecycle.CANCELLED:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='execution cancelled')
         if execution.state is Lifecycle.PENDING:
+            previous_state = execution.state
             execution.transition(Lifecycle.RUNNING)
-            self.repository.save(project, [execution])
+            try:
+                starter = getattr(self.repository, 'start_execution_if_not_queued', None)
+                if callable(starter): starter(project, execution)
+                else: self.repository.save(project, [execution])
+            except Exception as exc:
+                execution.state = previous_state
+                return ChainExecutionResult(
+                    ChainOutcome.BLOCKED, str(execution.id),
+                    reason=f'execution start blocked: {exc}',
+                )
         # Durable reconciliation: a linked transition is the sole authority for
         # the next input; never silently trust an in-memory first_frame.
         try:

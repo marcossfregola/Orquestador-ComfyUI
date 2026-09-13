@@ -161,20 +161,22 @@ F13 incorpora borradores, reutilización, configuración guardada, biblioteca y 
 
 ### F13.7 — Operaciones de cola durable
 
+**Estado:** CLOSED — 2026-09-13.
+
 **Objetivo:** permitir encolar y administrar ejecuciones sin iniciar automáticamente todavía.
 
 **Incluye:** enqueue, selección, reordenamiento, quitar, duplicar mediante clonación, saltar pendiente y pausa/reanudación del control; orden transaccional durable.
 
 **No incluye:** scheduler ni submit automático.
 
-**Áreas probables:** dominio `QueueItem`, casos de uso, SQLite, facade y tests.
+**Áreas:** contratos `QueueItem` ya fundados en F13.0, casos de uso, SQLite y tests; esta slice backend no agrega facade ni UI.
 
 **Aceptación:** orden sobrevive reinicio; sólo ejecuciones elegibles entran; no hay duplicado activo de la misma ejecución; running queda protegido; quitar/saltar no destruye proyecto ni outputs.
 
 **Tests:** CRUD/orden/concurrencia SQLite, conflictos, reinicio, integridad referencial.
 **Validación humana:** no antes de la UI de cola.
-**Dependencias:** F13.0 y F13.1; se ejecuta después de F13.6 para mantener el orden lineal.
-**Cierre:** pruebas focales + regresión, auditoría y aprobación.
+**Dependencias:** F13.0 y F13.1 para la cola/draft, y F13.2 para la duplicación por el clone canónico. F13.6 no es una dependencia técnica: su referencia anterior era sólo orden lineal y F13.7 se cerró como slice backend independiente, sin implementar UI.
+**Cierre:** pruebas focales + regresión, auditoría y aprobación — completados.
 
 ### F13.8 — Scheduler de una sola ejecución
 

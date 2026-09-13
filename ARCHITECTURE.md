@@ -72,6 +72,10 @@ La cola del producto contiene `ExecutionId`, no `ProjectId`: una ejecución iden
 
 No debe copiar configuración ni runtime. Es una referencia coordinadora.
 
+F13.7 implementa la administración manual detrás de un caso de uso no-UI: selección/listado, enqueue al final, reordenamiento completo de `queued`, remove/skip terminales, pausa/reanudación y duplicación por el clone F13.2. Las mutaciones de orden y el clone+enqueue son transacciones del repositorio SQLite; ningún widget accede a tablas de cola. La duplicación crea una `Execution`/`Project` nueva por valor y no deja una referencia dinámica a la fuente.
+
+Esta slice no reclama, inicia, envía ni terminaliza trabajo. El camino normal de Start rechaza una `Execution` con item vivo y serializa el paso `pending`→`running` contra enqueue; así no convierte una operación manual de cola en un scheduler encubierto. La edición estructural de la secuencia usa el mismo gate durable.
+
 ### Autoridad de scheduler
 
 Un único scheduler de aplicación decide qué item se promueve. Ningún widget, callback de ComfyUI ni worker aislado puede arrancar el siguiente trabajo por su cuenta.
@@ -85,6 +89,8 @@ Reglas:
 - reordenar, quitar o saltar sólo opera sobre items todavía pendientes;
 - una ejecución active/running no admite cambios estructurales;
 - sólo un terminal reconciliado permite liberar el activo y elegir el siguiente.
+
+F13.7 sólo materializa la regla de items `queued`; el claim, la transición a `active`, la liberación terminal y la reconciliación permanecen explícitamente en F13.8/F13.9.
 
 Para impedir dos schedulers simultáneos se requiere una protección de instancia local además de la restricción SQLite. La implementación deberá elegir y probar un mecanismo Windows sencillo —por ejemplo lock de proceso/archivo adquirido por la raíz de composición— sin convertirlo en coordinación distribuida.
 
