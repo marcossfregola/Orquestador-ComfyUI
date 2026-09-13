@@ -19,3 +19,5 @@ from .clone_configuration import CloneConfigurationError, CloneConfigurationUseC
 __all__ += ["CloneConfigurationError", "CloneConfigurationUseCase", "ClonedDraft"]
 from .global_defaults import GlobalDefaultsError, GlobalDefaultsUseCase
 __all__ += ["GlobalDefaultsError", "GlobalDefaultsUseCase"]
+from .technical_presets import TechnicalPreset, TechnicalPresetError, TechnicalPresetsUseCase
+__all__ += ["TechnicalPreset", "TechnicalPresetError", "TechnicalPresetsUseCase"]

@@ -3,7 +3,7 @@ import json, os, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from orquestador.domain import *
-SCHEMA_VERSION=5
+SCHEMA_VERSION=6
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -55,6 +55,11 @@ class SQLiteProjectRepository:
   db.execute('CREATE TABLE global_defaults(singleton INTEGER PRIMARY KEY CHECK(singleton=1),mapping TEXT NOT NULL,config_version INTEGER NOT NULL)')
   db.execute('INSERT INTO global_defaults(singleton,mapping,config_version) VALUES(1,?,1)', (_json(GlobalDefaults().to_mapping()),))
  migrations[5]=_migrate_global_defaults.__func__
+ @staticmethod
+ def _migrate_technical_presets(db):
+  db.execute("CREATE TABLE IF NOT EXISTS technical_presets(id TEXT PRIMARY KEY,name TEXT NOT NULL,name_key TEXT NOT NULL UNIQUE,mapping TEXT NOT NULL,config_version INTEGER NOT NULL,is_default INTEGER NOT NULL CHECK(is_default IN (0,1)),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK(length(trim(name)) > 0),CHECK(config_version=1))")
+  db.execute("CREATE UNIQUE INDEX IF NOT EXISTS technical_presets_one_default ON technical_presets(is_default) WHERE is_default=1")
+ migrations[6]=_migrate_technical_presets.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -108,6 +113,21 @@ class SQLiteProjectRepository:
    if isinstance(exc,PersistenceError): raise
    raise PersistenceError(str(exc)) from exc
   return defaults
+ def _technical_preset_rows(self):
+  try:
+   rows=self.db.execute('SELECT id,name,name_key,mapping,config_version,is_default,created_at,updated_at FROM technical_presets ORDER BY name_key,id').fetchall()
+   # The partial index protects normal writes; explicit validation also makes
+   # malformed/restored databases fail closed before their data is projected.
+   if any(type(row[5]) is not int or row[5] not in (0,1) for row in rows): raise PersistenceDataError('invalid technical preset default')
+   if sum(row[5] for row in rows) > 1: raise PersistenceDataError('duplicate technical preset default')
+   return rows
+  except (IndexError,TypeError) as exc: raise PersistenceDataError('invalid technical preset row') from exc
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError(str(exc)) from exc
+ def list_technical_presets(self): return self._technical_preset_rows()
+ def get_technical_preset(self,preset_id):
+  rows=[row for row in self._technical_preset_rows() if row[0]==str(preset_id)]
+  if len(rows)!=1: raise PersistenceError('technical preset not found')
+  return rows[0]
  def close(self):self.db.close()
  def _queue_execution_is_editable_virgin(self, execution_id):
   row=self.db.execute('SELECT state FROM executions WHERE id=?',(str(execution_id),)).fetchone()

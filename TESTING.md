@@ -316,7 +316,19 @@ F13.3 está **CLOSED — APROBADA**. SQLite migra de schema 4 a 5 mediante el si
 
 `python -B -m unittest -v tests.test_f13_3_global_defaults tests.test_f13_1_drafts tests.test_f13_2_clone_configuration` ejecutó **30 tests: 29 OK y 1 omitido no bloqueante** por `WinError 1314` al crear el symlink de F13.2. La cobertura F13.3 incluye schema 4→5, singleton, versionado, validación fail-closed, los ocho campos, `defaults={}`, metadata opaca con y sin `profile_ref`, override técnico parcial sin shape completa, metadata opaca junto a configuración completa, no retroactividad, precedencia, rollback atómico y clone desde el snapshot origen sin consulta de globals. La regresión relevante de F13.0, persistencia, GenerationConfig/Prepare/Start, aceptación SQLite, recovery y operaciones F11.5 ejecutó **86 tests, OK**. La auditoría de código confirmó que, fuera de `GlobalDefaultsUseCase`, el único consumo de globals en el flujo de una ejecución está en `DraftUseCase.create`: F13.2 clone, Prepare, Start y recovery no los consultan. `python -m compileall -q src tests` y `git diff --check` terminaron con código 0.
 
-Para diagnosticar los errores ya observados de la suite completa, se ejecutó aparte `tests.test_f11_2a_visual_preparation`: **1 OK, 3 errors y 1 omitido**. Los tres errors son de la fixture histórica: `Mock` no define `execution_id` y PySide6 rechaza ese objeto en `QLineEdit.setText`; ni `tests/test_f11_2a_visual_preparation.py` ni `src/orquestador/ui/main_window.py` cambiaron desde el baseline F13.2. No se corrigieron porque son ajenos a F13.3. No se ejecutó ComfyUI real, GUI interactiva, FFmpeg/FFprobe ni validación humana; F13.4/F13.5 no fueron implementadas.
+Para diagnosticar los errores ya observados de la suite completa, se ejecutó aparte `tests.test_f11_2a_visual_preparation`: **1 OK, 3 errors y 1 omitido**. Los tres errors son de la fixture histórica: `Mock` no define `execution_id` y PySide6 rechaza ese objeto en `QLineEdit.setText`; ni `tests/test_f11_2a_visual_preparation.py` ni `src/orquestador/ui/main_window.py` cambiaron desde el baseline F13.2. No se corrigieron porque son ajenos a F13.3. No se ejecutó ComfyUI real, GUI interactiva, FFmpeg/FFprobe ni validación humana; F13.4 y F13.5 estaban fuera del alcance de ese cierre histórico.
+
+## Evidencia de cierre F13.4
+
+F13.4 está **CLOSED — APROBADA**. SQLite migra de schema 5 a 6 y crea `technical_presets` sin presets iniciales ni reescritura de `global_defaults` o de ejecuciones históricas. Cada preset durable contiene exactamente los ocho `GLOBAL_DEFAULT_KEYS`, `config_version=1`, nombre NFC/casefold único, timestamps UTC ordenados y como máximo un `default`. Ese `default` es sólo metadata: la creación normal de borradores no lo consulta ni lo aplica.
+
+Aplicar un preset copia sólo los ocho valores técnicos a una `Execution` pendiente, virgen y fuera de una cola viva. Conserva `profile_ref`, `workflow_profile_ref`, inputs, metadata opaca y overrides de chunks; no guarda referencia al preset. Actualizar o borrar el preset después no cambia el snapshot ya aplicado. El loader falla cerradamente ante `id` no textual, vacío o sólo whitespace; nombre vacío/no trimmed/no NFC; `name_key` inconsistente; mapping/configuración inválida; timestamps inválidos, naïve, no UTC o invertidos; defaults corruptos o múltiples.
+
+`python -m unittest tests.test_f13_4_technical_presets tests.test_persistence tests.test_f13_0_queue_contracts` ejecutó **40 tests, OK**. Cubre CRUD y rollback transaccional, schema 5→6, preservación de globals/histórico, ausencia de presets iniciales, unicidad NFC/casefold, mapping exacto, default único, corrupción durable, aplicación por copia/no retroactividad y bloqueo por cola o evidencia runtime.
+
+Las regresiones relacionadas `tests.test_f13_1_drafts`, `tests.test_f13_2_clone_configuration`, `tests.test_f11_1a_generation_config`, `tests.test_f11_4_sqlite_acceptance`, `tests.test_f6_recover_execution` y `tests.test_f11_5_operations` ejecutaron **72 tests: 71 OK y 1 omitido ambiental** por `WinError 1314` al crear un symlink de F13.2. La revisión estática confirmó que los únicos accesos a presets están en su caso de uso y su repositorio: F13.2 clone, creación normal de borrador, Prepare, Start y recovery no los consultan. No hay implementación accidental de F13.5, F13.6 ni UI de presets. `python -m compileall -q src tests` y `git diff --check` terminaron con código 0.
+
+No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana. F13.5 y F13.6 no fueron iniciadas.
 
 | Slice | Pruebas focales mínimas | Validación humana |
 |---|---|---|
@@ -324,9 +336,9 @@ Para diagnosticar los errores ya observados de la suite completa, se ejecutó ap
 | F13.1 | create/save/reopen draft, listado, clasificación, no duplicación, bloqueo runtime | no |
 | F13.2 | copia permitida/prohibida, identidades nuevas, independencia, rollback | no |
 | F13.3 | schema 4→5, singleton, validación, ocho campos, precedencia, snapshots/no retroactividad y rollback | no; UI de defaults diferida a F13.6 |
-| F13.4 | CRUD preset, default único, aplicación por copia, conflictos | posterior al integrar UI |
-| F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | posterior al integrar UI |
-| F13.6 | facade/snapshots, Qt offscreen, navegación y capabilities | Windows |
+| F13.4 | schema 5→6, CRUD, corrupción durable, default único, aplicación por copia y no retroactividad | no; UI no iniciada |
+| F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | no iniciada |
+| F13.6 | facade/snapshots, Qt offscreen, navegación y capabilities | no iniciada |
 | F13.7 | enqueue/reorder/remove/skip/pause, restart, constraints y concurrencia SQLite | posterior al integrar UI |
 | F13.8 | claim atómico, activo único, pausa, terminalización, cero doble submit | smoke Windows con backend simulado |
 | F13.9 | crash matrix, backend reiniciado, artifacts discrepantes, active-first recovery | Windows + ComfyUI real acotado |

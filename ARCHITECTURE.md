@@ -24,7 +24,7 @@ Define identidades, invariantes, estados y transiciones de `Project`, `Execution
 
 ### Persistencia
 
-SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 4; F13.0 añadió `QueueItem` y el control singleton de cola mediante migración incremental. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 6; F13.0 añadió `QueueItem` y el control singleton de cola mediante migración incremental. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
 
 ### ComfyUI y perfiles
 
