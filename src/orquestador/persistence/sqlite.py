@@ -43,7 +43,7 @@ class SQLiteProjectRepository:
  migrations[3]=_migrate_execution_numbers.__func__
  @staticmethod
  def _migrate_queue(db):
-  db.execute("CREATE TABLE queue_items(id TEXT PRIMARY KEY,execution_id TEXT NOT NULL REFERENCES executions(id),position INTEGER NOT NULL CHECK(position >= 0),state TEXT NOT NULL CHECK(state IN ('queued','active','finished','removed','skipped')),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,terminal_reason TEXT NULL,CHECK((state IN ('queued','active','finished') AND terminal_reason IS NULL) OR state IN ('removed','skipped')),UNIQUE(position))")
+  db.execute("CREATE TABLE queue_items(id TEXT PRIMARY KEY,execution_id TEXT NOT NULL REFERENCES executions(id),position INTEGER NOT NULL CHECK(position >= 0),state TEXT NOT NULL CHECK(state IN ('queued','active','finished','removed','skipped')),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,terminal_reason TEXT NULL,CHECK((state IN ('queued','active','finished') AND terminal_reason IS NULL) OR (state IN ('removed','skipped') AND terminal_reason IS NOT NULL AND length(trim(terminal_reason)) > 0)),UNIQUE(position))")
   db.execute("CREATE UNIQUE INDEX queue_items_one_live_per_execution ON queue_items(execution_id) WHERE state IN ('queued','active')")
   db.execute("CREATE UNIQUE INDEX queue_items_at_most_one_active ON queue_items(state) WHERE state='active'")
   db.execute("CREATE TABLE queue_control(singleton INTEGER PRIMARY KEY CHECK(singleton=1),paused INTEGER NOT NULL CHECK(paused IN (0,1)),active_queue_item_id TEXT NULL REFERENCES queue_items(id),revision INTEGER NOT NULL CHECK(revision >= 0))")
@@ -144,10 +144,10 @@ class SQLiteProjectRepository:
  def get_queue_control(self):
   row=self.db.execute('SELECT paused,active_queue_item_id,revision FROM queue_control WHERE singleton=1').fetchone()
   if row is None: raise PersistenceDataError('missing queue control')
-  if row[1]:
-   item=self.db.execute('SELECT state FROM queue_items WHERE id=?',(row[1],)).fetchone()
-   if not item or item[0] != QueueItemState.ACTIVE.value: raise PersistenceDataError('queue control active item is not active')
-  try:return QueueControl(bool(row[0]),QueueItemId(row[1]) if row[1] else None,row[2])
+  if row[1] is not None:
+    item=self.db.execute('SELECT state FROM queue_items WHERE id=?',(row[1],)).fetchone()
+    if not item or item[0] != QueueItemState.ACTIVE.value: raise PersistenceDataError('queue control active item is not active')
+  try:return QueueControl(bool(row[0]),QueueItemId(row[1]) if row[1] is not None else None,row[2])
   except Exception as exc: raise PersistenceDataError('invalid queue control') from exc
  def save_queue_control(self,control):
   if not isinstance(control,QueueControl): raise PersistenceDataError('invalid queue control')

@@ -49,6 +49,9 @@ class F130DomainTests(unittest.TestCase):
         with self.assertRaises(DomainError): QueueItem(ExecutionId('e'), 0, created_at=datetime.now())
         with self.assertRaises(DomainError):
             QueueItem(ExecutionId('e'), 0, state=QueueItemState.FINISHED, terminal_reason='not legal')
+        for state, reason in ((QueueItemState.REMOVED, None), (QueueItemState.SKIPPED, ''), (QueueItemState.SKIPPED, '  ')):
+            with self.assertRaises(DomainError):
+                QueueItem(ExecutionId('e'), 0, state=state, terminal_reason=reason)
 
 
 class F130PersistenceTests(unittest.TestCase):
@@ -76,6 +79,9 @@ CREATE TABLE projects(id TEXT PRIMARY KEY,defaults TEXT NOT NULL); CREATE TABLE 
             self.assertEqual(self.repository.get_queue_control(), QueueControl())
             with self.assertRaises(sqlite3.IntegrityError):
                 self.repository.db.execute("INSERT INTO queue_items VALUES('bad-finished','e',0,'finished','2026-01-01T00:00:00+00:00','2026-01-01T00:00:00+00:00','not legal')")
+            for state, reason in (('queued', 'not legal'), ('removed', None), ('skipped', '  ')):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.repository.db.execute("INSERT INTO queue_items VALUES(?,?,0,?,?,?,?)", ('bad-' + state, 'e', state, '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00', reason))
 
     def test_roundtrip_list_and_active_control(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
@@ -113,12 +119,47 @@ CREATE TABLE projects(id TEXT PRIMARY KEY,defaults TEXT NOT NULL); CREATE TABLE 
             with self.assertRaises(sqlite3.IntegrityError):
                 self.repository.db.execute("INSERT INTO queue_items VALUES('corrupt',?,0,'finished',?,?,?)", (str(execution.id), timestamp, timestamp, 'not legal'))
 
+    def test_corrupt_terminal_reason_row_fails_closed_on_load(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            _, execution = self.virgin(directory)
+            timestamp = '2026-01-01T00:00:00+00:00'
+            self.repository.db.execute('PRAGMA ignore_check_constraints=ON')
+            self.repository.db.execute("INSERT INTO queue_items VALUES('corrupt',?,0,'removed',?,?,NULL)", (str(execution.id), timestamp, timestamp))
+            self.repository.db.execute('PRAGMA ignore_check_constraints=OFF')
+            with self.assertRaises(CorruptDatabaseError): self.repository.list_queue_items()
+
+    def test_removed_and_skipped_round_trip_with_terminal_reasons(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            _, first = self.virgin(directory, 'first')
+            project, second = Project(ProjectId('project')), Execution(ProjectId('project'), ExecutionId('second'))
+            second.add_chunk(Chunk(order=0)); self.repository.save(project, [second])
+            removed = QueueItem(first.id, 0, QueueItemId('removed'))
+            skipped = QueueItem(second.id, 1, QueueItemId('skipped'))
+            self.repository.save_queue_item(removed); self.repository.save_queue_item(skipped)
+            removed.transition(QueueItemState.REMOVED, terminal_reason='operator removed')
+            skipped.transition(QueueItemState.SKIPPED, terminal_reason='policy skipped')
+            self.repository.save_queue_item(removed); self.repository.save_queue_item(skipped)
+            self.assertEqual(self.repository.list_queue_items(), [removed, skipped])
+
     def test_queue_control_active_pointer_to_nonactive_item_fails_closed_on_read(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             _, execution = self.virgin(directory)
             item = QueueItem(execution.id, 0, QueueItemId('queue-item'))
             self.repository.save_queue_item(item)
             self.repository.db.execute("UPDATE queue_control SET active_queue_item_id=? WHERE singleton=1", (str(item.id),))
+            with self.assertRaises(CorruptDatabaseError): self.repository.get_queue_control()
+
+    def test_queue_control_empty_pointer_fails_closed_while_null_and_active_are_valid(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            _, execution = self.virgin(directory)
+            self.assertEqual(self.repository.get_queue_control(), QueueControl())
+            item = QueueItem(execution.id, 0, QueueItemId('queue-item'))
+            self.repository.save_queue_item(item); item.transition(QueueItemState.ACTIVE); self.repository.save_queue_item(item)
+            self.repository.db.execute("UPDATE queue_control SET active_queue_item_id=? WHERE singleton=1", (str(item.id),))
+            self.assertEqual(self.repository.get_queue_control(), QueueControl(active_queue_item_id=item.id))
+            self.repository.db.execute('PRAGMA foreign_keys=OFF')
+            self.repository.db.execute("UPDATE queue_control SET active_queue_item_id='' WHERE singleton=1")
+            self.repository.db.execute('PRAGMA foreign_keys=ON')
             with self.assertRaises(CorruptDatabaseError): self.repository.get_queue_control()
 
     def test_prepare_reuses_only_unqueued_virgin_execution(self):

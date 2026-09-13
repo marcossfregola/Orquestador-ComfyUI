@@ -196,6 +196,7 @@ class QueueItem:
   if self.terminal_reason is not None and (not isinstance(self.terminal_reason,str) or not self.terminal_reason.strip()): raise DomainError('queue terminal reason must be nonblank')
   if self.state in {QueueItemState.QUEUED,QueueItemState.ACTIVE} and self.terminal_reason is not None: raise DomainError('live queue item cannot have terminal reason')
   if self.state is QueueItemState.FINISHED and self.terminal_reason is not None: raise DomainError('finished queue item has no terminal reason')
+  if self.state in {QueueItemState.REMOVED,QueueItemState.SKIPPED} and self.terminal_reason is None: raise DomainError('removed or skipped queue item requires terminal reason')
  def transition(self,target,*,terminal_reason=None,at=None):
   try: target=QueueItemState(target)
   except ValueError as exc: raise DomainError('invalid queue item state') from exc
