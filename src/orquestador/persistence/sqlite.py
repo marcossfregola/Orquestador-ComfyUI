@@ -3,7 +3,7 @@ import json, os, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from orquestador.domain import *
-SCHEMA_VERSION=6
+SCHEMA_VERSION=7
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -60,6 +60,10 @@ class SQLiteProjectRepository:
   db.execute("CREATE TABLE IF NOT EXISTS technical_presets(id TEXT PRIMARY KEY,name TEXT NOT NULL,name_key TEXT NOT NULL UNIQUE,mapping TEXT NOT NULL,config_version INTEGER NOT NULL,is_default INTEGER NOT NULL CHECK(is_default IN (0,1)),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK(length(trim(name)) > 0),CHECK(config_version=1))")
   db.execute("CREATE UNIQUE INDEX IF NOT EXISTS technical_presets_one_default ON technical_presets(is_default) WHERE is_default=1")
  migrations[6]=_migrate_technical_presets.__func__
+ @staticmethod
+ def _migrate_chunk_templates(db):
+  db.execute("CREATE TABLE chunk_templates(id TEXT PRIMARY KEY,name TEXT NOT NULL,name_key TEXT NOT NULL UNIQUE,prompts TEXT NOT NULL,template_version INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK(length(trim(name)) > 0),CHECK(template_version=1))")
+ migrations[7]=_migrate_chunk_templates.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -127,6 +131,16 @@ class SQLiteProjectRepository:
  def get_technical_preset(self,preset_id):
   rows=[row for row in self._technical_preset_rows() if row[0]==str(preset_id)]
   if len(rows)!=1: raise PersistenceError('technical preset not found')
+  return rows[0]
+ def list_chunk_templates(self):
+  try:
+   return self.db.execute('SELECT id,name,name_key,prompts,template_version,created_at,updated_at FROM chunk_templates ORDER BY name_key,id').fetchall()
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError(str(exc)) from exc
+ def get_chunk_template(self,template_id):
+  try:
+   rows=self.db.execute('SELECT id,name,name_key,prompts,template_version,created_at,updated_at FROM chunk_templates WHERE id=?',(str(template_id),)).fetchall()
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError(str(exc)) from exc
+  if len(rows)!=1: raise PersistenceError('chunk template not found')
   return rows[0]
  def close(self):self.db.close()
  def _queue_execution_is_editable_virgin(self, execution_id):

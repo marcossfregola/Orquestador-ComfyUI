@@ -175,9 +175,9 @@ No contiene imagen, referencias, prompts, chunks, runtime ni outputs.
 
 ## Plantilla de chunks
 
-Entidad con ID, nombre único normalizado, secuencia ordenada N >= 2 de prompts no vacíos y timestamps mínimos. Aplicarla reemplaza atómicamente cantidad/orden/prompts del draft y deja todo editable.
+Entidad durable global con ID, nombre único normalizado, `template_version=1`, secuencia ordenada N >= 2 de prompts no vacíos y timestamps mínimos. Aplicarla reemplaza atómicamente cantidad/orden/prompts del draft y deja todo editable. Actualizar o borrar la plantilla no altera snapshots ya aplicados.
 
-No contiene parámetros técnicos, imágenes, referencias, runtime ni outputs.
+No contiene parámetros técnicos, imágenes, referencias, runtime ni outputs. La aplicación conserva profile, inputs, parámetros técnicos, metadata opaca y los overrides existentes de los chunks retenidos por posición; los nuevos chunks contienen sólo el prompt de la plantilla.
 
 ## Precedencia de configuración
 
@@ -206,7 +206,7 @@ Nunca se infiere éxito sólo porque ComfyUI no muestre el job.
 
 ## Persistencia y compatibilidad
 
-F13.0 elevó el schema a 4 mediante una migración incremental desde 3; no recrea la base. Añade `queue_items`, sus índices parciales de items vigentes/activo, y `queue_control` singleton sin cambiar filas históricas. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
+SQLite está en schema 7. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets` y F13.5 añadió en schema 7 `chunk_templates`; ninguna de esas migraciones reescribe Project, Execution, Chunk, Attempt ni evidencia histórica. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 

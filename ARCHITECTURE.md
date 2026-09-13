@@ -24,7 +24,7 @@ Define identidades, invariantes, estados y transiciones de `Project`, `Execution
 
 ### Persistencia
 
-SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 6; F13.0 añadió `QueueItem` y el control singleton de cola mediante migración incremental. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 7; F13.0 añadió `QueueItem` y el control singleton de cola mediante migración incremental, F13.3 añadió defaults globales, F13.4 presets técnicos y F13.5 plantillas de chunks. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
 
 ### ComfyUI y perfiles
 
@@ -118,6 +118,8 @@ Son tres conceptos separados:
 - **plantilla de chunks:** nombre + secuencia de prompts; aplicar adapta cantidad/orden/prompts.
 
 Ni presets ni plantillas quedan referenciados dinámicamente por ejecuciones. La ejecución guarda su snapshot; cambios posteriores a la fuente no son retroactivos.
+
+Al aplicar una plantilla a un draft, la operación atómica sólo reemplaza el plan textual de la `Execution` (`chunk_count`, `prompts` y prompt por chunk). Mantiene profile, inputs, parámetros técnicos, metadata opaca y overrides de chunks que ya existían en las posiciones retenidas; los nuevos chunks nacen sólo con su prompt.
 
 Precedencia prevista:
 

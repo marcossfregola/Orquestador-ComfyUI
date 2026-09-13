@@ -21,3 +21,5 @@ from .global_defaults import GlobalDefaultsError, GlobalDefaultsUseCase
 __all__ += ["GlobalDefaultsError", "GlobalDefaultsUseCase"]
 from .technical_presets import TechnicalPreset, TechnicalPresetError, TechnicalPresetsUseCase
 __all__ += ["TechnicalPreset", "TechnicalPresetError", "TechnicalPresetsUseCase"]
+from .chunk_templates import ChunkTemplate, ChunkTemplateError, ChunkTemplatesUseCase
+__all__ += ["ChunkTemplate", "ChunkTemplateError", "ChunkTemplatesUseCase"]

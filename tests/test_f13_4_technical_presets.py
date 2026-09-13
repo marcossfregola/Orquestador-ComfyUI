@@ -54,8 +54,8 @@ class F134TechnicalPresetsTests(unittest.TestCase):
   with self.assertRaises(TechnicalPresetError): self.presets.apply(preset.id,'p',runtime.execution_id)
  def test_migration_and_corruption_fail_closed(self):
   expected_globals=self.mapping(steps=31); GlobalDefaultsUseCase(self.repo).update(expected_globals); history=self.draft('history'); history_defaults=dict(history.defaults)
-  self.repo.close(); db=sqlite3.connect(self.root/'orquestador.sqlite3'); db.execute('DROP TABLE technical_presets'); db.execute('UPDATE schema_version SET version=5'); db.commit(); db.close()
-  self.repo=SQLiteProjectRepository(self.root); self.assertEqual(self.repo.db.execute('SELECT version FROM schema_version').fetchone()[0],6); self.presets=TechnicalPresetsUseCase(self.repo)
+  self.repo.close(); db=sqlite3.connect(self.root/'orquestador.sqlite3'); db.execute('DROP TABLE technical_presets'); db.execute('DROP TABLE chunk_templates'); db.execute('UPDATE schema_version SET version=5'); db.commit(); db.close()
+  self.repo=SQLiteProjectRepository(self.root); self.assertEqual(self.repo.db.execute('SELECT version FROM schema_version').fetchone()[0],7); self.presets=TechnicalPresetsUseCase(self.repo)
   self.assertEqual(self.repo.load_global_defaults().to_mapping(),expected_globals); self.assertEqual(DraftUseCase(self.repo).reopen('p',history.execution_id).defaults,history_defaults); self.assertEqual(self.presets.list(),())
   self.repo.db.execute("INSERT INTO technical_presets VALUES('bad','bad','bad','{}',1,0,'x','x')")
   with self.assertRaises(TechnicalPresetError): self.presets.list()

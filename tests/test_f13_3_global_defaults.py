@@ -58,6 +58,8 @@ class F133GlobalDefaultsTests(unittest.TestCase):
         # create only the singleton defaults row and never rewrite this row.
         db.execute("UPDATE executions SET defaults=? WHERE id=?", (json.dumps({"opaque": "historical"}), legacy.execution_id))
         db.execute("DROP TABLE global_defaults")
+        db.execute("DROP TABLE technical_presets")
+        db.execute("DROP TABLE chunk_templates")
         db.execute("UPDATE schema_version SET version=4")
         db.commit(); db.close()
         self.repository = SQLiteProjectRepository(self.root)

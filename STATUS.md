@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-13
-**Baseline publicada anterior a este cierre:** `origin/main` en `b629f097a9cde6a6f03b69ae75720b0e367df271`; Git es la autoridad del SHA vigente.
-**Estado de la evolución:** F13.0, F13.1, F13.2, F13.3 y F13.4 están implementadas, aprobadas y cerradas. F13.5 — plantillas de prompts/chunks — es la próxima etapa planificada y no está iniciada; F13.6 tampoco está iniciada.
+**Baseline publicada anterior a este cierre:** `origin/main` en `eafe8fda522d37a2d5c1e9df2d0bc551c79b147b`; Git es la autoridad del SHA vigente.
+**Estado de la evolución:** F13.0, F13.1, F13.2, F13.3, F13.4 y F13.5 están implementadas, aprobadas y cerradas. F13.6 es la próxima etapa planificada y no está iniciada.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -14,8 +14,8 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - `Project ID` es visible. `ExecutionId` es un UUID técnico global y la GUI lo conserva internamente; `execution_number` es visible, correlativo por proyecto y puede repetirse entre proyectos.
 - La preparación sin `ExecutionId` crea un UUID cuando no existe candidato y reutiliza una única ejecución H3 pendiente, virgen y editable. Si hay más de una candidata, falla cerradamente y exige selección explícita.
 - La reapertura rehidrata imagen inicial y preview, referencias, prompts, cantidad/orden de chunks, parámetros globales y overrides. No crea otra ejecución al volver a preparar la candidata seleccionada.
-- SQLite está en schema 6. F13.0 añadió por migración incremental las fundaciones durables `queue_items` y el singleton `queue_control`; F13.3 añadió el singleton versionado `global_defaults`; F13.4 añadió `technical_presets`, sin reescribir las filas históricas de `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones ni `execution_number`.
-- F13.3 persiste exactamente los ocho parámetros técnicos públicos de Global Defaults y los materializa sólo al crear un borrador nuevo. F13.4 persiste presets técnicos nombrados y normalizados que contienen esos mismos ocho campos: su `default` es sólo metadata y nunca se aplica automáticamente. Aplicar un preset copia sus valores a un borrador realmente editable, sin guardar referencia al preset; cambios o borrado posteriores no son retroactivos. F13.2 clone, creación normal, Prepare, Start y recovery no consultan presets. F13.5 y F13.6 continúan planificadas. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
+- SQLite está en schema 7. F13.0 añadió por migración incremental las fundaciones durables `queue_items` y el singleton `queue_control`; F13.3 añadió el singleton versionado `global_defaults`; F13.4 añadió `technical_presets`; F13.5 añadió `chunk_templates`, sin reescribir las filas históricas de `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones ni `execution_number`.
+- F13.3 persiste exactamente los ocho parámetros técnicos públicos de Global Defaults y los materializa sólo al crear un borrador nuevo. F13.4 persiste presets técnicos nombrados y normalizados que contienen esos mismos ocho campos: su `default` es sólo metadata y nunca se aplica automáticamente. Aplicar un preset copia sus valores a un borrador realmente editable, sin guardar referencia al preset; cambios o borrado posteriores no son retroactivos. F13.5 persiste plantillas nombradas y normalizadas con una secuencia ordenada de dos o más prompts no vacíos. Aplicarla explícitamente a un borrador realmente editable reemplaza atómicamente `chunk_count`, `prompts`, cantidad/orden de chunks y sus prompts; conserva inputs, profile, valores técnicos, metadata opaca y overrides de chunks ya existentes por posición. No guarda referencia a la plantilla: actualizarla o borrarla no cambia snapshots ya aplicados. F13.2 clone, creación normal, Prepare, Start y recovery no consultan presets ni plantillas. F13.6 continúa planificada. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
 
 ## F12 — first frame como referencia primaria
 
@@ -41,11 +41,11 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F13.5 — plantillas de prompts/chunks — es la próxima etapa planificada y no está iniciada. F13.6 y las slices posteriores tampoco fueron iniciadas como parte del cierre F13.4.
+F13.6 — biblioteca e integración GUI de preparación — es la próxima etapa planificada y no está iniciada. Las slices posteriores tampoco fueron iniciadas como parte del cierre F13.5.
 
-## No verificado en el cierre F13.4
+## No verificado en el cierre F13.5
 
 - No se ejecutó ComfyUI real, FFmpeg/FFprobe real ni validación visual.
 - No se repitió una regresión completa ni se revalidó el runtime Linux histórico; la evidencia nueva es la batería focal documentada en `TESTING.md`, no la sustituye.
 - La suite focal de F11.2A/crop conserva tres errores de fixture: el `Mock` no define `execution_id` y PySide6 rechaza ese `Mock` en `QLineEdit.setText`. `ui/main_window.py` y ese test no cambiaron desde el baseline F13.2; no es un defecto de F13.4 ni se corrigió fuera de alcance.
-- No se ejecutó F13.5, F13.6, UI de presets, ni cambios de workflow/runtime.
+- No se ejecutó F13.6, UI de presets/plantillas, ni cambios de workflow/runtime.

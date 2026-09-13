@@ -328,7 +328,17 @@ Aplicar un preset copia sólo los ocho valores técnicos a una `Execution` pendi
 
 Las regresiones relacionadas `tests.test_f13_1_drafts`, `tests.test_f13_2_clone_configuration`, `tests.test_f11_1a_generation_config`, `tests.test_f11_4_sqlite_acceptance`, `tests.test_f6_recover_execution` y `tests.test_f11_5_operations` ejecutaron **72 tests: 71 OK y 1 omitido ambiental** por `WinError 1314` al crear un symlink de F13.2. La revisión estática confirmó que los únicos accesos a presets están en su caso de uso y su repositorio: F13.2 clone, creación normal de borrador, Prepare, Start y recovery no los consultan. No hay implementación accidental de F13.5, F13.6 ni UI de presets. `python -m compileall -q src tests` y `git diff --check` terminaron con código 0.
 
-No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana. F13.5 y F13.6 no fueron iniciadas.
+No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana. Al momento de ese cierre histórico, F13.5 y F13.6 no habían sido iniciadas.
+
+## Evidencia de cierre F13.5
+
+F13.5 está **CLOSED — APROBADA**. SQLite migra de schema 6 a 7 y crea `chunk_templates` sin filas iniciales ni reescritura de `global_defaults`, `technical_presets`, proyectos, ejecuciones, chunks o evidencia histórica. Cada plantilla durable contiene un ID textual no vacío sin whitespace periférico, nombre NFC/casefold único, `template_version=1`, timestamps UTC ordenados y una secuencia JSON ordenada de dos o más prompts no vacíos. No guarda parámetros técnicos, imágenes, referencias, runtime ni outputs.
+
+El caso de uso no-UI crea, lista, lee, actualiza, renombra, duplica y elimina plantillas. Aplicar una plantilla seleccionada copia su secuencia a una `Execution` pendiente, virgen y fuera de una cola viva: actualiza atómicamente `chunk_count`, `prompts`, cantidad/orden y prompt de cada chunk. Conserva `workflow_profile_ref`, inputs, defaults técnicos, metadata opaca y overrides de chunks existentes por posición; chunks nuevos nacen sólo con prompt. No persiste `template_id`: editar o eliminar luego la fuente no altera el snapshot aplicado. La carga falla cerradamente ante identidades/nombres/name keys corruptos, JSON o cardinalidad inválida, versión futura y timestamps inválidos.
+
+`python -m unittest -v tests.test_f13_0_queue_contracts tests.test_f13_1_drafts tests.test_f13_2_clone_configuration tests.test_f13_3_global_defaults tests.test_f13_4_technical_presets tests.test_f13_5_chunk_templates tests.test_persistence` ejecutó **79 tests: 78 OK y 1 omitido no bloqueante** por `WinError 1314` al crear el symlink de F13.2. Incluye CRUD, unicidad NFC/casefold, duplicación, cantidad/orden/prompts, expansión/contracción, rollback transaccional, bloqueo por cola/evidencia runtime, reapertura, corrupción durable y schema 6→7 que preserva globals, presets e histórico. `python -m unittest -v tests.test_f11_1a_generation_config tests.test_f11_4_sqlite_acceptance tests.test_f6_recover_execution tests.test_f11_5_operations` ejecutó **56 tests, OK** para GenerationConfig, Prepare, Start y recovery. La revisión estática confirmó que templates sólo se consultan desde su caso de uso: F13.2 clone, creación normal de draft, Prepare, Start y recovery no los consultan. No hay implementación accidental de F13.6 ni UI de plantillas. `python -m compileall -q src tests` y `git diff --check` terminaron con código 0.
+
+No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana. F13.6 permanece no iniciada.
 
 | Slice | Pruebas focales mínimas | Validación humana |
 |---|---|---|
@@ -337,7 +347,7 @@ No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación
 | F13.2 | copia permitida/prohibida, identidades nuevas, independencia, rollback | no |
 | F13.3 | schema 4→5, singleton, validación, ocho campos, precedencia, snapshots/no retroactividad y rollback | no; UI de defaults diferida a F13.6 |
 | F13.4 | schema 5→6, CRUD, corrupción durable, default único, aplicación por copia y no retroactividad | no; UI no iniciada |
-| F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | no iniciada |
+| F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | no; UI diferida a F13.6 |
 | F13.6 | facade/snapshots, Qt offscreen, navegación y capabilities | no iniciada |
 | F13.7 | enqueue/reorder/remove/skip/pause, restart, constraints y concurrencia SQLite | posterior al integrar UI |
 | F13.8 | claim atómico, activo único, pausa, terminalización, cero doble submit | smoke Windows con backend simulado |
