@@ -240,3 +240,9 @@ El control local `codec-baseline-frame0.png`, codificando 56 copias de la transi
 
 ### Slice B cancellation
 Pending cancellation deletes one exact prompt only after coherent queue/history proof and post-verification. Running jobs are refused; uncertain or raced outcomes remain nonterminal and require recovery evidence.
+
+## Frontera con la cola durable F13
+
+La cola durable decidida para F13 pertenece al Orquestador y coordina `ExecutionId`. No se modela con `/queue` de ComfyUI ni supone que history/queue sobrevivan un reinicio. El scheduler seguirá usando el adaptador actual para submit/observe/recovery de una ejecución activa y conservará `external_job_ref` como correlación durable.
+
+`first_frame_as_primary_reference` existe en el código auditado como opción local/global default OFF. No es un input nativo de node 129: el profile materializa la primera referencia como el mismo enlace IMAGE efectivo de `first_frame` y desplaza las referencias del usuario manteniendo orden denso. Su cierre permanece pendiente por la inconsistencia de hash registrada en [STATUS.md](STATUS.md).

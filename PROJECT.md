@@ -26,7 +26,7 @@ El problema a resolver no es demostrar que una generación aislada funciona, sin
 
 La arquitectura y los contratos que permiten estos objetivos están definidos en [ARCHITECTURE.md](ARCHITECTURE.md) y [DATA_MODEL.md](DATA_MODEL.md).
 
-## Primer release
+## Primer release técnico
 
 El primer release se define de forma breve y comprobable como:
 
@@ -36,13 +36,23 @@ Para demostrarlo, el release debe cubrir conceptualmente un proyecto local con i
 
 La estrategia de pruebas y el benchmark de aceptación están en [TESTING.md](TESTING.md).
 
+El núcleo de ese release fue alcanzado y cerrado progresivamente en F0–F10. F11 convirtió la GUI técnica en una interfaz operativa incremental. El estado exacto, incluidas las validaciones y limitaciones vigentes, es autoridad de [STATUS.md](STATUS.md).
+
+## Evolución actual decidida
+
+La próxima evolución agrega gestión local durable del trabajo sobre el motor existente: borradores reabribles, creación desde una ejecución anterior, defaults globales, presets técnicos, plantillas de prompts/chunks, biblioteca de proyectos y una cola propia con scheduler de una sola ejecución y recovery.
+
+Esta evolución no reemplaza `Project`, `Execution` ni la orquestación actual. Una ejecución pendiente virgen representa el borrador; un `QueueItem` durable referencia la ejecución exacta que debe procesarse. La cola propia no es la queue interna de ComfyUI.
+
+El diseño es autoridad de [ARCHITECTURE.md](ARCHITECTURE.md) y [DATA_MODEL.md](DATA_MODEL.md); las slices ejecutables están en [ROADMAP.md](ROADMAP.md).
+
 ## Alcance de F0
 
 F0 fija producto, límites, arquitectura conceptual, semántica del dominio, estados, puntos seguros, retry, recovery y reconciliación conceptuales, responsabilidades de infraestructura, Workflow Profiles, hipótesis de integración, FFmpeg/FFprobe, background jobs, reglas y estrategia de pruebas. Es una fundación documental: no implementa funcionalidad del producto.
 
-## No-alcance del primer release
+## No-alcance vigente
 
-Quedan fuera del primer release la IA de planificación, cloud o backend remoto, multi-GPU, múltiples backends, otros modelos o workflows, plugin system, integración con Visor, editor/timeline, branching o A/B, dashboard web, distribución comercial, installer sofisticado y auto-update.
+Quedan fuera la IA de planificación, cloud o backend remoto, multi-GPU, múltiples backends, otros modelos o workflows, plugin system, integración con Visor, editor/timeline, branching o A/B, dashboard web, colaboración, distribución comercial, installer sofisticado y auto-update.
 
 Estas exclusiones no impiden que la arquitectura pueda evolucionar hacia ellas. Las ideas no comprometidas se registran en [BACKLOG.md](BACKLOG.md); la secuencia decidida está en [ROADMAP.md](ROADMAP.md).
 

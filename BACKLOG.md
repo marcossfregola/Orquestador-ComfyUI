@@ -7,7 +7,7 @@ Este documento reúne ideas futuras no comprometidas. No cambia el alcance del p
 - Perfiles para Wan, Hunyuan u otros modelos y workflows.
 - Varios backends, ComfyUI remoto o cloud.
 - Multi-GPU, concurrencia avanzada y planificación de recursos.
-- Biblioteca de personajes, referencias, presets e importación/exportación de proyectos.
+- Biblioteca avanzada de personajes y referencias, e importación/exportación de proyectos.
 - Regeneración selectiva, branching, variantes y comparación A/B.
 - Editor o timeline de video.
 - Formatos de salida adicionales y políticas de calidad ampliadas.

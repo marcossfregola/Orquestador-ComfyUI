@@ -280,3 +280,38 @@ Regresiones focales relevantes: F7 chain **26/26**, F6 recovery **29/29**, stale
 Evidencia aportada por la validación Windows combinada: layout compacto/legible de settings y overrides; valores heredados efectivos; Override ON/OFF y Restore inherited; Duplicate con prompt, configuración y overrides e ID nuevo; Remove bloqueado con dos chunks y habilitado con más de dos; Move Up/Down reordenando por ID y conservando prompt/overrides; `Reference image size` dentro de General configuration; crop sin modificación; y `Prepare → Start` con invalidación al editar y re-Prepare posterior. La recuperación real en `yy/yy` reutilizó `MiniMax_H3_00286_.mp4`, completó `00287_.mp4` y el ensamblado fue aprobado como perfecto. Una generación fresca de dos chunks iniciada con `Start Chain` continuó automáticamente tras completar el chunk 1.
 
 Esta evidencia humana no se presenta como una nueva ejecución real durante este turno. Se acepta como no bloqueante que algunas miniaturas de referencias no se rehidraten tras el ensamblado; se difiere junto con el pulido visual restante (settings horizontales, IDs permanentes, paneles inferiores lado a lado, previews mayores y spinboxes) a F11.6.
+
+## Auditoría Work del baseline remoto (2026-09-13)
+
+Se auditó `main` en `1d5589c8d1e74eabb53338509944bbc14f1d94ba` desde un checkout limpio. No se modificó producción ni se ejecutó ComfyUI.
+
+La ejecución `PYTHONPATH=src python -B -m unittest discover -s tests` en Linux descubrió/ejecutó 534 tests y terminó con 8 failures y 30 errors; no constituye regresión válida del producto Windows porque faltó PySide6 y varias pruebas exigen `ORQ_TEST_TMP`/semántica Windows. Sin embargo reveló un bloqueo reproducible independiente del entorno GUI: `load_api_template()` rechaza el artifact versionado porque su SHA-256 real es `9F6B5785483D8FCC2C2ADBD0F574DD558BE1F605F2A8D64208AB86FC6FF4E508`, mientras código y manifest esperan `4DCFB2783391FBA0C5090B8A78765E46AA26B9A2215B948664F0D20341EC8F25`.
+
+F12.1 debe verificar desde checkout limpio:
+
+- hash del artifact, constante y manifest idénticos;
+- `load_api_template()` y validación de profile;
+- binding/rebind con 0, 1 y 6 referencias, flag OFF/ON y conflicto con `also_ref_first_frame`;
+- chaining/recovery que reconstruye prompts;
+- pruebas recientes de `execution_number`, reapertura e hidratación;
+- regresión completa en Windows con PySide6 y temp root explícito.
+
+No se requiere validación humana si el artifact canónico no cambia semánticamente.
+
+## Matriz de pruebas decidida para F13
+
+| Slice | Pruebas focales mínimas | Validación humana |
+|---|---|---|
+| F13.0 | invariantes QueueItem, migración schema 3, round-trip, corrupción, activo único | no |
+| F13.1 | create/save/reopen draft, listado, clasificación, no duplicación, bloqueo runtime | no |
+| F13.2 | copia permitida/prohibida, identidades nuevas, independencia, rollback | no |
+| F13.3 | precedencia, persistencia, no retroactividad, valores inválidos | posterior al integrar UI |
+| F13.4 | CRUD preset, default único, aplicación por copia, conflictos | posterior al integrar UI |
+| F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | posterior al integrar UI |
+| F13.6 | facade/snapshots, Qt offscreen, navegación y capabilities | Windows |
+| F13.7 | enqueue/reorder/remove/skip/pause, restart, constraints y concurrencia SQLite | posterior al integrar UI |
+| F13.8 | claim atómico, activo único, pausa, terminalización, cero doble submit | smoke Windows con backend simulado |
+| F13.9 | crash matrix, backend reiniciado, artifacts discrepantes, active-first recovery | Windows + ComfyUI real acotado |
+| F13.10 | regresión, E2E de cola/restart, acciones Qt y sesión real representativa | Windows completa |
+
+En toda slice, tests automáticos, ejecución real y validación humana se informan por separado. Ninguna prueba con fake acredita una generación real ni una observación visual.

@@ -2,153 +2,164 @@
 
 ## Dirección obligatoria
 
-La dependencia conceptual del producto es:
+La dependencia conceptual es:
 
-**UI → Aplicación/Casos de uso → Dominio**
+**UI → aplicación/casos de uso → dominio**
 
-Persistencia, ComfyUI, Workflow Profiles/bindings, FFmpeg/FFprobe y background jobs son infraestructura o adaptadores. Implementan contratos requeridos por las capas internas; las capas internas no dependen de sus detalles.
+Persistencia, ComfyUI, Workflow Profiles/bindings, FFmpeg/FFprobe y background jobs son adaptadores. Implementan puertos internos; el dominio no depende de Qt, SQLite, HTTP, WebSocket, JSON ni procesos externos.
 
-## Fronteras
+## Fronteras vigentes
 
 ### UI
 
-Presenta proyectos, ejecuciones, chunks, estados, eventos, errores y acciones disponibles. Solicita casos de uso y recibe resultados o cambios de estado observables. No habla directamente con ComfyUI, FFmpeg/FFprobe ni la persistencia, y no ejecuta trabajo pesado.
+Presenta proyectos, ejecuciones, chunks, estados, errores, cola y acciones disponibles. Sólo solicita casos de uso y renderiza snapshots/capabilities. No accede directamente a SQLite, ComfyUI o FFmpeg y no ejecuta trabajo pesado.
 
-### Aplicación y casos de uso
+### Aplicación
 
-Coordina operaciones como crear o validar un proyecto, iniciar una ejecución, avanzar al siguiente chunk, reintentar, cancelar, reconciliar y ensamblar. Define la secuencia de trabajo y usa contratos internos para solicitar servicios externos. No contiene detalles de Qt, HTTP, WebSocket, comandos concretos o schema de almacenamiento.
+Coordina preparación, edición, validación, ejecución, retry, recovery, cancelación segura, ensamblado y, en F13, gestión de biblioteca y scheduler. Define transacciones de aplicación y usa puertos de repositorio/backend/video.
 
 ### Dominio
 
-Define el significado de Proyecto, Ejecución, Chunk, Intento, Artefacto, Workflow Profile, estados, transiciones, checkpoints, retry, recovery, errores y reglas de continuidad. Debe ser determinista y testeable sin infraestructura.
+Define identidades, invariantes, estados y transiciones de `Project`, `Execution`, `Chunk`, `Attempt`, `Artifact`, `TransitionFrame` y futuro `QueueItem`. Debe permanecer determinista y testeable sin infraestructura.
 
-El dominio no depende de Qt, ComfyUI, FFmpeg, SQLite, JSON, HTTP, WebSocket, frameworks ni otros detalles técnicos externos.
+### Persistencia
 
-### Puertos y adaptadores
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 3. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
 
-Los contratos de aplicación/dominio expresan lo que se necesita: persistir un estado durable, consultar o enviar trabajo a un backend, observar eventos, validar o transformar video y ejecutar trabajo en background. Los adaptadores proporcionan esas capacidades y traducen errores externos a conceptos explícitos del producto.
+### ComfyUI y perfiles
 
-No se elige en F0 un framework UI, tecnología de persistencia, SDK/cliente ComfyUI ni formato final de bindings. Esas decisiones son hipótesis de F1.
+ComfyUI permanece detrás del adaptador programático. Queue/history del backend son observables, no autoridad durable. MiniMax H3 vive detrás de un profile/binding que concentra nodos y entradas; los IDs no se dispersan por UI o dominio.
 
-## Componentes conceptuales
+### Video y artifacts
 
-- **Gestión de proyecto y ejecución:** mantiene la preparación durable separada de cada corrida concreta.
-- **Orquestador de aplicación:** selecciona el siguiente trabajo, prepara inputs, coordina generación, validación, extracción del frame y avance de la cadena.
-- **Dominio:** aplica invariantes, estados y condiciones para marcar una fase como completada.
-- **Adaptador ComfyUI:** realiza health, envío, seguimiento, history, outputs, reconexión y cancelación según evidencia real.
-- **Workflow Profile y bindings:** describen el workflow soportado y mapean conceptos del proyecto a inputs del workflow sin repartir IDs de nodos por el núcleo.
-- **Adaptador de video:** usa FFmpeg/FFprobe para metadata, validación, extracción del último frame y ensamblado.
-- **Persistencia:** conserva estado versionado, intentos, checkpoints y referencias a artefactos mediante un contrato durable.
-- **Background jobs:** ejecutan generación, inspección y video fuera del hilo de UI, con cancelación y eventos según capacidades reales.
+FFmpeg/FFprobe permanecen detrás del adaptador de video. Chunks, outputs, transiciones N-1 y ensamblado son adicionales y no se sobrescriben silenciosamente.
 
-La semántica de los conceptos y sus relaciones es autoridad de [DATA_MODEL.md](DATA_MODEL.md). Las responsabilidades específicas de ComfyUI y los bindings están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md).
+### Background jobs
 
-## Flujo conceptual de una ejecución
+La UI no se bloquea. Workers ejecutan casos de uso; no se convierten en dueños de reglas de dominio ni de decisiones de scheduler.
 
-1. La UI solicita validar e iniciar una ejecución.
-2. La aplicación consulta el estado durable y ejecuta preflight.
-3. El dominio selecciona el primer chunk pendiente o el checkpoint reconciliado.
-4. Un adaptador prepara los inputs a través del Workflow Profile y los envía a ComfyUI.
-5. La aplicación observa el trabajo, identifica el output inequívoco y pide validación de video.
-6. El adaptador de video extrae y valida el frame de transición.
-7. La aplicación registra durablemente el intento, el output y el checkpoint antes de avanzar.
-8. El siguiente chunk consume ese frame como `first_frame` y conserva el resto de las referencias.
-9. Al completar todos los chunks, el adaptador de video crea un ensamblado final adicional.
+## Flujo de ejecución existente
 
-Un cierre puede ocurrir entre cualquiera de estos pasos. En el siguiente inicio, recovery compara estado durable, artefactos y backend observable antes de continuar; no asume que la última operación terminó sólo porque existió una solicitud.
+1. Preparación crea o reutiliza una `Execution` H3 pendiente, virgen y editable.
+2. Preflight valida configuración, rutas y profile.
+3. Start usa la identidad preparada inmutable y bloquea configuración stale.
+4. El motor envía un chunk, correlaciona su `external_job_ref`, valida el output y persiste artifacts/checkpoint.
+5. Extrae el último frame real N-1, lo materializa y lo usa como `first_frame` del siguiente chunk.
+6. Retry/recovery reutiliza evidencia durable y falla cerradamente ante ambigüedad.
+7. El ensamblado crea un resultado adicional mediante FFmpeg/FFprobe.
 
-## Frontera verificada por F1
+## Evolución F13: gestión de trabajos
 
-F1 confirmó que ComfyUI puede permanecer detrás de un adaptador programático: el workflow UI se conserva, el adaptador construye el prompt API, envía el trabajo, sigue WebSocket/history y resuelve el output por descriptor. La aplicación no necesita automatizar clicks ni exponer esos detalles al dominio.
+### Borrador sin entidad nueva
 
-El adaptador de video separado usa FFprobe/FFmpeg para validar outputs, seleccionar el último frame realmente decodificado y ensamblar chunks compatibles. Queue/history del backend son observables de memoria; los checkpoints y la reconciliación durable siguen perteneciendo a la persistencia y a los casos de uso propios.
-
-El chaining real probado fue de dos chunks y la continuidad visual fue validada por el usuario sólo para ese caso. No constituye una garantía general ni una implementación productiva.
-
-## Dependencias permitidas
-
-- UI depende de casos de uso, no de adaptadores externos.
-- Aplicación depende de contratos y del dominio.
-- Dominio depende sólo de conceptos y reglas propias.
-- Adaptadores dependen de sus librerías o procesos externos y traducen hacia contratos internos.
-- Un Workflow Profile puede depender de la forma de un workflow concreto, pero el dominio no.
-
-## Principios duraderos
-
-- Una generación activa por GPU local por defecto hasta contar con evidencia de concurrencia segura.
-- El último frame real del chunk N es el origen del `first_frame` del chunk N+1.
-- Los chunks, intermedios, intentos y evidencia útil se conservan.
-- Un output válido no se regenera automáticamente sin necesidad demostrada.
-- Un estado COMPLETADO requiere evidencia suficiente, no sólo ausencia de error.
-- Pause no equivale a cancel; cancelar preserva el trabajo previo.
-- Los errores son explícitos y trazables.
-- El progreso refleja hechos reales; no se inventan porcentajes ni ETA.
-- Las fronteras se preparan para perfiles, backends y asistentes futuros sin implementar esas funciones en F0.
-
-## Estado de implementación F2
-
-F2 está **CLOSED — APPROVED** (cierre 2026-08-28). El dominio y la reconciliación son backend-agnósticos e independientes de SQLite, ComfyUI, FFmpeg/FFprobe y UI; la persistencia depende del dominio y la reconciliación es pura, sin escrituras ocultas. La UI sigue ausente. El adaptador ComfyUI genérico está implementado en F3; Workflow Profile/bindings H3 corresponden a F4 y están **CLOSED — APPROVED**. F5 está **CLOSED — APPROVED**; F6 es la siguiente etapa, no iniciada.
-
-## Qué permanece abierto tras F2
-
-F3-3 devuelve todos los descriptores lógicos validados; la selección del artefacto esperado queda para Workflow Profile/binding posterior. La validación física quedó fuera de F3-3 específicamente y se implementó después en F3-6.
-
-## F3 — adaptador genérico CLOSED / live validated
-
-Se incorpora un adaptador HTTP genérico y configurable para ComfyUI (`orquestador.adapters.http`) y observación WebSocket genérica (`orquestador.adapters.events`), con correlación estricta por `prompt_id`, reconexión acotada y reconciliación fail-closed mediante history/queue. F3 está CLOSED y live validated, preservando UI→aplicación→dominio→adaptadores. H3 bindings de F4 están **CLOSED — APPROVED**; completion/artifact durable y chunk orchestration de F5 están **CLOSED — APPROVED**.
-
-La cancelación backend segura pending-only de F3-4 está **CLOSED / LIVE VALIDATED**. En el alcance histórico de F3 permanecían futuras la semántica de cancelación a nivel de pipeline/dominio, la orquestación de crash/retry/recovery, la política para trabajos running, el cliente/SDK ComfyUI, framework UI, packaging, concurrencia segura, chaining largo, ensamblado productivo y librerías externas; F6–F10 cubrieron después las fronteras de recovery y chaining que corresponden a este repositorio. La evidencia y los límites del adaptador están en [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y [ENVIRONMENT.md](ENVIRONMENT.md).
-
-F3-1, F3-2 y F3-3 están checkpointed. F3-4 está corregida e implementada; la validación física de outputs y el mapper a `ArtifactObservation` están técnicamente completos. La persistencia durable de completion/artifact quedó cerrada en F5.
-
-F3 añade un mapper puro y fail-closed de evidencia lógica correlacionada más validación física a `ArtifactObservation`; no persiste ni muta dominio. Completion/artifact durable quedó cerrado en F5 y `CONFIRMED` de cancelación no establece `Lifecycle.CANCELLED`.
-# F3 HTTP adapter contract
-
-The ComfyUI adapter validates endpoint, prompt identifiers, client_id, queue/history evidence, and HTTP/JSON error taxonomy fail-closed. BackendJobRef instances supplied to history are reused by identity.
-# F3-4 safety boundary
-
-Cancellation is isolated in `adapters.cancellation`: pending queue deletion plus fresh queue/history verification is the only production-safe operation. The F1 “basic interruption” result is historical spike evidence only. Running targets return `RUNNING_INTERRUPT_UNSAFE`; native `/interrupt` is non-atomic on ComfyUI 0.33.0 and is not called by F3-4. No domain or persistence transition occurs.
-La frontera `orquestador.adapters.physical_outputs` mantiene separada la evidencia física de la correlación lógica: requiere raíz explícita y no tiene efectos de dominio.
-
-## F10 — composición real de la cadena (2026-09-01)
-
-La raíz de composición conserva la dirección **UI → aplicación → dominio**: `GuiFacade` delega `prepare` en `PrepareGuiUseCase` y `start_chain` en `StartGuiChainUseCase`; éste materializa los siete inputs estáticos, usa el perfil H3 y delega la ejecución en `ChainExecutionUseCase`. El coordinador real de cadena usa `RobustChunkExecutionCoordinator` para observar el mismo job hasta evidencia terminal o bloquear fail-closed; `ResumeExecutionUseCase` reutiliza el `external_job_ref` durable para completar después de un cierre o deadline, sin resubmit.
-
-La transición no vuelve a usar el MP4 fuente como input: `ChunkExecutionCoordinator` extrae el frame N-1 bajo la raíz confiable del proyecto y la composición lo sube como PNG con `overwrite=false`. La referencia efectiva se valida y persiste como `MaterializedInputRef` antes de bindear `node 114.image` del chunk siguiente; `node 129.first_frame` continúa siendo la conexión canónica `["119", 0]`. Esta frontera fue ejercitada en un E2E real de dos chunks y quedó durable tras reopen. La validación visual humana de esta corrida fue realizada y aprobó la continuidad (`HUMAN_VISUAL_VALIDATION=APPROVED`, `VISUAL_CONTINUITY=APPROVED`); esa aprobación corresponde a este E2E y no es una garantía general.
-
-La corrección F10 conserva esa frontera y el grafo existente: `node 114 → node 127 (ImageCropV2, bounding box completo 16384×16384) → node 119 (ImageScaleToTotalPixels) → node 120 (GetImageSize) → node 129`. El cambio elimina el default implícito 512×512 que recortaba la transición; no modifica la ruta de las seis referencias ni agrega nodos o enlaces. `configure_fast_e2e` es una opción explícita de desarrollo/prueba aplicada a una copia del prompt en `StartGuiChainUseCase`; nunca se guarda en defaults ni altera el camino normal.
-
-El E2E FAST confirmó que node 127 recibe y devuelve la transición completa pixel a pixel. El frame 0 que produce H3 sigue siendo distinto (aunque con dimensiones iguales): la alteración generativa residual se acepta como limitación conocida del backend H3, no como defecto pendiente del Orquestador. La arquitectura queda técnicamente corregida en C y la continuidad visual fue aprobada humanamente (`VISUAL_CONTINUITY=APPROVED`).
-
-## F11.0 — contrato único de configuración (diseño aprobado)
-
-F11 utiliza un único contrato conceptual de configuración de generación, `GenerationConfig`, compartido por la GUI y la aplicación. El flujo obligatorio es:
+El código actual ya usa `Execution` como snapshot editable antes del runtime. Por eso `Draft` será una clasificación de producto, no una entidad paralela:
 
 ```text
-GUI → GenerationConfig → casos de uso/aplicación → Workflow Profile/bindings H3 → adaptador ComfyUI
+draft := Execution.state == pending
+         y sin attempts, artifacts, errors ni TransitionFrame
+         y sin QueueItem vigente
 ```
 
-La GUI sólo captura y presenta valores del contrato. No duplica defaults, validación, herencia ni bindings, y no accede directamente a persistencia, ComfyUI ni FFmpeg. Los detalles de scopes y precedencia son autoridad de [DATA_MODEL.md](DATA_MODEL.md); los valores y destinos H3 son autoridad de [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md).
+La regla debe implementarse una sola vez y reutilizarse en dominio, casos de uso, capabilities y persistencia. No se infiere por la ausencia de un botón ni por estado transitorio de la GUI.
 
-Se conserva la precedencia `project.defaults → execution.defaults → chunk.defaults`, con prioridad del chunk. La ejecución guarda un snapshot durable de la configuración elegida para esa corrida; el prompt pertenece al chunk y los overrides por chunk sólo pueden existir para parámetros autorizados explícitamente por el contrato. Editar el proyecto no reescribe una ejecución histórica.
+Un borrador no “se transforma” en otra Execution. Encolar crea un `QueueItem` que referencia la misma `ExecutionId`; el snapshot se bloquea para edición estructural mientras esté en cola. El primer claim inicia la ejecución existente.
 
-F11.0 queda cerrado como decisión documental y contractual. La implementación técnica de F11.1A/F11.1B (preparación, composición y proyección canónica de capacidades GUI) está en curso y cuenta con aprobación técnica/auditoría; permanecen abiertos la validación humana/live y el cierre Git de F11.1.
+### Frontera de cola
 
-## F5 — Contrato de orquestación de un chunk
+La cola del producto contiene `ExecutionId`, no `ProjectId`: una ejecución identifica exactamente la configuración y secuencia que se va a correr. Un proyecto puede conservar varias ejecuciones y `execution_number` sigue siendo local a cada proyecto.
 
-Corrección contractual F5: `orchestration_timeout_seconds` se resuelve antes de cada Attempt desde defaults JSON (entero, bool inválido, `>0`, default 1800; merge proyecto→ejecución→chunk con override de chunk permitido); Attempt no tiene options. Timeout no-retryable fail-closed. `CANCELLED` nunca auto-retry F5 aunque F2 pueda clasificarlo `RETRY_CURRENT_CHUNK`/`CREATE_NEW_ATTEMPT`; no redefine F2/F6. `prompt_id` usa sólo `Attempt.external_job_ref`/`attempts.external_job_ref`, sin columna nueva: persistir sin ref→submit→validar BackendJobRef no vacío→asignar una vez→persistir inmediatamente. Incertidumbre nunca reenvía; job observado durable es ref persistida más evidencia correlacionada.
+`QueueItem` es necesario porque orden, encolado, quitar/saltar y estado de despacho no pertenecen al lifecycle de una ejecución ni a ComfyUI. Debe tener identidad propia, referencia a ejecución, posición/orden durable, estado de cola y metadata mínima de creación/actualización.
 
-F5 coordina únicamente un chunk: preflight → Attempt durable → submit → monitoring/history → correlación determinista → validación física → extracción exacta N-1 → completion durable. El límite de orquestación se configura en las opciones efectivas de la defaults JSON persistidos (proyecto → ejecución → chunk; `WorkflowProfileRef` no es fuente de defaults), por Attempt, y es exactamente **1800 segundos (30 minutos) por defecto**. Es distinto de los límites de transporte F3: HTTP 10 s y WebSocket 5 s. Su expiración es un resultado explícito fallido/bloqueado y nunca autoriza resubmit o retry automático.
+No debe copiar configuración ni runtime. Es una referencia coordinadora.
 
-La única elegibilidad de retry automático es exhaustiva: (a) un estado terminal backend explícito `FAILED` sin output verificado, o (b) un fallo pre-submit con evidencia determinista de que el backend no aceptó el trabajo. Nunca es elegible `RUNNING`, `UNKNOWN`, timeout de orquestación, evidencia ambigua/contradictoria, aceptación de submit incierta, pérdida de evidencia, mismatch de procedencia/path, estado u output corrupto, ni cualquier caso en que pueda existir ya un job. El retry elegible crea exactamente un nuevo Attempt append-only y preserva toda la evidencia previa; no hay un tercer intento automático. Las condiciones ambiguas se deciden con estados existentes `NEEDS_MANUAL_REVIEW` o `BLOCKED_CORRUPT_STATE`, según corresponda, sin crear estados persistidos nuevos. La cancelación de una generación running no pertenece a F5 y conserva el contrato F3 pending-only. Los outputs parciales e intermedios se mantienen como evidencia. Chaining multi-chunk, ensamblado, GUI, F6+ y crash-recovery real quedan fuera.
+### Autoridad de scheduler
 
-## F5 — CIERRE DOCUMENTAL (2026-08-30)
+Un único scheduler de aplicación decide qué item se promueve. Ningún widget, callback de ComfyUI ni worker aislado puede arrancar el siguiente trabajo por su cuenta.
 
-F5 está **CLOSED — APPROVED**. Slices 1, 2, 3 y 4A completadas/auditadas. F6 es la siguiente etapa, no iniciada.
+Reglas:
 
-El timeout `orchestration_timeout_seconds` se resuelve antes de Attempt/submit, precedencia proyecto → ejecución → chunk; `WorkflowProfileRef` no aporta defaults. Ausente/default 1800 s; sólo `int` Python real >0, demás tipos producen `DomainError`. Deadline monotónico/polling positivo, separado de HTTP 10.0/WS 5.0; clock congelado termina fail-closed. Máximo un retry automático total (dos Attempts/dos submits), siempre nuevos; sólo FAILED terminal inequívoco. FAILED debe persistir antes del segundo o BLOCKED; segundo save fallido BLOCKED, sin tercer intento. RUNNING/QUEUED/NOT_FOUND/UNKNOWN, timeout, excepciones, submit incierto, output/provenance/physical/FFmpeg/extractor/completion fallidos o persistencia incierta no reintentan. Éxito reutiliza `complete_submitted_attempt`/Slice3 sin segundo submit; Artifact OUTPUT y TransitionFrame durables commit-late, extracción N-1 con `shell=False`. UI, multi-chunk, assembly, running cancellation y F6 quedan fuera.
+- una sola ejecución activa por GPU local;
+- claim de item y registro de activo en una transacción SQLite;
+- restricción durable de como máximo un item activo;
+- pausa impide claims nuevos, pero no equivale a cancelar el activo;
+- reordenar, quitar o saltar sólo opera sobre items todavía pendientes;
+- una ejecución active/running no admite cambios estructurales;
+- sólo un terminal reconciliado permite liberar el activo y elegir el siguiente.
 
-La coordinación de un chunk único persiste el `BackendJobRef`, exige history terminal SUCCESS correlacionado, valida el artefacto físico y extrae exactamente el frame N-1 con commit tardío. Slice1 (timeout), Slice2 (pre-submit/job ref durable) y Slice4A (deadline/retry/política fail-closed) están completadas, auditadas y aprobadas.
+Para impedir dos schedulers simultáneos se requiere una protección de instancia local además de la restricción SQLite. La implementación deberá elegir y probar un mecanismo Windows sencillo —por ejemplo lock de proceso/archivo adquirido por la raíz de composición— sin convertirlo en coordinación distribuida.
 
-### Canonical cancellation capability
-F11.1B derives the single UI capability projection and exact active target. Cancel workers create operation-local repository/client/adapter instances; GUI state never interrupts running jobs.
+### Scheduler y recovery
+
+Al iniciar la aplicación:
+
+1. adquirir la autoridad única local;
+2. abrir/migrar persistencia;
+3. leer control de cola e item activo;
+4. si existe activo, reconciliar su `Execution`, attempts, artifacts y backend observable;
+5. si la evidencia es ambigua, bloquear y requerir revisión; nunca reclamar otro item;
+6. sólo después de terminalizar/reconciliar el activo, y si la cola no está pausada, reclamar el siguiente.
+
+Un item activo no se devuelve automáticamente a pendiente por timeout o reinicio. `external_job_ref` durable y los contratos existentes determinan si corresponde esperar, completar, retry explícito o revisión manual.
+
+### Clonación
+
+`Crear a partir de este` es un caso de uso, no una copia de filas. Lee configuración reutilizable de una ejecución fuente y crea `ProjectId`, `ExecutionId`, `ChunkId` y `execution_number` nuevos.
+
+Copia por valor: profile, imagen inicial materializada, referencias, prompts, orden/cantidad de chunks, parámetros globales y overrides públicos. Puede reutilizar paths de inputs inmutables ya contenidos bajo la raíz; cualquier materialización nueva debe ser create-if-absent y transaccional.
+
+Nunca copia: attempts, `external_job_ref`, prompt IDs, outputs, artifacts, transiciones, errores, estados runtime, datos de recovery ni timestamps de ejecución.
+
+### Configuración guardada
+
+Son tres conceptos separados:
+
+- **defaults globales:** valores técnicos aplicados sólo al crear un borrador nuevo;
+- **preset técnico:** conjunto con nombre de parámetros técnicos públicos; aplicar copia valores al borrador;
+- **plantilla de chunks:** nombre + secuencia de prompts; aplicar adapta cantidad/orden/prompts.
+
+Ni presets ni plantillas quedan referenciados dinámicamente por ejecuciones. La ejecución guarda su snapshot; cambios posteriores a la fuente no son retroactivos.
+
+Precedencia prevista:
+
+```text
+defaults canónicos del código
+→ defaults globales persistidos
+→ preset técnico aplicado opcionalmente
+→ snapshot de Execution
+→ override explícito de Chunk
+```
+
+El preset se materializa al aplicarse; no agrega un scope runtime permanente entre Execution y Chunk.
+
+### Biblioteca de proyectos
+
+La biblioteca es una proyección de lectura y un conjunto de casos de uso. No accede a SQLite desde widgets. Lista proyectos/ejecuciones y deriva la presentación `draft`, `queued`, `running`, `succeeded`, `failed` o `cancelled` desde lifecycle + QueueItem, sin inventar un segundo estado persistido de ejecución.
+
+La primera versión no incluye etiquetas, carpetas sofisticadas, búsqueda avanzada, cloud ni colaboración.
+
+## Propiedad de los datos
+
+| Información | Autoridad |
+|---|---|
+| Identidad y defaults reutilizables del proyecto | `Project` |
+| Snapshot, profile, chunks y lifecycle de una corrida | `Execution` |
+| Prompt y overrides por posición | `Chunk` |
+| Submit concreto y job backend | `Attempt` |
+| Output/checkpoint verificable | `Artifact` / `TransitionFrame` |
+| Orden y despacho de trabajos | `QueueItem` + control de cola |
+| Valores de nacimiento | defaults globales |
+| Conjunto técnico reutilizable | preset técnico |
+| Secuencia textual reutilizable | plantilla de chunks |
+| Estado observable de ComfyUI | adaptador; nunca reemplaza SQLite |
+
+## Exclusiones arquitectónicas
+
+F13 no introduce multi-GPU, cloud, múltiples backends, colaboración, IA, plugin system general, prioridades inteligentes, limpieza automática ni abstracciones distribuidas. Tampoco cambia la política de cancelación running: el adaptador productivo continúa siendo pending-only y fail-closed.
+
+## Autoridades relacionadas
+
+- Semántica exacta e invariantes: [DATA_MODEL.md](DATA_MODEL.md).
+- Orden de implementación y aceptación: [ROADMAP.md](ROADMAP.md).
+- Integración backend: [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md).
+- Evidencia y matriz de pruebas: [TESTING.md](TESTING.md).
+- Estado vivo: [STATUS.md](STATUS.md).

@@ -60,3 +60,14 @@ No hay fixture real F1 completo comprometido; la compatibilidad live requiere va
 # F3-4 decision
 
 Adopt the verified ComfyUI 0.33.0 pending-delete contract with mandatory post-verification. The native `/interrupt` route is non-atomic (it does not use an atomic target check such as `PromptQueue.interrupt_if_running`), so the safe adapter explicitly refuses running cancellation and leaves the low-level route outside F3-4. F3-4 is corrected and locally tested, the earlier pending audit/checkpoint wording is superseded by independent approval; no backend confirmation is mapped automatically to `Lifecycle.CANCELLED`.
+
+## Decisiones F13 — gestión durable de trabajos (2026-09-13)
+
+- `Draft` es una clasificación de una `Execution` pendiente, virgen, editable y fuera de cola; no se crea una entidad paralela.
+- La cola propia contiene `QueueItem` durables que referencian `ExecutionId`, no `ProjectId`.
+- Un solo scheduler de aplicación puede reclamar trabajo; existe como máximo un item activo y debe reconciliarlo antes de iniciar otro.
+- Pausar la cola impide nuevos claims y no cancela el activo.
+- `Crear a partir de este` crea identidades nuevas y copia sólo configuración editable, nunca runtime o evidencia.
+- Defaults globales, presets técnicos y plantillas de chunks son conceptos separados y se materializan por copia en el draft; no alteran ejecuciones existentes.
+- La biblioteca presenta estados derivados de Execution + QueueItem y no crea un segundo lifecycle persistido.
+- F13 no introduce multi-GPU, cloud, IA, plugins generales ni cancelación running.
