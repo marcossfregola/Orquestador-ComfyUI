@@ -302,6 +302,10 @@ No se ejecutó ComfyUI real ni validación humana; ambos permanecen fuera de alc
 
 ## Matriz de pruebas decidida para F13
 
+## Evidencia local F13.1 (pendiente de auditoría y aprobación)
+
+La implementación no-UI de create/save/reopen/listado de borradores ejecutó **8 tests F13.1, OK**. La regresión focal F13.0, persistencia y Prepare/reopen ejecutó **49 tests, OK**. `compileall` y `git diff --check` terminaron con código 0. Esta evidencia no ejecuta ComfyUI, FFmpeg/FFprobe ni validación humana, y no implica cierre, commit ni avance a F13.2.
+
 | Slice | Pruebas focales mínimas | Validación humana |
 |---|---|---|
 | F13.0 | invariantes QueueItem, migración schema 3, round-trip, corrupción, activo único | no |

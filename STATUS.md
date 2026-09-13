@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-09-13
 **Baseline auditada:** `main` en `ac77bc892f02641eaa6c4db7b6431ce25be98ae7`
-**Estado de la evolución:** planificación documental de gestión de trabajos completada; implementación no iniciada.
+**Estado de la evolución:** F13.0 está implementada en la baseline local; F13.1 tiene una implementación local no-UI pendiente de auditoría, aprobación y commit. No habilita F13.2 ni slices posteriores.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -14,8 +14,8 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - `Project ID` es visible. `ExecutionId` es un UUID técnico global y la GUI lo conserva internamente; `execution_number` es visible, correlativo por proyecto y puede repetirse entre proyectos.
 - La preparación sin `ExecutionId` crea un UUID cuando no existe candidato y reutiliza una única ejecución H3 pendiente, virgen y editable. Si hay más de una candidata, falla cerradamente y exige selección explícita.
 - La reapertura rehidrata imagen inicial y preview, referencias, prompts, cantidad/orden de chunks, parámetros globales y overrides. No crea otra ejecución al volver a preparar la candidata seleccionada.
-- SQLite está en schema 3. Persisten `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones y `execution_number`; todavía no existen tablas ni casos de uso de cola, presets, plantillas o listado de proyectos.
-- ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings. La cola propia decidida para la próxima evolución no existe y no debe confundirse con la queue interna de ComfyUI.
+- SQLite está en schema 4. F13.0 añadió por migración incremental las fundaciones durables `queue_items` y el singleton `queue_control`, con sus restricciones de item vigente/activo, sin reescribir las filas históricas de `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones ni `execution_number`.
+- Esa fundación F13.0 no habilita por sí sola enqueue, scheduler/claim, recovery de cola ni UI de cola. La implementación local no-UI de F13.1 sigue pendiente de auditoría, aprobación y commit; presets, plantillas y slices posteriores no están cerrados. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
 
 ## F12 — first frame como referencia primaria
 
@@ -41,7 +41,7 @@ Decisiones centrales:
 
 ## Próximo paso
 
-Auditoría independiente de F12.1; no iniciar F13 como parte de este cierre.
+Auditoría independiente de la implementación local F13.1; no iniciar F13.2 ni slices posteriores como parte de esta evidencia.
 
 ## No verificado en esta auditoría
 

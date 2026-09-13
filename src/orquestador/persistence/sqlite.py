@@ -218,6 +218,11 @@ class SQLiteProjectRepository:
   try:
    row=self.db.execute('SELECT state FROM executions WHERE id=?',(eid,)).fetchone()
    if row and Lifecycle(row[0]) is not Lifecycle.PENDING: raise PersistenceConflictError('preparation sequence is not virgin')
+   # This is the durable half of the draft gate.  The application checks the
+   # same condition before it builds a replacement sequence; checking again
+   # inside this transaction prevents a queued execution from being edited by
+   # a concurrent caller.
+   if self.db.execute("SELECT 1 FROM queue_items WHERE execution_id=? AND state IN ('queued','active')",(eid,)).fetchone(): raise PersistenceConflictError('preparation sequence has live queue item')
    if self.db.execute('SELECT 1 FROM transitions WHERE execution_id=?',(eid,)).fetchone(): raise PersistenceConflictError('preparation sequence has transitions')
    if self.db.execute('SELECT 1 FROM chunks WHERE execution_id=? AND state<>?',(eid,Lifecycle.PENDING.value)).fetchone(): raise PersistenceConflictError('preparation sequence has non-pending chunk')
    if self.db.execute('SELECT 1 FROM attempts a JOIN chunks c ON c.id=a.chunk_id WHERE c.execution_id=?',(eid,)).fetchone(): raise PersistenceConflictError('preparation sequence has attempts')
@@ -280,6 +285,9 @@ class SQLiteProjectRepository:
     except Exception as exc: raise PersistenceDataError('invalid materialized reference') from exc
    if tgt is not None: tc.first_frame=TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt),mref)
   return p,es
+ def list_project_ids(self):
+  """Return durable project identities only; product classification lives in application."""
+  return [ProjectId(row[0]) for row in self.db.execute('SELECT id FROM projects ORDER BY id')]
  def load_transitions(self, execution_id):
   """Read durable transition frames without exposing storage details to application code."""
   rows=self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions WHERE execution_id=? ORDER BY frame_index',(str(execution_id),)).fetchall()
