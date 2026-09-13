@@ -145,7 +145,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                          c.attempts[0].state is Lifecycle.FAILED for c in e.chunks))
         caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
             startable=True, assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
-        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
+        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
         config_keys = ("profile_ref", "chunk_count", "megapixels", "length", "steps",
@@ -218,24 +218,11 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     def _prepare_operation(**kwargs):
         op_repo = _operation_repository()
         try:
-            def op_snapshot(project_id=None, execution_id=None):
-                if not project_id: return {"state":"unavailable","errors":("select a project",)}
-                project, executions = op_repo.load(project_id)
-                matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
-                if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
-                e=matches[0]
-                target = select_active_cancellation_target(e)
-                caps = derive_capabilities(
-                    e,
-                    can_cancel_candidate=(target is not None),
-                    retryable=False,
-                    startable=True,
-                    assemble=False,
-                )
-                snapshot = {"project_id":str(project_id),"execution_id":str(execution_id),"state":e.state.value,"chunks":[],"artifacts":[],**caps.__dict__}
-                snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
-                return snapshot
-            return PrepareGuiUseCase(op_repo, cfg.project_root, op_snapshot)(**kwargs)
+            return PrepareGuiUseCase(
+                op_repo,
+                cfg.project_root,
+                lambda project_id=None, execution_id=None: _snapshot_for_repo(op_repo, project_id, execution_id),
+            )(**kwargs)
         finally:
             op_repo.close()
     def _preflight_operation(**kwargs):

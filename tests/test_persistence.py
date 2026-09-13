@@ -14,7 +14,19 @@ class PersistenceTests(unittest.TestCase):
    p,e,c,a,b=self.make(); self.r=r=SQLiteProjectRepository(d); r.save(p,[e]); p2,es=r.load(p.id); self.assertEqual(es[0].chunks[0].attempts[0].state,Lifecycle.FAILED); self.assertEqual(es[0].chunks[0].attempts[1].output.uri,'out.mp4'); r.close()
  def test_schema_fk(self):
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
-   self.r=r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('PRAGMA foreign_keys').fetchone()[0],1); self.assertEqual(r.db.execute('SELECT version FROM schema_version').fetchone()[0],2)
+   self.r=r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('PRAGMA foreign_keys').fetchone()[0],1); self.assertEqual(r.db.execute('SELECT version FROM schema_version').fetchone()[0],3)
+ def test_v2_execution_number_backfill_is_project_local_and_deterministic(self):
+  with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+   db=sqlite3.connect(Path(d,'orquestador.sqlite3'))
+   db.executescript("""CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(2);
+CREATE TABLE projects(id TEXT PRIMARY KEY,defaults TEXT NOT NULL);
+CREATE TABLE executions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,defaults TEXT NOT NULL,state TEXT NOT NULL,workflow_profile_ref TEXT);
+CREATE TABLE transitions(project_id TEXT,execution_id TEXT,target_chunk_id TEXT PRIMARY KEY,source_chunk_id TEXT,source_attempt_id TEXT,source_output TEXT,frame_index INTEGER,frame_count INTEGER,materialized_type TEXT,materialized_subfolder TEXT,materialized_name TEXT,materialized_source_sha256 TEXT);
+INSERT INTO projects VALUES('a','{}'); INSERT INTO projects VALUES('b','{}');
+INSERT INTO executions VALUES('a-2','a','{}','pending',NULL); INSERT INTO executions VALUES('a-1','a','{}','pending',NULL); INSERT INTO executions VALUES('b-1','b','{}','pending',NULL);""")
+   db.commit(); db.close()
+   self.r=r=SQLiteProjectRepository(d)
+   self.assertEqual(list(r.db.execute('SELECT project_id,id,execution_number FROM executions ORDER BY project_id,id')),[('a','a-1',1),('a','a-2',2),('b','b-1',1)])
  def test_idempotent_append(self):
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
    p,e,c,a,b=self.make(); self.r=r=SQLiteProjectRepository(d); r.save(p,[e]); r.save(p,[e]); self.assertEqual(r.db.execute('select count(*) from attempts').fetchone()[0],2)

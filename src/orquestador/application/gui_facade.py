@@ -17,6 +17,7 @@ class ExecutionSnapshot:
     # None means that the source did not authorize changing global generation
     # controls; a tuple is an authoritative durable configuration snapshot.
     configuration: tuple[tuple[str, object], ...] | None = None
+    execution_number: int|None = None
 
 @dataclass(frozen=True)
 class OperationResult:
@@ -106,7 +107,7 @@ class GuiFacade:
             raw_configuration = v.get("configuration")
             configuration = (None if raw_configuration is None else
                              tuple((str(k), value) for k, value in dict(raw_configuration).items()))
-            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration)
+            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, execution_number=v.get("execution_number"))
         chunks=[]
         for i,c in enumerate(getattr(v,"chunks",()) or ()):
             attempts=getattr(c,"attempts",()) or (); a=attempts[-1] if attempts else None

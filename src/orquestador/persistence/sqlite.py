@@ -2,7 +2,7 @@
 import json, os, sqlite3
 from pathlib import Path
 from orquestador.domain import *
-SCHEMA_VERSION=2
+SCHEMA_VERSION=3
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -29,6 +29,17 @@ class SQLiteProjectRepository:
   try:self.db=sqlite3.connect(self.path,isolation_level=None)
   except sqlite3.DatabaseError as e: raise PersistenceDataError(str(e))
   self.db.execute('PRAGMA foreign_keys=ON'); self._init()
+ @staticmethod
+ def _migrate_execution_numbers(db):
+  db.execute('ALTER TABLE executions ADD COLUMN execution_number INTEGER')
+  project_id = None; number = 0
+  for eid, current_project_id in db.execute('SELECT id,project_id FROM executions ORDER BY project_id,id'):
+   if current_project_id != project_id:
+    project_id, number = current_project_id, 0
+   number += 1
+   db.execute('UPDATE executions SET execution_number=? WHERE id=?', (number, eid))
+  db.execute('CREATE UNIQUE INDEX executions_project_execution_number ON executions(project_id,execution_number)')
+ migrations[3]=_migrate_execution_numbers.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -73,9 +84,13 @@ class SQLiteProjectRepository:
    if not _in_transaction: self.db.execute('BEGIN')
    self.db.execute('INSERT INTO projects VALUES(?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults',(str(p.id),_json(dict(p.defaults))))
    for e in es:
-    prof=e.workflow_profile_ref.value if e.workflow_profile_ref else None; old=self.db.execute('SELECT state,workflow_profile_ref FROM executions WHERE id=?',(str(e.id),)).fetchone()
+    prof=e.workflow_profile_ref.value if e.workflow_profile_ref else None; old=self.db.execute('SELECT state,workflow_profile_ref,execution_number FROM executions WHERE id=?',(str(e.id),)).fetchone()
     if old and (not _legal(Lifecycle(old[0]),e.state,allow_retry_reopen=allow_retry_reopen) or old[1]!=prof):raise PersistenceConflictError('execution lifecycle/profile conflict')
-    self.db.execute('INSERT INTO executions VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults,state=excluded.state,workflow_profile_ref=excluded.workflow_profile_ref',(str(e.id),str(p.id),_json(dict(e.defaults)),e.state.value,prof))
+    if old:
+     e.execution_number=old[2]
+    elif e.execution_number is None:
+     e.execution_number=self.db.execute('SELECT COALESCE(MAX(execution_number),0)+1 FROM executions WHERE project_id=?',(str(p.id),)).fetchone()[0]
+    self.db.execute('INSERT INTO executions(id,project_id,defaults,state,workflow_profile_ref,execution_number) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults,state=excluded.state,workflow_profile_ref=excluded.workflow_profile_ref',(str(e.id),str(p.id),_json(dict(e.defaults)),e.state.value,prof,e.execution_number))
     # Generic save never infers deletion from an incomplete aggregate.
     ids=[str(c.id) for c in e.chunks]
     if ids:
@@ -137,8 +152,8 @@ class SQLiteProjectRepository:
   row=self.db.execute('SELECT defaults FROM projects WHERE id=?',(str(pid),)).fetchone()
   if not row:raise PersistenceError('project not found')
   p=Project(ProjectId(str(pid)),json.loads(row[0])); es=[]; cm={}; am={}
-  for eid,d,s,w in self.db.execute('SELECT id,defaults,state,workflow_profile_ref FROM executions WHERE project_id=?',(str(pid),)):
-   e=Execution(p.id,ExecutionId(eid),json.loads(d),Lifecycle(s),[],WorkflowProfileRef(w) if w else None); es.append(e)
+  for eid,d,s,w,n in self.db.execute('SELECT id,defaults,state,workflow_profile_ref,execution_number FROM executions WHERE project_id=? ORDER BY execution_number',(str(pid),)):
+   e=Execution(p.id,ExecutionId(eid),json.loads(d),Lifecycle(s),[],WorkflowProfileRef(w) if w else None,execution_number=n); es.append(e)
    for cid,o,cd,cs in self.db.execute('SELECT id,ord,defaults,state FROM chunks WHERE execution_id=? ORDER BY ord',(eid,)):
     c=Chunk(ChunkId(cid),o,e.id,json.loads(cd),Lifecycle(cs)); e.add_chunk(c); cm[cid]=(e,c)
     for aid,n,st,out,ev,err,oaid,jobref in self.db.execute('SELECT id,number,state,output,evidence,error_id,output_artifact_id,external_job_ref FROM attempts WHERE chunk_id=?',(cid,)):

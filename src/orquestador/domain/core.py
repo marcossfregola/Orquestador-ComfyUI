@@ -120,7 +120,7 @@ class Chunk:
  def effective_parameters(self,project,execution_defaults): return _map({**project.defaults,**dict(execution_defaults),**self.defaults})
 @dataclass
 class Execution:
- project_id:ProjectId; id:ExecutionId=_uid(ExecutionId); defaults:Mapping[str,Any]=field(default_factory=dict); state:Lifecycle=Lifecycle.PENDING; chunks:list[Chunk]=field(default_factory=list); workflow_profile_ref:WorkflowProfileRef|None=None; artifacts:list[Artifact]=field(default_factory=list); errors:list[ErrorRecord]=field(default_factory=list)
+ project_id:ProjectId; id:ExecutionId=_uid(ExecutionId); defaults:Mapping[str,Any]=field(default_factory=dict); state:Lifecycle=Lifecycle.PENDING; chunks:list[Chunk]=field(default_factory=list); workflow_profile_ref:WorkflowProfileRef|None=None; artifacts:list[Artifact]=field(default_factory=list); errors:list[ErrorRecord]=field(default_factory=list); execution_number:int|None=None
  def __post_init__(self): self.defaults=_map(self.defaults)
  def add_chunk(self,chunk):
   if chunk.execution_id not in (None,self.id): raise DomainError('chunk belongs to another execution')

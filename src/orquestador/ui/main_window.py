@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         references_page_lay.addWidget(QLabel("Visual references (effective order; maximum 6)"))
         self.reference_scroll_area=QScrollArea(); self.reference_scroll_area.setObjectName("referenceScrollArea"); self.reference_scroll_area.setWidgetResizable(True); self.reference_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         reference_host=QWidget(); self.reference_grid=QGridLayout(reference_host); self.reference_grid.setContentsMargins(4,4,4,4); self.reference_grid.setHorizontalSpacing(12); self.reference_grid.setVerticalSpacing(12); self.reference_grid.setAlignment(Qt.AlignTop); self.reference_scroll_area.setWidget(reference_host); references_page_lay.addWidget(self.reference_scroll_area,1)
-        lay.addWidget(QLabel("Project / execution preparation")); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setPlaceholderText("Project id"); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setPlaceholderText("Execution id"); row.addWidget(self.execution); self.preflight=QPushButton("Preflight"); self.prepare=QPushButton("Prepare"); row.addWidget(self.preflight); row.addWidget(self.prepare); lay.addLayout(row)
+        lay.addWidget(QLabel("Project / execution preparation")); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setPlaceholderText("Project id"); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setReadOnly(True); self.execution.hide(); self.execution_number=QLabel("Execution: assigned automatically"); row.addWidget(self.execution_number); row.addWidget(self.execution); self.preflight=QPushButton("Preflight"); self.prepare=QPushButton("Prepare"); row.addWidget(self.preflight); row.addWidget(self.prepare); lay.addLayout(row)
         initial_row=QHBoxLayout(); initial_row.addWidget(QLabel("Initial image path:")); self.initial=QLineEdit(); self.initial.setPlaceholderText("empty — choose an initial image"); self.initial.setMinimumWidth(300); initial_row.addWidget(self.initial, 1); self.initial_button=QPushButton("Choose initial…"); initial_row.addWidget(self.initial_button); lay.addLayout(initial_row)
         self.reference_labels=[]
         self.references=QListWidget(); self.references.setObjectName("h3ReferenceSlots"); self.references.setVisible(False); lay.addWidget(self.references)
@@ -446,6 +446,9 @@ class MainWindow(QMainWindow):
         previous_index=self.chunk_tabs.currentIndex() if hasattr(self,"chunk_tabs") else 0
         self._last_snapshot=s
         self._auth_can_start = bool(s.can_start); self._auth_busy = bool(s.busy)
+        if s.execution_id:
+            self.execution.setText(s.execution_id)
+        self.execution_number.setText(f"Execution {s.execution_number}" if s.execution_number is not None else "Execution: assigned automatically")
         self.status.setText(s.state + (": "+"; ".join(s.errors) if s.errors else "")); self.chunks.clear(); self._sequence_ids=[c.chunk_id for c in s.chunks];
         if self._sequence_ids:
             self.chunk_count.blockSignals(True); self.chunk_count.setValue(max(2,len(self._sequence_ids))); self.chunk_count.blockSignals(False)

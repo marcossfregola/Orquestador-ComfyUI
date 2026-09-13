@@ -173,14 +173,14 @@ class PrepareGuiUseCase:
             extra=extra,
         )
         pid = ProjectId(project_id.strip()) if isinstance(project_id, str) and project_id.strip() else ProjectId(str(uuid4()))
-        eid = ExecutionId(execution_id.strip()) if isinstance(execution_id, str) and execution_id.strip() else ExecutionId(str(uuid4()))
+        requested_eid = ExecutionId(execution_id.strip()) if isinstance(execution_id, str) and execution_id.strip() else ExecutionId(str(uuid4()))
         try:
             project, executions = self.repository.load(pid)
         except PersistenceError as exc:
             if str(exc).strip().lower() != "project not found":
                 raise PreparationError(f"project load failed: {exc}") from exc
             project, executions = Project(pid), []
-        matches = [item for item in executions if str(item.id) == str(eid)]
+        matches = [item for item in executions if str(item.id) == str(requested_eid)]
         if len(matches) > 1:
             raise PreparationError("execution selection is ambiguous")
         existing = matches[0] if matches else None
@@ -266,7 +266,7 @@ class PrepareGuiUseCase:
         else:
             existing = Execution(
                 project.id,
-                eid,
+                requested_eid,
                 defaults=generation.to_mapping(),
                 workflow_profile_ref=WorkflowProfileRef(H3_PROFILE.name),
             )

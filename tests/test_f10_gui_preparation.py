@@ -47,6 +47,27 @@ class F10GuiMatrixTests(unittest.TestCase):
         self.res['repository'].close(); _,r=compose(AppConfig(self.root),extractor_factory=E); self.assertEqual(type(r['chain']).__name__,'ChainExecutionUseCase'); self.assertEqual(type(r['coordinator']).__name__,'ChunkExecutionCoordinator'); r['repository'].close()
     def test_generated_and_explicit_ids(self):
         a=self.prep(); self.assertTrue(a.snapshot.project_id.strip()); self.assertTrue(a.snapshot.execution_id.strip()); b=self.prep(project_id='P',execution_id='E'); self.assertEqual((b.snapshot.project_id,b.snapshot.execution_id),('P','E')); c=self.prep(project_id='Q'); self.assertEqual(c.snapshot.project_id,'Q'); self.assertTrue(c.snapshot.execution_id)
+    def test_prepare_snapshot_includes_execution_number_and_gui_renders_it(self):
+        a=self.prep(project_id='prueba-a')
+        self.assertEqual(a.snapshot.execution_number,1)
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from orquestador.ui.main_window import MainWindow
+        app=QApplication.instance() or QApplication([])
+        window=MainWindow(self.facade); self.addCleanup(window.close)
+        window.render(a.snapshot); app.processEvents()
+        self.assertEqual(window.execution_number.text(),"Execution 1")
+    def test_execution_numbers_are_project_local_and_survive_reload(self):
+        a1=self.prep(project_id='A'); b1=self.prep(project_id='B'); a2=self.prep(project_id='A')
+        repo=self.res['repository']; _, a_executions=repo.load('A'); _, b_executions=repo.load('B')
+        self.assertEqual([e.execution_number for e in a_executions],[1,2])
+        self.assertEqual([e.execution_number for e in b_executions],[1])
+        self.assertEqual(len({a1.snapshot.execution_id,b1.snapshot.execution_id,a2.snapshot.execution_id}),3)
+        repo.close(); _, reloaded=compose(AppConfig(self.root),chain_usecase=self.chain,client_factory=lambda _: self.client)
+        try:
+            self.assertEqual([e.execution_number for e in reloaded['repository'].load('A')[1]],[1,2])
+            self.assertEqual([e.execution_number for e in reloaded['repository'].load('B')[1]],[1])
+        finally: reloaded['repository'].close()
     def test_existing_selection_preserves_state_and_conflict_fails(self):
         a=self.prep(project_id='p',execution_id='e'); r=self.res['repository']; before=repr(r.load('p')); self.assertTrue(self.prep(project_id='p',execution_id='e').success); self.assertEqual(before,repr(r.load('p'))); self.assertTrue(self.prep(project_id='p',execution_id='e',prompts=['changed','two']).success)
     def test_prepare_validation_matrix(self):
