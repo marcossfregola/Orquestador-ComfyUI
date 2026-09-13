@@ -20,11 +20,11 @@ Coordina preparación, edición, validación, ejecución, retry, recovery, cance
 
 ### Dominio
 
-Define identidades, invariantes, estados y transiciones de `Project`, `Execution`, `Chunk`, `Attempt`, `Artifact`, `TransitionFrame` y futuro `QueueItem`. Debe permanecer determinista y testeable sin infraestructura.
+Define identidades, invariantes, estados y transiciones de `Project`, `Execution`, `Chunk`, `Attempt`, `Artifact`, `TransitionFrame` y `QueueItem`. Debe permanecer determinista y testeable sin infraestructura.
 
 ### Persistencia
 
-SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 3. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 4; F13.0 añadió `QueueItem` y el control singleton de cola mediante migración incremental. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
 
 ### ComfyUI y perfiles
 

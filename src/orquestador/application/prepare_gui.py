@@ -10,7 +10,7 @@ from ..domain.config import (
     merge_generation_mappings,
     merge_chunk_overrides,
 )
-from ..domain.core import Chunk, Execution, ExecutionId, Project, ProjectId, WorkflowProfileRef
+from ..domain.core import Chunk, Execution, ExecutionId, Project, ProjectId, WorkflowProfileRef, editable_virgin
 from ..persistence.sqlite import PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
 
@@ -180,21 +180,21 @@ class PrepareGuiUseCase:
             if str(exc).strip().lower() != "project not found":
                 raise PreparationError(f"project load failed: {exc}") from exc
             project, executions = Project(pid), []
+        def has_live_queue_item(item):
+            try:
+                return self.repository.has_live_queue_item(item.id)
+            except (PersistenceError, OSError, ValueError) as exc:
+                raise PreparationError(f"queue state read failed: {exc}") from exc
+            except AttributeError as exc:
+                raise PreparationError("queue state read failed: repository does not support durable queue inspection") from exc
         matches = [item for item in executions if requested_eid is not None and str(item.id) == str(requested_eid)]
         if requested_eid is None:
             reusable = [
                 item for item in executions
                 if item.workflow_profile_ref is not None
                 and item.workflow_profile_ref.value == H3_PROFILE.name
-                and not item.artifacts
-                and not item.errors
-                and str(item.state.value if hasattr(item.state, "value") else item.state) == "pending"
-                and all(
-                    not chunk.attempts
-                    and chunk.first_frame is None
-                    and str(chunk.state.value if hasattr(chunk.state, "value") else chunk.state) == "pending"
-                    for chunk in item.chunks
-                )
+                and editable_virgin(item)
+                and not has_live_queue_item(item)
             ]
             if len(reusable) > 1:
                 raise PreparationError("multiple editable unstarted executions; specify an execution")
@@ -202,6 +202,8 @@ class PrepareGuiUseCase:
         if len(matches) > 1:
             raise PreparationError("execution selection is ambiguous")
         existing = matches[0] if matches else None
+        if existing is not None and has_live_queue_item(existing):
+            raise PreparationError("cannot re-prepare execution with live queue item")
         scopes = [project.defaults]
         if existing is not None:
             scopes.append(existing.defaults)
@@ -272,9 +274,7 @@ class PrepareGuiUseCase:
                 existing_generation = GenerationConfig.from_scopes(project.defaults, existing.defaults)
             except GenerationConfigError as exc:
                 raise PreparationError(f"existing execution configuration is invalid: {exc}") from exc
-            started_states = {"running", "succeeded", "failed", "cancelled", "unknown"}
-            if (existing.artifacts or any(c.attempts or c.first_frame is not None for c in existing.chunks)
-                    or str(existing.state.value if hasattr(existing.state, 'value') else existing.state) in started_states):
+            if not editable_virgin(existing):
                 raise PreparationError("cannot re-prepare execution after real execution evidence")
             if len(existing.chunks) > count_value:
                 existing.chunks = list(existing.chunks[:count_value])

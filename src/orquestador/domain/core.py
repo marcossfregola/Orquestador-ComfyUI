@@ -1,4 +1,5 @@
 from dataclasses import dataclass,field
+from datetime import datetime, timezone
 from enum import Enum
 from types import MappingProxyType
 from typing import Any,Mapping
@@ -19,6 +20,7 @@ class ChunkId(EntityId): pass
 class AttemptId(EntityId): pass
 class ArtifactId(EntityId): pass
 class ErrorId(EntityId): pass
+class QueueItemId(EntityId): pass
 @dataclass(frozen=True)
 class BackendJobRef:
  value:str
@@ -29,6 +31,7 @@ class BackendJobRef:
   object.__setattr__(self,'value',v)
  def __str__(self): return self.value
 class Lifecycle(str,Enum): PENDING='pending'; RUNNING='running'; SUCCEEDED='succeeded'; FAILED='failed'; CANCELLED='cancelled'; UNKNOWN='unknown'
+class QueueItemState(str,Enum): QUEUED='queued'; ACTIVE='active'; FINISHED='finished'; REMOVED='removed'; SKIPPED='skipped'
 class Phase(str,Enum): PREPARE='prepare'; EXECUTE='execute'; ASSEMBLE='assemble'; OUTPUT='output'
 @dataclass(frozen=True)
 class InputRef: uri:str
@@ -127,7 +130,7 @@ class Execution:
   if chunk.order!=len(self.chunks): raise DomainError('chunk orders must be contiguous and zero-based')
   chunk.execution_id=self.id; self.chunks.append(chunk)
  def _editable(self):
-  if self.artifacts or self.errors or self.state is not Lifecycle.PENDING or any(c.attempts or c.first_frame is not None or c.state is not Lifecycle.PENDING for c in self.chunks):
+  if not editable_virgin(self):
    raise DomainError('chunk sequence is locked after runtime evidence')
  def reorder_chunks(self, order):
   self._editable(); ids=list(order)
@@ -161,6 +164,56 @@ class Execution:
   prev=self.chunks[chunk.order-1]
   if frame.source_chunk_id!=prev.id or not any(a.id==frame.source_attempt_id and a.state is Lifecycle.SUCCEEDED and a.output==frame.source_output for a in prev.attempts): raise DomainError('transition requires immediately previous successful attempt')
   chunk.first_frame=frame
+
+def editable_virgin(execution):
+ """Whether an execution has no runtime evidence and remains structurally editable."""
+ return (isinstance(execution,Execution) and not execution.artifacts and not execution.errors
+         and execution.state is Lifecycle.PENDING
+         and all(not c.attempts and c.first_frame is None and c.state is Lifecycle.PENDING for c in execution.chunks))
+
+def _utc(value):
+ if value is None: return datetime.now(timezone.utc)
+ if not isinstance(value,datetime) or value.tzinfo is None: raise DomainError('queue timestamps must be timezone-aware UTC')
+ return value.astimezone(timezone.utc)
+
+@dataclass
+class QueueItem:
+ execution_id:ExecutionId
+ position:int
+ id:QueueItemId=_uid(QueueItemId)
+ state:QueueItemState=QueueItemState.QUEUED
+ created_at:datetime=field(default_factory=lambda:datetime.now(timezone.utc))
+ updated_at:datetime=field(default_factory=lambda:datetime.now(timezone.utc))
+ terminal_reason:str|None=None
+ def __post_init__(self):
+  if not isinstance(self.execution_id,ExecutionId): raise DomainError('queue item execution id is invalid')
+  if type(self.position) is not int or self.position<0: raise DomainError('queue position must be a non-negative integer')
+  if not isinstance(self.state,QueueItemState):
+   try:self.state=QueueItemState(self.state)
+   except ValueError as exc: raise DomainError('invalid queue item state') from exc
+  self.created_at=_utc(self.created_at); self.updated_at=_utc(self.updated_at)
+  if self.updated_at < self.created_at: raise DomainError('queue item updated_at precedes created_at')
+  if self.terminal_reason is not None and (not isinstance(self.terminal_reason,str) or not self.terminal_reason.strip()): raise DomainError('queue terminal reason must be nonblank')
+  if self.state in {QueueItemState.QUEUED,QueueItemState.ACTIVE} and self.terminal_reason is not None: raise DomainError('live queue item cannot have terminal reason')
+  if self.state is QueueItemState.FINISHED and self.terminal_reason is not None: raise DomainError('finished queue item has no terminal reason')
+ def transition(self,target,*,terminal_reason=None,at=None):
+  try: target=QueueItemState(target)
+  except ValueError as exc: raise DomainError('invalid queue item state') from exc
+  allowed={QueueItemState.QUEUED:{QueueItemState.ACTIVE,QueueItemState.REMOVED,QueueItemState.SKIPPED},QueueItemState.ACTIVE:{QueueItemState.FINISHED}}
+  if target not in allowed.get(self.state,set()): raise DomainError(f'illegal queue item transition {self.state}->{target}')
+  if target in {QueueItemState.REMOVED,QueueItemState.SKIPPED} and (not isinstance(terminal_reason,str) or not terminal_reason.strip()): raise DomainError('queue terminal transition requires reason')
+  if target is QueueItemState.FINISHED and terminal_reason is not None: raise DomainError('finished queue item has no terminal reason')
+  self.state=target; self.terminal_reason=terminal_reason; self.updated_at=_utc(at)
+
+@dataclass(frozen=True)
+class QueueControl:
+ paused:bool=False
+ active_queue_item_id:QueueItemId|None=None
+ revision:int=0
+ def __post_init__(self):
+  if type(self.paused) is not bool: raise DomainError('queue paused must be bool')
+  if self.active_queue_item_id is not None and not isinstance(self.active_queue_item_id,QueueItemId): raise DomainError('invalid active queue item id')
+  if type(self.revision) is not int or self.revision<0: raise DomainError('queue revision must be non-negative integer')
 
 ORCHESTRATION_TIMEOUT_DEFAULT_SECONDS = 1800
 ORCHESTRATION_TIMEOUT_KEY = 'orchestration_timeout_seconds'

@@ -1,8 +1,9 @@
 """Transactional SQLite persistence."""
 import json, os, sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from orquestador.domain import *
-SCHEMA_VERSION=3
+SCHEMA_VERSION=4
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -40,6 +41,14 @@ class SQLiteProjectRepository:
    db.execute('UPDATE executions SET execution_number=? WHERE id=?', (number, eid))
   db.execute('CREATE UNIQUE INDEX executions_project_execution_number ON executions(project_id,execution_number)')
  migrations[3]=_migrate_execution_numbers.__func__
+ @staticmethod
+ def _migrate_queue(db):
+  db.execute("CREATE TABLE queue_items(id TEXT PRIMARY KEY,execution_id TEXT NOT NULL REFERENCES executions(id),position INTEGER NOT NULL CHECK(position >= 0),state TEXT NOT NULL CHECK(state IN ('queued','active','finished','removed','skipped')),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,terminal_reason TEXT NULL,CHECK((state IN ('queued','active','finished') AND terminal_reason IS NULL) OR state IN ('removed','skipped')),UNIQUE(position))")
+  db.execute("CREATE UNIQUE INDEX queue_items_one_live_per_execution ON queue_items(execution_id) WHERE state IN ('queued','active')")
+  db.execute("CREATE UNIQUE INDEX queue_items_at_most_one_active ON queue_items(state) WHERE state='active'")
+  db.execute("CREATE TABLE queue_control(singleton INTEGER PRIMARY KEY CHECK(singleton=1),paused INTEGER NOT NULL CHECK(paused IN (0,1)),active_queue_item_id TEXT NULL REFERENCES queue_items(id),revision INTEGER NOT NULL CHECK(revision >= 0))")
+  db.execute('INSERT INTO queue_control(singleton,paused,active_queue_item_id,revision) VALUES(1,0,NULL,0)')
+ migrations[4]=_migrate_queue.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -73,6 +82,81 @@ class SQLiteProjectRepository:
   for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256'):
    if c not in cols: self.db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL')
  def close(self):self.db.close()
+ def _queue_execution_is_editable_virgin(self, execution_id):
+  row=self.db.execute('SELECT state FROM executions WHERE id=?',(str(execution_id),)).fetchone()
+  if not row or row[0] != Lifecycle.PENDING.value: return False
+  checks=(
+   ('SELECT 1 FROM chunks WHERE execution_id=? AND state<>?',(str(execution_id),Lifecycle.PENDING.value)),
+   ('SELECT 1 FROM attempts a JOIN chunks c ON c.id=a.chunk_id WHERE c.execution_id=?',(str(execution_id),)),
+   ('SELECT 1 FROM transitions WHERE execution_id=?',(str(execution_id),)),
+   ('SELECT 1 FROM artifacts WHERE execution_id=?',(str(execution_id),)),
+   ('SELECT 1 FROM errors WHERE execution_id=?',(str(execution_id),)),
+  )
+  return not any(self.db.execute(query,args).fetchone() for query,args in checks)
+ @staticmethod
+ def _queue_time(value):
+  if not isinstance(value,datetime) or value.tzinfo is None: raise PersistenceDataError('invalid queue timestamp')
+  return value.astimezone(timezone.utc).isoformat()
+ @staticmethod
+ def _queue_item_from_row(row):
+  try:
+   created=datetime.fromisoformat(row[4]); updated=datetime.fromisoformat(row[5])
+   return QueueItem(ExecutionId(row[1]),row[2],QueueItemId(row[0]),QueueItemState(row[3]),created,updated,row[6])
+  except Exception as exc: raise PersistenceDataError('invalid queue item row') from exc
+ def save_queue_item(self,item):
+  if not isinstance(item,QueueItem): raise PersistenceDataError('invalid queue item')
+  try:
+   old=self.db.execute('SELECT id,execution_id,position,state,created_at,updated_at,terminal_reason FROM queue_items WHERE id=?',(str(item.id),)).fetchone()
+   if old is None:
+    if item.state is not QueueItemState.QUEUED: raise PersistenceConflictError('new queue item must be queued')
+    if not self._queue_execution_is_editable_virgin(item.execution_id): raise PersistenceConflictError('queue execution is not editable virgin')
+    self.db.execute('INSERT INTO queue_items VALUES(?,?,?,?,?,?,?)',(str(item.id),str(item.execution_id),item.position,item.state.value,self._queue_time(item.created_at),self._queue_time(item.updated_at),item.terminal_reason))
+   else:
+    prior=self._queue_item_from_row(old)
+    if prior.execution_id != item.execution_id or prior.position != item.position or prior.created_at != item.created_at: raise PersistenceConflictError('queue item identity is immutable')
+    if item.updated_at < prior.updated_at: raise PersistenceConflictError('queue item timestamp regression')
+    allowed={QueueItemState.QUEUED:{QueueItemState.ACTIVE,QueueItemState.REMOVED,QueueItemState.SKIPPED},QueueItemState.ACTIVE:{QueueItemState.FINISHED}}
+    if item.state not in allowed.get(prior.state,set()): raise PersistenceConflictError('queue item state conflict')
+    if item.state is QueueItemState.FINISHED:
+     execution=self.db.execute('SELECT state FROM executions WHERE id=?',(str(item.execution_id),)).fetchone()
+     if not execution or execution[0] not in {Lifecycle.SUCCEEDED.value,Lifecycle.FAILED.value,Lifecycle.CANCELLED.value}: raise PersistenceConflictError('finished queue item requires terminal execution')
+    self.db.execute('UPDATE queue_items SET state=?,updated_at=?,terminal_reason=? WHERE id=?',(item.state.value,self._queue_time(item.updated_at),item.terminal_reason,str(item.id)))
+  except sqlite3.IntegrityError as exc: raise PersistenceConflictError(str(exc)) from exc
+  return item
+ def list_queue_items(self,*,states=None):
+  values=None if states is None else tuple(QueueItemState(s).value for s in states)
+  if values == (): return []
+  query='SELECT id,execution_id,position,state,created_at,updated_at,terminal_reason FROM queue_items'
+  args=()
+  if values:
+   query+=' WHERE state IN (%s)' % ','.join('?'*len(values)); args=values
+  query+=' ORDER BY position,id'
+  return [self._queue_item_from_row(row) for row in self.db.execute(query,args)]
+ def get_queue_item(self,queue_item_id):
+  row=self.db.execute('SELECT id,execution_id,position,state,created_at,updated_at,terminal_reason FROM queue_items WHERE id=?',(str(queue_item_id),)).fetchone()
+  return None if row is None else self._queue_item_from_row(row)
+ def has_live_queue_item(self,execution_id):
+  """Return whether an execution has durable queued/active work, or fail closed."""
+  try: rows=self.db.execute('SELECT state FROM queue_items WHERE execution_id=?',(str(execution_id),)).fetchall()
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError('queue state read failed') from exc
+  try: return any(QueueItemState(row[0]) in {QueueItemState.QUEUED,QueueItemState.ACTIVE} for row in rows)
+  except (TypeError, ValueError) as exc: raise PersistenceDataError('invalid queue item state') from exc
+ def get_queue_control(self):
+  row=self.db.execute('SELECT paused,active_queue_item_id,revision FROM queue_control WHERE singleton=1').fetchone()
+  if row is None: raise PersistenceDataError('missing queue control')
+  if row[1]:
+   item=self.db.execute('SELECT state FROM queue_items WHERE id=?',(row[1],)).fetchone()
+   if not item or item[0] != QueueItemState.ACTIVE.value: raise PersistenceDataError('queue control active item is not active')
+  try:return QueueControl(bool(row[0]),QueueItemId(row[1]) if row[1] else None,row[2])
+  except Exception as exc: raise PersistenceDataError('invalid queue control') from exc
+ def save_queue_control(self,control):
+  if not isinstance(control,QueueControl): raise PersistenceDataError('invalid queue control')
+  if control.active_queue_item_id is not None:
+   row=self.db.execute('SELECT state FROM queue_items WHERE id=?',(str(control.active_queue_item_id),)).fetchone()
+   if not row or row[0] != QueueItemState.ACTIVE.value: raise PersistenceConflictError('queue control active item is not active')
+  try:self.db.execute('UPDATE queue_control SET paused=?,active_queue_item_id=?,revision=? WHERE singleton=1',(int(control.paused),str(control.active_queue_item_id) if control.active_queue_item_id else None,control.revision))
+  except sqlite3.IntegrityError as exc: raise PersistenceConflictError(str(exc)) from exc
+  return control
  def save(self,p,es,artifacts=(),errors=(),transitions=(),*,allow_retry_reopen=False,_in_transaction=False):
   try:
    owners={str(a.id):(e,c) for e in es for c in e.chunks for a in c.attempts}

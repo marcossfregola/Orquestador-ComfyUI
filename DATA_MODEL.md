@@ -206,7 +206,7 @@ Nunca se infiere éxito sólo porque ComfyUI no muestre el job.
 
 ## Persistencia y compatibilidad
 
-El schema actual es 3. F13.0 definirá y probará una migración incremental; no recreará la base. Las tablas nuevas no cambian filas históricas. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
+F13.0 elevó el schema a 4 mediante una migración incremental desde 3; no recrea la base. Añade `queue_items`, sus índices parciales de items vigentes/activo, y `queue_control` singleton sin cambiar filas históricas. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 
