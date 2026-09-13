@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-13
-**Baseline publicada de referencia:** `origin/main` en `4467700f8d942670ba426c609ac4d614e692b865`; Git es la autoridad del SHA vigente.
-**Estado de la evolución:** F13.0 y F13.1 están implementadas y cerradas. F13.2 permanece formalmente pausada hasta completar la etapa corta de robustez D3.
+**Baseline publicada de referencia:** `origin/main` en `48dad23d7ad5a58b4865d560b21f2d6291aa6de3`; Git es la autoridad del SHA vigente.
+**Estado de la evolución:** F13.0, F13.1 y F13.2 están implementadas, aprobadas y cerradas. F13.3 — defaults globales — es la próxima etapa planificada y no está iniciada.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -15,7 +15,7 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - La preparación sin `ExecutionId` crea un UUID cuando no existe candidato y reutiliza una única ejecución H3 pendiente, virgen y editable. Si hay más de una candidata, falla cerradamente y exige selección explícita.
 - La reapertura rehidrata imagen inicial y preview, referencias, prompts, cantidad/orden de chunks, parámetros globales y overrides. No crea otra ejecución al volver a preparar la candidata seleccionada.
 - SQLite está en schema 4. F13.0 añadió por migración incremental las fundaciones durables `queue_items` y el singleton `queue_control`, con sus restricciones de item vigente/activo, sin reescribir las filas históricas de `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones ni `execution_number`.
-- Esa fundación F13.0 no habilita por sí sola enqueue, scheduler/claim, recovery de cola ni UI de cola. La implementación local no-UI de F13.1 sigue pendiente de auditoría, aprobación y commit; presets, plantillas y slices posteriores no están cerrados. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
+- Esa fundación F13.0 no habilita por sí sola enqueue, scheduler/claim, recovery de cola ni UI de cola. F13.1 cerró los borradores y F13.2 cerró la clonación de configuración reutilizable; F13.3 y las slices posteriores continúan sólo planificadas. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
 
 ## F12 — first frame como referencia primaria
 
@@ -41,10 +41,10 @@ Decisiones centrales:
 
 ## Próximo paso
 
-Auditoría independiente de la implementación local F13.1; no iniciar F13.2 ni slices posteriores como parte de esta evidencia.
+F13.3 — defaults globales — es la próxima etapa planificada y no está iniciada. No iniciar F13.3 ni slices posteriores como parte del cierre F13.2.
 
-## No verificado en esta auditoría
+## No verificado en el cierre F13.2
 
 - No se ejecutó ComfyUI real, FFmpeg/FFprobe real ni validación visual.
 - No se ejecutó una regresión completa ni se revalidó el runtime Linux histórico; la evidencia nueva es la batería focal Windows documentada en `TESTING.md`, no la sustituye.
-- No se modificó código, schema, workflow ni runtime.
+- No se modificaron schema, workflow ni runtime. La evidencia F13.2 cambió sólo el caso de uso de clonación, su exportación y sus pruebas focales.

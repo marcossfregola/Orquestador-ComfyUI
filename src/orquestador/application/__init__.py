@@ -15,3 +15,5 @@ from .edit_chunk_sequence import EditChunkSequenceUseCase
 __all__ += ["EditChunkSequenceUseCase"]
 from .drafts import DraftError, DraftExecution, ExecutionListItem, DraftUseCase
 __all__ += ["DraftError", "DraftExecution", "ExecutionListItem", "DraftUseCase"]
+from .clone_configuration import CloneConfigurationError, CloneConfigurationUseCase, ClonedDraft
+__all__ += ["CloneConfigurationError", "CloneConfigurationUseCase", "ClonedDraft"]

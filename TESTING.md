@@ -304,7 +304,11 @@ No se ejecutó ComfyUI real ni validación humana; ambos permanecen fuera de alc
 
 ## Evidencia de cierre F13.1
 
-La implementación no-UI de create/save/reopen/listado de borradores ejecutó **9 tests F13.1, OK**. La regresión focal ejecutó **16 tests F13.0 + 14 de persistencia + 10 de Prepare/reopen = 40 tests, OK**; total focal **49 tests, OK**. `compileall` y `git diff --check` terminaron con código 0. Esta evidencia no ejecuta ComfyUI, FFmpeg/FFprobe ni validación humana, y no implica avance a F13.2.
+La implementación no-UI de create/save/reopen/listado de borradores ejecutó **9 tests F13.1, OK**. La regresión focal ejecutó **16 tests F13.0 + 14 de persistencia + 10 de Prepare/reopen = 40 tests, OK**; total focal **49 tests, OK**. `compileall` y `git diff --check` terminaron con código 0. Esta evidencia no ejecuta ComfyUI, FFmpeg/FFprobe ni validación humana.
+
+## Evidencia de cierre F13.2
+
+F13.2 está **CLOSED — APROBADA**. El caso de uso no-UI de clonación ejecutó **6 tests F13.2, OK y 1 omitido no bloqueante**: copia desde draft/succeeded/failed, exclusión de evidencia runtime, nuevas identidades e independencia posterior, rutas de inputs contenidas y rollback SQL atómico. Las rutas reutilizadas deben existir, resolver bajo el root y ser archivos regulares; inputs inexistentes, directorios y symlinks rotos o que escapan se rechazan antes de persistir el clon. El único omitido corresponde a `WinError 1314` al intentar crear un symlink en Windows por falta de privilegio; no bloquea el cierre. La regresión focal ejecutó **16 tests F13.0 + 9 tests F13.1 + 10 de GenerationConfig/Prepare + 4 de aceptación SQLite + 14 de persistencia = 53 tests**, más los 7 F13.2: **60 tests ejecutados: 59 OK, 1 omitido**. `compileall` y `git diff --check` terminaron con código 0. No se ejecutó ComfyUI real, GUI interactiva, FFmpeg/FFprobe ni validación humana; no hubo cambio de schema.
 
 | Slice | Pruebas focales mínimas | Validación humana |
 |---|---|---|
