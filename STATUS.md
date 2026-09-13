@@ -1,7 +1,7 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-13
-**Baseline auditada:** `main` en `ac77bc892f02641eaa6c4db7b6431ce25be98ae7`
+**Baseline publicada de referencia:** `origin/main` en `4467700f8d942670ba426c609ac4d614e692b865`; Git es la autoridad del SHA vigente.
 **Estado de la evolución:** F13.0 está implementada en la baseline local; F13.1 tiene una implementación local no-UI pendiente de auditoría, aprobación y commit. No habilita F13.2 ni slices posteriores.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
