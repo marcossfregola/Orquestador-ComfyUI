@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-13
-**Baseline publicada de referencia:** `origin/main` en `48dad23d7ad5a58b4865d560b21f2d6291aa6de3`; Git es la autoridad del SHA vigente.
-**Estado de la evolución:** F13.0, F13.1 y F13.2 están implementadas, aprobadas y cerradas. F13.3 — defaults globales — es la próxima etapa planificada y no está iniciada.
+**Baseline publicada anterior a este cierre:** `origin/main` en `f24fad5808f5e8d02a4be691dcb85ec601e2b416`; Git es la autoridad del SHA vigente.
+**Estado de la evolución:** F13.0, F13.1, F13.2 y F13.3 están implementadas, aprobadas y cerradas. F13.4 — presets técnicos con nombre — es la próxima etapa planificada y no está iniciada.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -14,8 +14,8 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - `Project ID` es visible. `ExecutionId` es un UUID técnico global y la GUI lo conserva internamente; `execution_number` es visible, correlativo por proyecto y puede repetirse entre proyectos.
 - La preparación sin `ExecutionId` crea un UUID cuando no existe candidato y reutiliza una única ejecución H3 pendiente, virgen y editable. Si hay más de una candidata, falla cerradamente y exige selección explícita.
 - La reapertura rehidrata imagen inicial y preview, referencias, prompts, cantidad/orden de chunks, parámetros globales y overrides. No crea otra ejecución al volver a preparar la candidata seleccionada.
-- SQLite está en schema 4. F13.0 añadió por migración incremental las fundaciones durables `queue_items` y el singleton `queue_control`, con sus restricciones de item vigente/activo, sin reescribir las filas históricas de `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones ni `execution_number`.
-- Esa fundación F13.0 no habilita por sí sola enqueue, scheduler/claim, recovery de cola ni UI de cola. F13.1 cerró los borradores y F13.2 cerró la clonación de configuración reutilizable; F13.3 y las slices posteriores continúan sólo planificadas. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
+- SQLite está en schema 5. F13.0 añadió por migración incremental las fundaciones durables `queue_items` y el singleton `queue_control`; F13.3 añadió el singleton versionado `global_defaults` sin reescribir las filas históricas de `Project`, `Execution`, `Chunk`, `Attempt`, errores, artefactos, transiciones ni `execution_number`.
+- F13.3 persiste exactamente los ocho parámetros técnicos públicos de Global Defaults, los valida cerradamente y los materializa sólo al crear un borrador nuevo. El snapshot de la ejecución conserva su `workflow_profile_ref`; cambios posteriores de globals no son retroactivos. F13.2 clona el snapshot origen sin consultar globals, y Prepare, Start y recovery siguen usando sólo snapshots durables. F13.4 y las slices posteriores continúan planificadas. ComfyUI continúa detrás de adaptadores y Workflow Profile/bindings; su queue interna no es la autoridad durable del producto.
 
 ## F12 — first frame como referencia primaria
 
@@ -41,10 +41,11 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F13.3 — defaults globales — es la próxima etapa planificada y no está iniciada. No iniciar F13.3 ni slices posteriores como parte del cierre F13.2.
+F13.4 — presets técnicos con nombre — es la próxima etapa planificada y no está iniciada. F13.5 y las slices posteriores tampoco fueron iniciadas como parte del cierre F13.3.
 
-## No verificado en el cierre F13.2
+## No verificado en el cierre F13.3
 
 - No se ejecutó ComfyUI real, FFmpeg/FFprobe real ni validación visual.
-- No se ejecutó una regresión completa ni se revalidó el runtime Linux histórico; la evidencia nueva es la batería focal Windows documentada en `TESTING.md`, no la sustituye.
-- No se modificaron schema, workflow ni runtime. La evidencia F13.2 cambió sólo el caso de uso de clonación, su exportación y sus pruebas focales.
+- No se repitió una regresión completa ni se revalidó el runtime Linux histórico; la evidencia nueva es la batería focal documentada en `TESTING.md`, no la sustituye.
+- La suite focal de F11.2A/crop conserva tres errores de fixture: el `Mock` no define `execution_id` y PySide6 rechaza ese `Mock` en `QLineEdit.setText`. `ui/main_window.py` y ese test no cambiaron desde el baseline F13.2; no es un defecto de F13.3 ni se corrigió fuera de alcance.
+- F13.4/F13.5, UI de defaults y cualquier cambio de workflow/runtime permanecen fuera de alcance.

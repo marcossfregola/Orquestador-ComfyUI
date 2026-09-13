@@ -14,7 +14,7 @@ class PersistenceTests(unittest.TestCase):
    p,e,c,a,b=self.make(); self.r=r=SQLiteProjectRepository(d); r.save(p,[e]); p2,es=r.load(p.id); self.assertEqual(es[0].chunks[0].attempts[0].state,Lifecycle.FAILED); self.assertEqual(es[0].chunks[0].attempts[1].output.uri,'out.mp4'); r.close()
  def test_schema_fk(self):
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
-   self.r=r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('PRAGMA foreign_keys').fetchone()[0],1); self.assertEqual(r.db.execute('SELECT version FROM schema_version').fetchone()[0],4)
+   self.r=r=SQLiteProjectRepository(d); self.assertEqual(r.db.execute('PRAGMA foreign_keys').fetchone()[0],1); self.assertEqual(r.db.execute('SELECT version FROM schema_version').fetchone()[0],5)
  def test_v2_execution_number_backfill_is_project_local_and_deterministic(self):
   with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
    db=sqlite3.connect(Path(d,'orquestador.sqlite3'))

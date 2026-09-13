@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 from uuid import uuid4
 
-from ..domain.core import Chunk, Execution, ExecutionId, Lifecycle, Project, ProjectId, editable_virgin
+from ..domain.core import Chunk, Execution, ExecutionId, Lifecycle, Project, ProjectId, WorkflowProfileRef, editable_virgin
+from ..domain.config import DEFAULT_PROFILE_REF, GenerationConfig, GenerationConfigError, GLOBAL_DEFAULT_KEYS, GlobalDefaults, SUPPORTED_PROFILE_REFS, merge_generation_mappings
 from ..persistence.sqlite import PersistenceError
 
 
@@ -115,6 +116,52 @@ class DraftUseCase:
         if requested is not None and any(str(item.id) == str(requested) for item in executions):
             raise DraftError("execution id already belongs to this project")
         execution = Execution(project.id, requested or ExecutionId(str(uuid4())))
+        requested_defaults = self._mapping(defaults, "execution defaults")
+        try:
+            global_defaults = self.repository.load_global_defaults().to_mapping()
+        except PersistenceError as exc:
+            raise DraftError(f"new draft global defaults could not be read: {exc}") from exc
+        try:
+            merged = merge_generation_mappings(project.defaults, global_defaults, requested_defaults, strict=False)
+        except GenerationConfigError as exc:
+            raise DraftError(f"new draft configuration is invalid: {exc}") from exc
+        if {"initial_image", "prompts"}.issubset(merged):
+            try:
+                seeded = GenerationConfig.from_mapping(merged, strict=True)
+            except GenerationConfigError as exc:
+                raise DraftError(f"new draft configuration is invalid: {exc}") from exc
+            # ``DraftUseCase`` also owns older callers that attach unrelated,
+            # JSON-safe metadata to a complete generation payload.  Keep that
+            # data while replacing every supported configuration key with the
+            # normalized, precedence-resolved snapshot.
+            defaults = {**requested_defaults, **seeded.to_mapping()}
+            execution.workflow_profile_ref = WorkflowProfileRef(seeded.profile_ref)
+        else:
+            # Draft creation predates the complete F11 configuration payload and
+            # accepts incomplete technical data and opaque caller metadata.  It
+            # nevertheless has to capture the technical seed now, rather than
+            # defer it to Prepare/Start.
+            # Preserve opaque values while applying the documented precedence:
+            # project/base -> globals -> explicit execution mapping.
+            try:
+                snapshot = dict(requested_defaults)
+                snapshot.update(merged)
+                global_snapshot = GlobalDefaults.from_mapping(
+                    {key: snapshot[key] for key in GLOBAL_DEFAULT_KEYS}
+                )
+                snapshot.update(global_snapshot.to_mapping())
+                profile_ref = snapshot.get("profile_ref", DEFAULT_PROFILE_REF)
+                if (
+                    not isinstance(profile_ref, str)
+                    or not profile_ref.strip()
+                    or profile_ref.strip() not in SUPPORTED_PROFILE_REFS
+                ):
+                    raise GenerationConfigError("unsupported profile_ref")
+                snapshot["profile_ref"] = profile_ref.strip()
+            except GenerationConfigError as exc:
+                raise DraftError(f"new draft configuration is invalid: {exc}") from exc
+            defaults = snapshot
+            execution.workflow_profile_ref = WorkflowProfileRef(snapshot["profile_ref"])
         self._apply_structure(execution, defaults, chunks)
         try:
             self.repository.save(project, [*executions, execution])

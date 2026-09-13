@@ -75,7 +75,7 @@ CREATE TABLE projects(id TEXT PRIMARY KEY,defaults TEXT NOT NULL); CREATE TABLE 
             db.commit(); db.close()
             self.repository = SQLiteProjectRepository(directory)
             self.assertEqual(self.repository.load(ProjectId('p'))[1][0].id, ExecutionId('e'))
-            self.assertEqual(self.repository.db.execute('SELECT version FROM schema_version').fetchone()[0], 4)
+            self.assertEqual(self.repository.db.execute('SELECT version FROM schema_version').fetchone()[0], 5)
             self.assertEqual(self.repository.get_queue_control(), QueueControl())
             with self.assertRaises(sqlite3.IntegrityError):
                 self.repository.db.execute("INSERT INTO queue_items VALUES('bad-finished','e',0,'finished','2026-01-01T00:00:00+00:00','2026-01-01T00:00:00+00:00','not legal')")

@@ -3,7 +3,7 @@ import json, os, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from orquestador.domain import *
-SCHEMA_VERSION=4
+SCHEMA_VERSION=5
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -49,6 +49,12 @@ class SQLiteProjectRepository:
   db.execute("CREATE TABLE queue_control(singleton INTEGER PRIMARY KEY CHECK(singleton=1),paused INTEGER NOT NULL CHECK(paused IN (0,1)),active_queue_item_id TEXT NULL REFERENCES queue_items(id),revision INTEGER NOT NULL CHECK(revision >= 0))")
   db.execute('INSERT INTO queue_control(singleton,paused,active_queue_item_id,revision) VALUES(1,0,NULL,0)')
  migrations[4]=_migrate_queue.__func__
+ @staticmethod
+ def _migrate_global_defaults(db):
+  from orquestador.domain.config import GlobalDefaults
+  db.execute('CREATE TABLE global_defaults(singleton INTEGER PRIMARY KEY CHECK(singleton=1),mapping TEXT NOT NULL,config_version INTEGER NOT NULL)')
+  db.execute('INSERT INTO global_defaults(singleton,mapping,config_version) VALUES(1,?,1)', (_json(GlobalDefaults().to_mapping()),))
+ migrations[5]=_migrate_global_defaults.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -81,6 +87,27 @@ class SQLiteProjectRepository:
   cols={r[1] for r in self.db.execute('PRAGMA table_info(transitions)')}
   for c in ('materialized_type','materialized_subfolder','materialized_name','materialized_source_sha256'):
    if c not in cols: self.db.execute(f'ALTER TABLE transitions ADD COLUMN {c} TEXT NULL')
+ def load_global_defaults(self):
+  from orquestador.domain.config import GlobalDefaults, GenerationConfigError
+  try:
+   rows=self.db.execute('SELECT mapping,config_version FROM global_defaults WHERE singleton=1').fetchall()
+   if len(rows) != 1 or rows[0][1] != 1: raise PersistenceDataError('invalid global defaults version')
+   return GlobalDefaults.from_mapping(json.loads(rows[0][0]))
+  except (json.JSONDecodeError, TypeError, GenerationConfigError) as exc: raise PersistenceDataError('invalid global defaults') from exc
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError(str(exc)) from exc
+ def save_global_defaults(self, defaults):
+  from orquestador.domain.config import GlobalDefaults
+  if not isinstance(defaults, GlobalDefaults): raise PersistenceDataError('invalid global defaults')
+  try:
+   self.db.execute('BEGIN')
+   changed=self.db.execute('UPDATE global_defaults SET mapping=?,config_version=1 WHERE singleton=1',(_json(defaults.to_mapping()),)).rowcount
+   if changed != 1: raise PersistenceDataError('missing global defaults')
+   self.db.execute('COMMIT')
+  except Exception as exc:
+   if self.db.in_transaction:self.db.execute('ROLLBACK')
+   if isinstance(exc,PersistenceError): raise
+   raise PersistenceError(str(exc)) from exc
+  return defaults
  def close(self):self.db.close()
  def _queue_execution_is_editable_virgin(self, execution_id):
   row=self.db.execute('SELECT state FROM executions WHERE id=?',(str(execution_id),)).fetchone()

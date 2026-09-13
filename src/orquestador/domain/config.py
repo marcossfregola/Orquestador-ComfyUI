@@ -21,6 +21,11 @@ DEFAULT_REF_IMAGE_SIZE = "match"
 DEFAULT_ALSO_REF_FIRST_FRAME = False
 DEFAULT_FIRST_FRAME_AS_PRIMARY_REFERENCE = False
 DEFAULT_ORCHESTRATION_TIMEOUT_SECONDS = ORCHESTRATION_TIMEOUT_DEFAULT_SECONDS
+GLOBAL_DEFAULT_KEYS = frozenset({
+    "megapixels", "length", "steps", "fps", "ref_image_size",
+    "also_ref_first_frame", "first_frame_as_primary_reference",
+    "orchestration_timeout_seconds",
+})
 SUPPORTED_REF_IMAGE_SIZES = frozenset({"match"})
 
 SUPPORTED_CONFIG_KEYS = frozenset(
@@ -63,6 +68,35 @@ FORBIDDEN_CONFIG_KEYS = frozenset(
 
 class GenerationConfigError(ValueError):
     """Raised when a generation configuration is unsupported or invalid."""
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalDefaults:
+    """Versioned, deliberately small technical seed for new executions."""
+    megapixels: float = DEFAULT_MEGAPIXELS
+    length: int = DEFAULT_LENGTH
+    steps: int = DEFAULT_STEPS
+    fps: int = DEFAULT_FPS
+    ref_image_size: str = DEFAULT_REF_IMAGE_SIZE
+    also_ref_first_frame: bool = DEFAULT_ALSO_REF_FIRST_FRAME
+    first_frame_as_primary_reference: bool = DEFAULT_FIRST_FRAME_AS_PRIMARY_REFERENCE
+    orchestration_timeout_seconds: int = DEFAULT_ORCHESTRATION_TIMEOUT_SECONDS
+
+    def __post_init__(self):
+        config = GenerationConfig(initial_image="global-defaults", prompts=("one", "two"), chunk_count=2, **self.to_mapping())
+        for key in GLOBAL_DEFAULT_KEYS:
+            object.__setattr__(self, key, getattr(config, key))
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping) -> "GlobalDefaults":
+        if not isinstance(mapping, Mapping):
+            raise GenerationConfigError("global defaults must be a mapping")
+        if set(mapping) != GLOBAL_DEFAULT_KEYS:
+            raise GenerationConfigError("global defaults keys are unsupported or incomplete")
+        return cls(**dict(mapping))
+
+    def to_mapping(self) -> dict:
+        return {key: getattr(self, key) for key in sorted(GLOBAL_DEFAULT_KEYS)}
 
 
 def validate_prompt(value: str) -> str:
@@ -303,6 +337,8 @@ __all__ = [
     "DEFAULT_REF_IMAGE_SIZE",
     "DEFAULT_ALSO_REF_FIRST_FRAME",
     "DEFAULT_ORCHESTRATION_TIMEOUT_SECONDS",
+    "GLOBAL_DEFAULT_KEYS",
+    "GlobalDefaults",
     "SUPPORTED_CONFIG_KEYS",
     "CHUNK_OVERRIDE_KEYS",
     "FORBIDDEN_CONFIG_KEYS",

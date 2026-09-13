@@ -310,12 +310,20 @@ La implementación no-UI de create/save/reopen/listado de borradores ejecutó **
 
 F13.2 está **CLOSED — APROBADA**. El caso de uso no-UI de clonación ejecutó **6 tests F13.2, OK y 1 omitido no bloqueante**: copia desde draft/succeeded/failed, exclusión de evidencia runtime, nuevas identidades e independencia posterior, rutas de inputs contenidas y rollback SQL atómico. Las rutas reutilizadas deben existir, resolver bajo el root y ser archivos regulares; inputs inexistentes, directorios y symlinks rotos o que escapan se rechazan antes de persistir el clon. El único omitido corresponde a `WinError 1314` al intentar crear un symlink en Windows por falta de privilegio; no bloquea el cierre. La regresión focal ejecutó **16 tests F13.0 + 9 tests F13.1 + 10 de GenerationConfig/Prepare + 4 de aceptación SQLite + 14 de persistencia = 53 tests**, más los 7 F13.2: **60 tests ejecutados: 59 OK, 1 omitido**. `compileall` y `git diff --check` terminaron con código 0. No se ejecutó ComfyUI real, GUI interactiva, FFmpeg/FFprobe ni validación humana; no hubo cambio de schema.
 
+## Evidencia de cierre F13.3
+
+F13.3 está **CLOSED — APROBADA**. SQLite migra de schema 4 a 5 mediante el singleton versionado `global_defaults`; la fila contiene exactamente los ocho campos técnicos públicos y no contiene `profile_ref`. La migración no reescribe históricos. El caso de uso valida lectura/escritura cerradamente y toda creación válida de borrador materializa los globals en su snapshot, incluso con `defaults={}` o metadata opaca sin claves técnicas. Se preserva metadata opaca válida, `workflow_profile_ref` se persiste, y la precedencia es `base/canónico → globals → explícito → snapshot Execution → Chunk`; cambios posteriores de globals no modifican ejecuciones existentes.
+
+`python -B -m unittest -v tests.test_f13_3_global_defaults tests.test_f13_1_drafts tests.test_f13_2_clone_configuration` ejecutó **30 tests: 29 OK y 1 omitido no bloqueante** por `WinError 1314` al crear el symlink de F13.2. La cobertura F13.3 incluye schema 4→5, singleton, versionado, validación fail-closed, los ocho campos, `defaults={}`, metadata opaca con y sin `profile_ref`, override técnico parcial sin shape completa, metadata opaca junto a configuración completa, no retroactividad, precedencia, rollback atómico y clone desde el snapshot origen sin consulta de globals. La regresión relevante de F13.0, persistencia, GenerationConfig/Prepare/Start, aceptación SQLite, recovery y operaciones F11.5 ejecutó **86 tests, OK**. La auditoría de código confirmó que, fuera de `GlobalDefaultsUseCase`, el único consumo de globals en el flujo de una ejecución está en `DraftUseCase.create`: F13.2 clone, Prepare, Start y recovery no los consultan. `python -m compileall -q src tests` y `git diff --check` terminaron con código 0.
+
+Para diagnosticar los errores ya observados de la suite completa, se ejecutó aparte `tests.test_f11_2a_visual_preparation`: **1 OK, 3 errors y 1 omitido**. Los tres errors son de la fixture histórica: `Mock` no define `execution_id` y PySide6 rechaza ese objeto en `QLineEdit.setText`; ni `tests/test_f11_2a_visual_preparation.py` ni `src/orquestador/ui/main_window.py` cambiaron desde el baseline F13.2. No se corrigieron porque son ajenos a F13.3. No se ejecutó ComfyUI real, GUI interactiva, FFmpeg/FFprobe ni validación humana; F13.4/F13.5 no fueron implementadas.
+
 | Slice | Pruebas focales mínimas | Validación humana |
 |---|---|---|
 | F13.0 | invariantes QueueItem, migración schema 3, round-trip, corrupción, activo único | no |
 | F13.1 | create/save/reopen draft, listado, clasificación, no duplicación, bloqueo runtime | no |
 | F13.2 | copia permitida/prohibida, identidades nuevas, independencia, rollback | no |
-| F13.3 | precedencia, persistencia, no retroactividad, valores inválidos | posterior al integrar UI |
+| F13.3 | schema 4→5, singleton, validación, ocho campos, precedencia, snapshots/no retroactividad y rollback | no; UI de defaults diferida a F13.6 |
 | F13.4 | CRUD preset, default único, aplicación por copia, conflictos | posterior al integrar UI |
 | F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | posterior al integrar UI |
 | F13.6 | facade/snapshots, Qt offscreen, navegación y capabilities | Windows |
