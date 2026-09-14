@@ -116,7 +116,7 @@ Invariantes:
 7. `finished` requiere que Execution esté terminal y reconciliada.
 8. Borrar/quitar QueueItem nunca borra Project, Execution, chunks ni artifacts.
 
-El schema 4 ya contiene restricciones/índices que refuerzan 3 y 4, además de validación de aplicación. F13.7 no crea otra tabla ni otro lifecycle: operacionaliza estos registros sin reescribir filas históricas.
+El schema 4 ya contiene restricciones/índices que refuerzan 3 y 4, además de validación de aplicación. F13.7 y F13.8 no crean otra tabla ni otro lifecycle: operacionalizan estos registros sin reescribir filas históricas.
 
 ## Control de cola
 
@@ -127,6 +127,14 @@ Registro singleton durable con:
 - revisión/versión para updates transaccionales si la implementación lo necesita.
 
 Pausar impide iniciar el siguiente item. No cancela ni interrumpe el activo.
+
+## Claim y finalización F13.8
+
+`claim_next_queue_item()` es una transacción SQLite única. Lee y valida `queue_control` y el único `active`; si existe activo devuelve un resultado transitorio de bloqueo/recovery, si está pausada devuelve pausa, y si no hay `queued` devuelve vacío. Sólo entonces selecciona el primer `queued` por `position,id`, revalida su `Execution` virgen/pending y su propiedad viva única, y persiste juntos `queued → active`, `active_queue_item_id` y una revisión incrementada.
+
+El resultado del claim no se persiste como entidad o lifecycle adicional. Contiene la identidad del item sólo para la frontera de scheduler que debe arrancar exactamente esa `Execution`.
+
+`finish_claimed_queue_item()` también es una transacción única: exige que item/control/execution coincidan, que no exista otro activo y que la `Execution` ya sea `succeeded`, `failed` o `cancelled`; persiste `active → finished`, limpia `active_queue_item_id` e incrementa la revisión. No borra evidencia ni QueueItems históricos.
 
 ## Operaciones manuales F13.7
 
@@ -205,7 +213,7 @@ Defaults globales y preset son mecanismos de autoría. En runtime sólo mandan e
 
 ## Recovery de cola
 
-Después de reinicio, un QueueItem active obliga a reconciliar su Execution antes de reclamar otro. La decisión usa estado durable, attempts, BackendJobRef, artifacts, TransitionFrame y observación fresca de ComfyUI.
+Después de reinicio, un QueueItem active obliga a reconciliar su Execution antes de reclamar otro. F13.8 lo detecta y bloquea explícitamente sin mutar o reenviar; la decisión completa usa estado durable, attempts, BackendJobRef, artifacts, TransitionFrame y observación fresca de ComfyUI y pertenece a F13.9.
 
 - Evidencia terminal coherente permite finalizar el item.
 - Job queued/running coherente conserva el activo y continúa esperando/recuperando.
@@ -216,7 +224,7 @@ Nunca se infiere éxito sólo porque ComfyUI no muestre el job.
 
 ## Persistencia y compatibilidad
 
-SQLite está en schema 7. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets` y F13.5 añadió en schema 7 `chunk_templates`; ninguna de esas migraciones reescribe Project, Execution, Chunk, Attempt ni evidencia histórica. F13.7 no requiere una nueva migración: las columnas, índices y control de schema 4 contienen los datos necesarios para sus operaciones manuales. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
+SQLite está en schema 7. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets` y F13.5 añadió en schema 7 `chunk_templates`; ninguna de esas migraciones reescribe Project, Execution, Chunk, Attempt ni evidencia histórica. F13.7 y F13.8 no requieren una nueva migración: las columnas, índices y control de schema 4 contienen los datos necesarios para operaciones manuales, claim y finalización. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 

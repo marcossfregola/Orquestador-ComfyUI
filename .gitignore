@@ -6,3 +6,4 @@ build/
 dist/
 *.egg-info/
 .orq-test-tmp-f6/
+.orquestador-scheduler.lock

@@ -25,6 +25,7 @@ from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
 from ..application.preparation_library import PreparationLibraryUseCase
+from ..application.scheduler import SchedulerBackgroundRunner, SchedulerExecutionBoundary, SchedulerInstanceLock, SingleExecutionScheduler
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
 
@@ -342,33 +343,61 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 op_client = client_factory(cfg.comfyui_endpoint)
                 op_materializer = InputMaterializationService(op_client, cfg.project_root)
 
-            def materialize_transition(transition):
-                ref = transition.materialized_ref if hasattr(transition, 'materialized_ref') else None
-                if ref is not None:
-                    return ref
-                # The N-1 extractor writes the continuity frame to the
-                # project transition namespace, keyed by the successful
-                # source attempt.  The video output URI is not that PNG path.
-                attempt = getattr(transition, 'source_attempt_id', None)
-                attempt_id = getattr(attempt, 'value', attempt)
-                if not isinstance(attempt_id, str) or not attempt_id.strip():
-                    raise ValueError('transition source attempt is invalid')
-                source_path = (cfg.project_root / 'transitions' / f'{attempt_id}.png').resolve()
-                if not source_path.is_relative_to(cfg.project_root.resolve()):
-                    raise ValueError('transition path escapes project root')
-                return op_materializer.materialize_transition(source_path)
-
             op_start = StartGuiChainUseCase(
                 op_repo,
                 cfg.project_root,
                 op_chain,
                 cfg.workflow_template,
                 op_materializer,
-                materialize_transition,
+                _materialize_transition(op_materializer),
             )
             return op_start(project_id, execution_id, **kwargs)
         finally:
             op_repo.close()
+
+    def _materialize_transition(op_materializer):
+        def materialize_transition(transition):
+            ref = transition.materialized_ref if hasattr(transition, 'materialized_ref') else None
+            if ref is not None:
+                return ref
+            # The N-1 extractor writes the continuity frame to the project
+            # transition namespace, keyed by the successful source attempt.
+            attempt = getattr(transition, 'source_attempt_id', None)
+            attempt_id = getattr(attempt, 'value', attempt)
+            if not isinstance(attempt_id, str) or not attempt_id.strip():
+                raise ValueError('transition source attempt is invalid')
+            source_path = (cfg.project_root / 'transitions' / f'{attempt_id}.png').resolve()
+            if not source_path.is_relative_to(cfg.project_root.resolve()):
+                raise ValueError('transition path escapes project root')
+            return op_materializer.materialize_transition(source_path)
+        return materialize_transition
+
+    def _scheduler_factory():
+        """Construct every SQLite/network-bound scheduler dependency in its worker."""
+        op_repo = _operation_repository()
+        try:
+            op_chain, _, _, _, orchestrator = _worker_services(op_repo)
+            op_materializer = orchestrator.materializer
+            op_start = StartGuiChainUseCase(
+                op_repo,
+                cfg.project_root,
+                op_chain,
+                cfg.workflow_template,
+                op_materializer,
+                _materialize_transition(op_materializer),
+            )
+            boundary = SchedulerExecutionBoundary(
+                op_start.start_claimed,
+                readiness=_require_output_root,
+            )
+            return SingleExecutionScheduler(
+                op_repo,
+                boundary,
+                SchedulerInstanceLock(cfg.project_root),
+            )
+        except Exception:
+            op_repo.close()
+            raise
 
     def resume_route(project_id, execution_id=None, **kwargs):
         if resume_usecase is None: raise RuntimeError("resume unavailable")
@@ -426,6 +455,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     from ..application.edit_chunk_sequence import EditChunkSequenceUseCase
     sequence_edit = EditChunkSequenceUseCase(repository_factory=lambda: repository_factory(cfg.project_root))
     library = _PreparationLibraryGateway()
+    scheduler = SchedulerBackgroundRunner(_scheduler_factory)
     facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
                        cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit,
@@ -434,7 +464,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     "assembler": assembler, "submitter": submitter, "coordinator": coordinator,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,
                     "retry": retry_usecase,
-                    "assemble": assembly_usecase, "library": library}
+                    "assemble": assembly_usecase, "library": library, "scheduler": scheduler}
 
 def launch(config: AppConfig) -> int:
     from importlib import import_module
@@ -444,10 +474,20 @@ def launch(config: AppConfig) -> int:
     app.setOrganizationName("OrquestadorComfyUI")
     app.setApplicationName("Orquestador")
     facade, resources = compose(config)
-    window = MainWindow(facade, config.project_root); window.show()
+    scheduler = resources["scheduler"]
+    scheduler_started = False
     try:
+        # The runtime owns scheduler lifetime rather than the UI.  When the
+        # explicit output trust root is absent, its claimed-start boundary
+        # fails closed before a QueueItem is claimed; it does not turn launch
+        # into a conditional scheduler authority.
+        scheduler.start()
+        scheduler_started = True
+        window = MainWindow(facade, config.project_root); window.show()
         return int(app.exec())
     finally:
+        if scheduler_started:
+            scheduler.stop()
         resources["repository"].close()
 
 def main(argv: Sequence[str] | None = None) -> int:

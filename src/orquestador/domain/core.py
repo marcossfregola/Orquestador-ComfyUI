@@ -216,6 +216,30 @@ class QueueControl:
   if self.active_queue_item_id is not None and not isinstance(self.active_queue_item_id,QueueItemId): raise DomainError('invalid active queue item id')
   if type(self.revision) is not int or self.revision<0: raise DomainError('queue revision must be non-negative integer')
 
+class QueueClaimStatus(str,Enum):
+ CLAIMED='claimed'; EMPTY='empty'; PAUSED='paused'; ACTIVE_PRESENT='active_present'
+
+@dataclass(frozen=True)
+class QueueClaimResult:
+ """Transient result of one durable scheduler claim attempt.
+
+ It deliberately records no new durable lifecycle of its own: SQLite remains
+ authoritative through ``QueueItem`` and ``QueueControl``.
+ """
+ status:QueueClaimStatus
+ item:QueueItem|None=None
+ active_queue_item_id:QueueItemId|None=None
+ def __post_init__(self):
+  if not isinstance(self.status,QueueClaimStatus): raise DomainError('invalid queue claim status')
+  if self.status is QueueClaimStatus.CLAIMED:
+   if not isinstance(self.item,QueueItem) or self.item.state is not QueueItemState.ACTIVE: raise DomainError('claimed queue result requires active queue item')
+   if self.active_queue_item_id is not None: raise DomainError('claimed queue result cannot carry a separate active id')
+  else:
+   if self.item is not None: raise DomainError('non-claimed queue result cannot carry a queue item')
+   if self.status is QueueClaimStatus.ACTIVE_PRESENT:
+    if not isinstance(self.active_queue_item_id,QueueItemId): raise DomainError('active queue result requires active id')
+   elif self.active_queue_item_id is not None: raise DomainError('queue claim result has unexpected active id')
+
 ORCHESTRATION_TIMEOUT_DEFAULT_SECONDS = 1800
 ORCHESTRATION_TIMEOUT_KEY = 'orchestration_timeout_seconds'
 

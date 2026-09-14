@@ -354,6 +354,18 @@ El caso de uso no-UI lista/selecciona, encola, reordena el conjunto completo de 
 
 No se ejecutó ComfyUI real, FFmpeg/FFprobe real, GUI interactiva ni validación humana: F13.7 no agrega UI ni inicia una ejecución. La suite completa no se repitió; los tres errors históricos de la fixture F11.2A/crop permanecen fuera del diff y fuera de alcance.
 
+## Evidencia de cierre F13.8
+
+F13.8 está **CLOSED — APROBADA**. El cierre fue autorizado sobre la implementación y los controles técnicos registrados en esta sección. No cambia schema: continúa en 7 y opera las fundaciones `queue_items`/`queue_control` de F13.0/F13.7. El scheduler usa un claim y una finalización `BEGIN IMMEDIATE`, lock local de byte del SO y una conexión SQLite propia del worker no-Qt. El runtime se inicia al lanzar la app; si falta el output root confiable, la frontera existente bloquea antes de reclamar.
+
+`python -B -m unittest -v tests.test_f13_8_scheduler` ejecutó **16 tests, OK**. Cubre vacío, pausa, FIFO y reorder; claim/control atómicos; corrupción y activo sobreviviente fail-closed; carrera entre dos conexiones SQLite reales con un único ganador; lock y fallo de adquisición sin tick; manual Start bloqueado y `start_claimed` convergente; éxito/fallo/cancelación con `finished` y control limpio; pausa con activo; error pre-submit y submit ambiguo con un solo llamado/ref durable; background no-Qt; autoarranque/parada de runtime; y smoke compuesto simulado con exactamente dos submits, uno por chunk, sin ComfyUI real.
+
+Con `ORQ_TEST_TMP` dirigido a un directorio nuevo y aislado, la regresión de F13.0/F13.1/F13.7, persistencia, F3/F5, recovery y chaining ejecutó **234 tests: OK, 1 omitido ambiental** (`WinError 1314` al crear un symlink). La regresión de GenerationConfig, Prepare/Start, SQLite, edición de secuencia y operaciones F11.5 ejecutó **75 tests, OK**. Hubo `ResourceWarning` no bloqueantes por conexiones SQLite sin cerrar en fixtures históricas fuera del diff.
+
+`tests.test_f9_composition.CompositionTests.test_snapshot_missing_fails_closed` continúa fallando con `state == "new"` frente a su expectativa histórica `"error"`: el mismo retorno `new` ya existe en `HEAD` de `src/orquestador/ui/app.py` fuera del diff F13.8. No se corrigió ni se reinterpretó como regresión de esta slice. `python -B -m compileall -q src tests` y `git diff --check` terminan con código 0.
+
+No se ejecutó ComfyUI real, FFmpeg/FFprobe real, generación de video ni validación humana adicional. Para este cierre formal no se repitieron auditorías, suites ni smoke; F13.9 permanece NOT STARTED.
+
 ## Evidencia de cierre F13.6
 
 F13.6 — Biblioteca e integración GUI de preparación — está **CLOSED — APROBADA**. La biblioteca proyecta proyectos/ejecuciones por estado derivado, conserva el UUID sólo internamente, abre borradores/históricos, crea un borrador nuevo mediante el caso de uso F13.1, clona mediante F13.2 y delega Global Defaults, presets técnicos y plantillas de chunks a las autoridades F13.3–F13.5. Las ejecuciones `queued`, activas, históricas o inconsistentes son consultables; sólo un borrador durablemente editable puede recibir cambios estructurales. No se implementaron operaciones UI de cola, scheduler, submit ni recovery.
@@ -382,8 +394,8 @@ La prueba histórica `tests.test_f11_4_mainwindow_acceptance.MainWindowF114Accep
 | F13.5 | CRUD plantilla, cantidad/orden/prompts, rollback, ejecución bloqueada | no propia; UI integrada y validada por F13.6 |
 | F13.6 | facade/snapshots, Qt offscreen, navegación, capabilities, locks de cola y delegación por copia F13.3–F13.5 | Windows final aprobada; CLOSED |
 | F13.7 | enqueue/select/reorder/remove/skip/pause, clone por valor, restart, rollback, constraints y concurrencia SQLite | no; CLOSED backend, F13.6 sólo proyecta sus estados |
-| F13.8 | claim atómico, activo único, pausa, terminalización, cero doble submit | smoke Windows con backend simulado |
-| F13.9 | crash matrix, backend reiniciado, artifacts discrepantes, active-first recovery | Windows + ComfyUI real acotado |
+| F13.8 | claim/finalización atómicos, activo único, dos conexiones SQLite, lock local, pausa, no doble submit, runtime no-Qt y smoke compuesto simulado | CLOSED — APROBADA sobre evidencia técnica registrada; sin smoke adicional |
+| F13.9 | crash matrix, backend reiniciado, artifacts discrepantes, active-first recovery | NOT STARTED; Windows + ComfyUI real acotado |
 | F13.10 | regresión, E2E de cola/restart, acciones Qt y sesión real representativa | Windows completa |
 
 En toda slice, tests automáticos, ejecución real y validación humana se informan por separado. Ninguna prueba con fake acredita una generación real ni una observación visual.

@@ -176,6 +176,18 @@ class SQLiteProjectRepository:
  def _queue_next_position(self):
   row=self.db.execute('SELECT MAX(position) FROM queue_items').fetchone()
   return self._queue_position_after(-1 if row is None or row[0] is None else row[0])
+ def _queue_control_and_active(self):
+  """Read the singleton and the sole active row as one fail-closed view."""
+  row=self.db.execute('SELECT paused,active_queue_item_id,revision FROM queue_control WHERE singleton=1').fetchone()
+  control=self._queue_control_from_row(row)
+  rows=self.db.execute("SELECT id,execution_id,position,state,created_at,updated_at,terminal_reason FROM queue_items WHERE state='active'").fetchall()
+  if len(rows)>1: raise PersistenceDataError('multiple active queue items')
+  active=None if not rows else self._queue_item_from_row(rows[0])
+  if control.active_queue_item_id is None:
+   if active is not None: raise PersistenceDataError('active queue item is missing queue control pointer')
+  elif active is None or active.id != control.active_queue_item_id:
+   raise PersistenceDataError('queue control active item is inconsistent')
+  return control,active
  def _queue_transaction(self, action):
   try:
    self.db.execute('BEGIN IMMEDIATE')
@@ -228,6 +240,71 @@ class SQLiteProjectRepository:
    if self.db.execute("SELECT 1 FROM queue_items WHERE execution_id=? AND state IN ('queued','active')",(str(execution.id),)).fetchone(): raise PersistenceConflictError('execution has a live durable queue item')
    self.save(project,[execution],_in_transaction=True)
   self._queue_transaction(action)
+ def claim_next_queue_item(self):
+  """Atomically claim the first durable queued item, if it is safe to do so."""
+  def action():
+   control,active=self._queue_control_and_active()
+   if active is not None:
+    return QueueClaimResult(QueueClaimStatus.ACTIVE_PRESENT,active_queue_item_id=active.id)
+   if control.paused: return QueueClaimResult(QueueClaimStatus.PAUSED)
+   row=self.db.execute("SELECT id,execution_id,position,state,created_at,updated_at,terminal_reason FROM queue_items WHERE state='queued' ORDER BY position,id LIMIT 1").fetchone()
+   if row is None: return QueueClaimResult(QueueClaimStatus.EMPTY)
+   item=self._queue_item_from_row(row)
+   execution=self.db.execute('SELECT state FROM executions WHERE id=?',(str(item.execution_id),)).fetchone()
+   if execution is None: raise PersistenceDataError('queued queue item execution is missing')
+   if execution[0] != Lifecycle.PENDING.value or not self._queue_execution_is_editable_virgin(item.execution_id):
+    raise PersistenceDataError('queued queue item execution is not eligible')
+   live=self.db.execute("SELECT id FROM queue_items WHERE execution_id=? AND state IN ('queued','active')",(str(item.execution_id),)).fetchall()
+   if len(live)!=1 or live[0][0]!=str(item.id): raise PersistenceDataError('queued queue item live ownership is inconsistent')
+   item.transition(QueueItemState.ACTIVE,at=self._queue_update_time((item,)))
+   if self.db.execute("UPDATE queue_items SET state=?,updated_at=?,terminal_reason=? WHERE id=? AND state='queued'",(item.state.value,self._queue_time(item.updated_at),item.terminal_reason,str(item.id))).rowcount!=1:
+    raise PersistenceConflictError('queued item changed during claim')
+   changed=QueueControl(control.paused,item.id,control.revision+1)
+   if self.db.execute('UPDATE queue_control SET paused=?,active_queue_item_id=?,revision=? WHERE singleton=1 AND active_queue_item_id IS NULL AND revision=?',(int(changed.paused),str(changed.active_queue_item_id),changed.revision,control.revision)).rowcount!=1:
+    raise PersistenceConflictError('queue control changed during claim')
+   return QueueClaimResult(QueueClaimStatus.CLAIMED,item)
+  return self._queue_transaction(action)
+ def validate_active_queue_claim(self, queue_item_id, execution_id):
+  """Validate the narrow authorization used by the scheduler start boundary."""
+  try: item_id=QueueItemId(str(queue_item_id)); execution_id=ExecutionId(str(execution_id))
+  except Exception as exc: raise PersistenceDataError('invalid scheduler queue claim identity') from exc
+  control,active=self._queue_control_and_active()
+  if active is None: raise PersistenceConflictError('scheduler queue claim is no longer active')
+  if active.id != item_id or active.execution_id != execution_id or control.active_queue_item_id != item_id:
+   raise PersistenceConflictError('scheduler queue claim does not own the execution')
+  return active
+ def start_execution_from_active_queue_claim(self, project, execution, queue_item_id):
+  """Persist the scheduler-authorized pending-to-running transition only."""
+  if getattr(execution,'state',None) is not Lifecycle.RUNNING:
+   raise PersistenceConflictError('scheduler start must carry a running execution transition')
+  def action():
+   self.validate_active_queue_claim(queue_item_id,execution.id)
+   row=self.db.execute('SELECT project_id,state FROM executions WHERE id=?',(str(execution.id),)).fetchone()
+   if row is None or row[0] != str(project.id): raise PersistenceConflictError('scheduler execution ownership is missing or inconsistent')
+   if row[1] != Lifecycle.PENDING.value: raise PersistenceConflictError('scheduler execution is no longer pending')
+   self.save(project,[execution],_in_transaction=True)
+  self._queue_transaction(action)
+ def finish_claimed_queue_item(self, queue_item_id, execution_id):
+  """Atomically finish the exact active item after its Execution is terminal."""
+  try: item_id=QueueItemId(str(queue_item_id)); execution_id=ExecutionId(str(execution_id))
+  except Exception as exc: raise PersistenceDataError('invalid scheduler queue completion identity') from exc
+  def action():
+   control,active=self._queue_control_and_active()
+   if active is None: raise PersistenceConflictError('queue item is not active')
+   if active.id != item_id or active.execution_id != execution_id or control.active_queue_item_id != item_id:
+    raise PersistenceConflictError('queue completion does not own the active item')
+   execution=self.db.execute('SELECT state FROM executions WHERE id=?',(str(execution_id),)).fetchone()
+   if execution is None: raise PersistenceDataError('queue completion execution is missing')
+   if execution[0] not in {Lifecycle.SUCCEEDED.value,Lifecycle.FAILED.value,Lifecycle.CANCELLED.value}:
+    raise PersistenceConflictError('queue completion requires terminal execution')
+   active.transition(QueueItemState.FINISHED,at=self._queue_update_time((active,)))
+   if self.db.execute("UPDATE queue_items SET state=?,updated_at=?,terminal_reason=? WHERE id=? AND state='active'",(active.state.value,self._queue_time(active.updated_at),active.terminal_reason,str(active.id))).rowcount!=1:
+    raise PersistenceConflictError('active queue item changed during completion')
+   changed=QueueControl(control.paused,None,control.revision+1)
+   if self.db.execute('UPDATE queue_control SET paused=?,active_queue_item_id=NULL,revision=? WHERE singleton=1 AND active_queue_item_id=? AND revision=?',(int(changed.paused),changed.revision,str(item_id),control.revision)).rowcount!=1:
+    raise PersistenceConflictError('queue control changed during completion')
+   return active
+  return self._queue_transaction(action)
  def reorder_queue_items(self, queue_item_ids):
   """Replace the complete order of queued items inside one SQLite transaction."""
   try:
@@ -342,11 +419,7 @@ class SQLiteProjectRepository:
   try: return any(QueueItemState(row[0]) in {QueueItemState.QUEUED,QueueItemState.ACTIVE} for row in rows)
   except (TypeError, ValueError) as exc: raise PersistenceDataError('invalid queue item state') from exc
  def get_queue_control(self):
-  row=self.db.execute('SELECT paused,active_queue_item_id,revision FROM queue_control WHERE singleton=1').fetchone()
-  control=self._queue_control_from_row(row)
-  if control.active_queue_item_id is not None:
-   item=self.db.execute('SELECT state FROM queue_items WHERE id=?',(str(control.active_queue_item_id),)).fetchone()
-   if not item or item[0] != QueueItemState.ACTIVE.value: raise PersistenceDataError('queue control active item is not active')
+  control,_=self._queue_control_and_active()
   return control
  def save_queue_control(self,control):
   if not isinstance(control,QueueControl): raise PersistenceDataError('invalid queue control')

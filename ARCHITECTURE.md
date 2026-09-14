@@ -74,7 +74,7 @@ No debe copiar configuración ni runtime. Es una referencia coordinadora.
 
 F13.7 implementa la administración manual detrás de un caso de uso no-UI: selección/listado, enqueue al final, reordenamiento completo de `queued`, remove/skip terminales, pausa/reanudación y duplicación por el clone F13.2. Las mutaciones de orden y el clone+enqueue son transacciones del repositorio SQLite; ningún widget accede a tablas de cola. La duplicación crea una `Execution`/`Project` nueva por valor y no deja una referencia dinámica a la fuente.
 
-Esta slice no reclama, inicia, envía ni terminaliza trabajo. El camino normal de Start rechaza una `Execution` con item vivo y serializa el paso `pending`→`running` contra enqueue; así no convierte una operación manual de cola en un scheduler encubierto. La edición estructural de la secuencia usa el mismo gate durable.
+F13.7 no reclama, inicia, envía ni terminaliza trabajo. El camino normal de Start rechaza una `Execution` con item vivo y serializa el paso `pending`→`running` contra enqueue; así no convierte una operación manual de cola en un scheduler encubierto. La edición estructural de la secuencia usa el mismo gate durable.
 
 ### Autoridad de scheduler
 
@@ -90,20 +90,17 @@ Reglas:
 - una ejecución active/running no admite cambios estructurales;
 - sólo un terminal reconciliado permite liberar el activo y elegir el siguiente.
 
-F13.7 sólo materializa la regla de items `queued`; el claim, la transición a `active`, la liberación terminal y la reconciliación permanecen explícitamente en F13.8/F13.9.
+F13.8 implementa el claim y la liberación terminal, ambos en una transacción `BEGIN IMMEDIATE`: valida control/activo, pausa, orden durable y eligibilidad antes de `queued → active` + `active_queue_item_id`; al finalizar exige el mismo item/control y una `Execution` terminal antes de `active → finished` + limpieza del control. El resultado de claim es transitorio, no otra entidad durable.
 
-Para impedir dos schedulers simultáneos se requiere una protección de instancia local además de la restricción SQLite. La implementación deberá elegir y probar un mecanismo Windows sencillo —por ejemplo lock de proceso/archivo adquirido por la raíz de composición— sin convertirlo en coordinación distribuida.
+La autorización de start separa las entradas: el Start manual sólo llama la frontera que rechaza items vivos; `start_claimed` valida de nuevo el claim activo exacto y converge inmediatamente en `ChainExecutionUseCase` y el motor existente. No hay un segundo submitter, chain ni lifecycle.
+
+Para impedir dos schedulers simultáneos, la raíz de composición adquiere un lock de un byte del SO sobre `.orquestador-scheduler.lock`; el archivo puede permanecer, pero el lock se libera al cerrar el descriptor/proceso. SQLite conserva la autoridad durable frente a conexiones o procesos competidores.
 
 ### Scheduler y recovery
 
-Al iniciar la aplicación:
+En F13.8, el runtime inicia automáticamente, adquiere la autoridad única local, abre una conexión propia de worker y hace ticks fuera de Qt. La ausencia del output root confiable bloquea la frontera de readiness antes de un claim. Un tick con activo previo devuelve explícitamente `recovery_required` y no toca backend, attempts ni la cola; un tick con pausa no reclama. Sólo un claim nuevo entra mediante `start_claimed`; después del retorno se relee la `Execution` durable y sólo un lifecycle terminal permite finalizar el item. El siguiente tick puede evaluar el orden recién entonces.
 
-1. adquirir la autoridad única local;
-2. abrir/migrar persistencia;
-3. leer control de cola e item activo;
-4. si existe activo, reconciliar su `Execution`, attempts, artifacts y backend observable;
-5. si la evidencia es ambigua, bloquear y requerir revisión; nunca reclamar otro item;
-6. sólo después de terminalizar/reconciliar el activo, y si la cola no está pausada, reclamar el siguiente.
+F13.9 agregará la reconciliación de un activo sobreviviente con `Execution`, attempts, artifacts y backend observable. Mientras no exista, la evidencia ambigua o un activo previo bloquean y requieren revisión; nunca reclaman otro item.
 
 Un item activo no se devuelve automáticamente a pendiente por timeout o reinicio. `external_job_ref` durable y los contratos existentes determinan si corresponde esperar, completar, retry explícito o revisión manual.
 

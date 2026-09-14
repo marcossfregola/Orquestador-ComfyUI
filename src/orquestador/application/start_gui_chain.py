@@ -132,7 +132,19 @@ class StartGuiChainUseCase:
                 ) from exc
         return tuple(resolved)
 
-    def __call__(
+    def start_claimed(self, project_id, execution_id, queue_item_id, **kwargs):
+        """Scheduler-only entrypoint for an already durable active QueueItem."""
+        if not isinstance(queue_item_id, str) or not queue_item_id.strip():
+            raise StartPreparationError("scheduler queue item id must be nonblank")
+        return self._start(project_id, execution_id, queue_item_id=queue_item_id.strip(), **kwargs)
+
+    def __call__(self, *args, **kwargs):
+        """Manual Start entrypoint; queue authorization is intentionally absent."""
+        if "queue_item_id" in kwargs or len(args) >= 17:
+            raise StartPreparationError("manual Start cannot authorize a queue item")
+        return self._start(*args, **kwargs)
+
+    def _start(
         self,
         project_id,
         execution_id,
@@ -150,6 +162,7 @@ class StartGuiChainUseCase:
         also_ref_first_frame=None,
         orchestration_timeout_seconds=None,
         fast_e2e=False,
+        queue_item_id=None,
         **extra,
     ):
         if type(fast_e2e) is not bool:
@@ -185,8 +198,13 @@ class StartGuiChainUseCase:
         # direct path submit it would bypass the queue and make an active item
         # ambiguous.  Treat an unreadable queue state as unsafe as well.
         try:
-            if self.repository.has_live_queue_item(execution.id):
+            if queue_item_id is None and self.repository.has_live_queue_item(execution.id):
                 raise StartPreparationError("execution has a live durable queue item")
+            if queue_item_id is not None:
+                validator = getattr(self.repository, "validate_active_queue_claim", None)
+                if not callable(validator):
+                    raise StartPreparationError("scheduler queue claim validation is unavailable")
+                validator(queue_item_id, execution.id)
         except StartPreparationError:
             raise
         except (PersistenceError, OSError, ValueError, AttributeError) as exc:
@@ -296,4 +314,5 @@ class StartGuiChainUseCase:
             bound,
             transition_rebinder=partial(rebind_first_frame, first_frame_as_primary_reference=selected.first_frame_as_primary_reference),
             transition_materializer=self.transition_materializer,
+            queue_item_id=queue_item_id,
         )

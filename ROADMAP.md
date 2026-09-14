@@ -184,6 +184,8 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ### F13.8 — Scheduler de una sola ejecución
 
+**Estado:** **CLOSED — APROBADA.**
+
 **Objetivo:** hacer que una única autoridad promueva el próximo item y reutilice el motor actual.
 
 **Incluye:** selección FIFO reordenable; claim transaccional; una ejecución activa; llamada al caso de uso existente; promoción del siguiente sólo tras estado terminal/reconciliado; pausa sin cancelar running.
@@ -195,11 +197,14 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 **Aceptación:** nunca hay dos ejecuciones activas; finalizar una habilita exactamente la siguiente; pausa impide nuevos claims; errores no producen doble submit.
 
 **Tests:** unidad con fakes; carreras de claim; éxito/fallo; pausa; idempotencia y ausencia de doble submit.
-**Validación humana:** smoke Windows con backend simulado.
+**Validación humana:** no se repitió; el cierre fue aprobado sobre la evidencia técnica registrada.
 **Dependencias:** F13.7 y motor de ejecución/recovery existente.
-**Cierre:** pruebas focales + regresión, smoke humano, auditoría y aprobación.
+**Evidencia técnica actual:** claim/finalización SQLite transaccionales, lock local de archivo/OS, runtime autoarrancado no-Qt y frontera `start_claimed` hacia el motor existente; la suite focal cubre carreras con dos conexiones, active survivor F13.9, pausa, terminalización, no doble submit, fallo de lock sin tick y un smoke automático del stack compuesto con backend simulado. Schema 7 no cambió.
+**Cierre:** implementación, controles técnicos registrados y aprobación de cierre — completados. No se repitieron auditorías, suites ni smoke para este cierre.
 
 ### F13.9 — Recovery y reconciliación de cola
+
+**Estado:** **NOT STARTED — próxima etapa decidida.**
 
 **Objetivo:** sobrevivir cierre/crash/reinicio sin abandonar ni duplicar trabajos.
 

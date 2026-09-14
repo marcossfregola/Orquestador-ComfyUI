@@ -39,18 +39,31 @@ class ChainExecutionUseCase:
         self.recovery = recovery
         self.orchestrator = orchestrator
 
-    def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None):
+    def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None, queue_item_id=None):
         if len(execution.chunks) < 2:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason="at least two chunks are required")
         if execution.state is Lifecycle.CANCELLED:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='execution cancelled')
+        if queue_item_id is not None and execution.state is not Lifecycle.PENDING:
+            return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='scheduler claim execution is not pending')
         if execution.state is Lifecycle.PENDING:
             previous_state = execution.state
             execution.transition(Lifecycle.RUNNING)
             try:
-                starter = getattr(self.repository, 'start_execution_if_not_queued', None)
-                if callable(starter): starter(project, execution)
-                else: self.repository.save(project, [execution])
+                starter = (
+                    getattr(self.repository, 'start_execution_from_active_queue_claim', None)
+                    if queue_item_id is not None
+                    else getattr(self.repository, 'start_execution_if_not_queued', None)
+                )
+                if callable(starter):
+                    if queue_item_id is None:
+                        starter(project, execution)
+                    else:
+                        starter(project, execution, queue_item_id)
+                elif queue_item_id is not None:
+                    raise RuntimeError('scheduler queue-claim start boundary is unavailable')
+                else:
+                    self.repository.save(project, [execution])
             except Exception as exc:
                 execution.state = previous_state
                 return ChainExecutionResult(

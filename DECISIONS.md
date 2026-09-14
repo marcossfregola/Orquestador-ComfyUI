@@ -73,4 +73,6 @@ Adopt the verified ComfyUI 0.33.0 pending-delete contract with mandatory post-ve
 - `Crear a partir de este` crea identidades nuevas y copia sólo configuración editable, nunca runtime o evidencia.
 - Defaults globales, presets técnicos y plantillas de chunks son conceptos separados y se materializan por copia en el draft; no alteran ejecuciones existentes.
 - La biblioteca presenta estados derivados de Execution + QueueItem y no crea un segundo lifecycle persistido.
+- F13.8 usa `BEGIN IMMEDIATE` para claim/finalización y un lock local de byte del SO en `.orquestador-scheduler.lock`, adquirido por el runtime de composición; SQLite sigue siendo la autoridad durable y no se introduce coordinación distribuida.
+- La entrada `start_claimed` está reservada al QueueItem activo validado y converge en el motor existente. Un activo sobreviviente, submit ambiguo o error no vuelve automáticamente a `queued` ni inicia otro item: F13.9 conserva la reconciliación.
 - F13 no introduce multi-GPU, cloud, IA, plugins generales ni cancelación running.
