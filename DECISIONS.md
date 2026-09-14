@@ -69,7 +69,7 @@ Adopt the verified ComfyUI 0.33.0 pending-delete contract with mandatory post-ve
 - Pausar la cola impide nuevos claims y no cancela el activo.
 - F13.7 operacionaliza sin schema nuevo los `QueueItem`/`queue_control` creados por F13.0: sólo un item `queued` puede reordenarse, quitarse, saltarse o duplicarse; el historial terminal permanece durable.
 - Enqueue, reordenamiento y clone+enqueue se serializan en SQLite. Duplicar usa el clone F13.2 por valor y no persiste referencia dinámica; un conflicto deja sin clon parcial.
-- F13.7 no contiene scheduler, claim, submit automático ni recuperación de cola. F13.6 no fue una dependencia técnica de esta slice backend y sigue no iniciada.
+- F13.7 no contiene scheduler, claim, submit automático ni recuperación de cola. F13.6 no fue una dependencia técnica de esta slice backend: integra sus estados sólo como proyección y lock visual, sin añadir UI de operaciones de cola. F13.6 quedó CLOSED — APROBADA tras evidencia automática y validación humana final Windows.
 - `Crear a partir de este` crea identidades nuevas y copia sólo configuración editable, nunca runtime o evidencia.
 - Defaults globales, presets técnicos y plantillas de chunks son conceptos separados y se materializan por copia en el draft; no alteran ejecuciones existentes.
 - La biblioteca presenta estados derivados de Execution + QueueItem y no crea un segundo lifecycle persistido.

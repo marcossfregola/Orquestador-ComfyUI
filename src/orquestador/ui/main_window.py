@@ -1,7 +1,7 @@
 from importlib import import_module
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from uuid import uuid4
+from uuid import UUID, uuid4
 from pathlib import Path
 QThread = import_module("PySide6.QtCore").QThread
 _widgets = import_module("PySide6.QtWidgets")
@@ -30,7 +30,8 @@ class PreparedIdentity:
 from .workers import OperationWorker
 from ..domain.config import DEFAULT_MEGAPIXELS, DEFAULT_LENGTH, DEFAULT_STEPS, DEFAULT_FPS, DEFAULT_REF_IMAGE_SIZE, DEFAULT_ALSO_REF_FIRST_FRAME, SUPPORTED_REF_IMAGE_SIZES
 from ..application.create_reference_derivative import CreateReferenceDerivativeUseCase, CropRectangle
-from ..application.gui_facade import OperationResult
+from ..application.gui_facade import LibraryOperationResult, OperationResult
+from .preparation_library import PreparationLibraryPanel
 from .preferences import PreferencesDialog, resolve_folder, INPUT_KEY, OUTPUT_KEY
 
 class _CropDialog(QDialog):
@@ -120,7 +121,7 @@ class _CropDialog(QDialog):
         return CropRectangle(round(x*sx),round(y*sy),round(w*sx),round(h*sy)) if w and h else None
 class MainWindow(QMainWindow):
     def __init__(self, facade, project_root=None):
-        super().__init__(); self.facade=facade; self._last_snapshot=None; self.project_root=Path(project_root) if project_root is not None else Path.cwd(); self._thread=None; self._worker=None; self._retired_threads=[]; self._retired_workers=[]; self._closing=False; self._busy=False; self._prepared_key=None; self._prepared_selection=None; self._prepared_identity=None; self._auth_can_start=False; self._auth_busy=False
+        super().__init__(); self.facade=facade; self._last_snapshot=None; self.project_root=Path(project_root) if project_root is not None else Path.cwd(); self._thread=None; self._worker=None; self._retired_threads=[]; self._retired_workers=[]; self._closing=False; self._busy=False; self._prepared_key=None; self._prepared_selection=None; self._prepared_identity=None; self._auth_can_start=False; self._auth_busy=False; self._auth_can_edit=True; self._project_display_names={}
         root=QWidget(); self.setCentralWidget(root); root_lay=QVBoxLayout(root)
         self.tabs=QTabWidget(); self.tabs.setObjectName("mainTabs"); root_lay.addWidget(self.tabs)
         main_page=QWidget(); self.tabs.addTab(main_page,"Principal"); lay=QVBoxLayout(main_page)
@@ -129,14 +130,14 @@ class MainWindow(QMainWindow):
         references_page_lay.addWidget(QLabel("Visual references (effective order; maximum 6)"))
         self.reference_scroll_area=QScrollArea(); self.reference_scroll_area.setObjectName("referenceScrollArea"); self.reference_scroll_area.setWidgetResizable(True); self.reference_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         reference_host=QWidget(); self.reference_grid=QGridLayout(reference_host); self.reference_grid.setContentsMargins(4,4,4,4); self.reference_grid.setHorizontalSpacing(12); self.reference_grid.setVerticalSpacing(12); self.reference_grid.setAlignment(Qt.AlignTop); self.reference_scroll_area.setWidget(reference_host); references_page_lay.addWidget(self.reference_scroll_area,1)
-        lay.addWidget(QLabel("Project / execution preparation")); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setPlaceholderText("Project id"); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setReadOnly(True); self.execution.hide(); self.execution_number=QLabel("Execution: assigned automatically"); row.addWidget(self.execution_number); row.addWidget(self.execution); self.preflight=QPushButton("Preflight"); self.prepare=QPushButton("Prepare"); row.addWidget(self.preflight); row.addWidget(self.prepare); lay.addLayout(row)
+        lay.addWidget(QLabel("Project / execution preparation")); self.current_context=QLabel("Proyecto: sin selección · Ejecución: sin seleccionar"); self.current_context.setObjectName("currentExecutionContext"); self.current_context.setWordWrap(True); lay.addWidget(self.current_context); self.read_only_notice=QLabel(); self.read_only_notice.setObjectName("executionReadOnlyNotice"); self.read_only_notice.setWordWrap(True); self.read_only_notice.hide(); lay.addWidget(self.read_only_notice); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setObjectName("technicalProjectId"); self.project.setPlaceholderText("Project id"); self.project.hide(); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setReadOnly(True); self.execution.hide(); self.execution_number=QLabel("Execution: assigned automatically"); row.addWidget(self.execution_number); row.addWidget(self.execution); self.preflight=QPushButton("Preflight"); self.prepare=QPushButton("Prepare"); row.addWidget(self.preflight); row.addWidget(self.prepare); lay.addLayout(row)
         initial_row=QHBoxLayout(); initial_row.addWidget(QLabel("Initial image path:")); self.initial=QLineEdit(); self.initial.setPlaceholderText("empty — choose an initial image"); self.initial.setMinimumWidth(300); initial_row.addWidget(self.initial, 1); self.initial_button=QPushButton("Choose initial…"); initial_row.addWidget(self.initial_button); lay.addLayout(initial_row)
         self.reference_labels=[]
         self.references=QListWidget(); self.references.setObjectName("h3ReferenceSlots"); self.references.setVisible(False); lay.addWidget(self.references)
-        self.reference_buttons=[]
+        self.reference_buttons=[]; self.reference_action_buttons=[]
         for i in range(6):
             label=QLabel(f"Reference {i+1}: empty"); label.setObjectName(f"referenceLabel{i+1}"); label.setMinimumSize(REFERENCE_PREVIEW_WIDTH,REFERENCE_PREVIEW_HEIGHT); label.setMaximumSize(REFERENCE_PREVIEW_WIDTH,REFERENCE_PREVIEW_HEIGHT); label.setAlignment(Qt.AlignCenter); label.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)); label.setWordWrap(False); self.reference_labels.append(label)
-            card=QWidget(); card.setObjectName(f"referenceCard{i+1}"); card.setSizePolicy(QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)); card_lay=QVBoxLayout(card); card_lay.setContentsMargins(6,6,6,6); card_lay.setSpacing(6); card_lay.addWidget(label); add=QPushButton("Add/Replace"); add.clicked.connect(lambda _=False,index=i:self._choose_reference(index)); rem=QPushButton("Remove"); rem.clicked.connect(lambda _=False,index=i:self.remove_reference(index)); crop=QPushButton("Crop"); crop.clicked.connect(lambda _=False,index=i:self.crop_reference(index)); button_row=QHBoxLayout(); button_row.setSpacing(6); [button_row.addWidget(x) for x in (add,rem,crop)]; card_lay.addLayout(button_row); self.reference_grid.addWidget(card,i//2,i%2,Qt.AlignTop); self.reference_grid.setColumnStretch(i%2,1); self.reference_buttons.append(add)
+            card=QWidget(); card.setObjectName(f"referenceCard{i+1}"); card.setSizePolicy(QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)); card_lay=QVBoxLayout(card); card_lay.setContentsMargins(6,6,6,6); card_lay.setSpacing(6); card_lay.addWidget(label); add=QPushButton("Add/Replace"); add.clicked.connect(lambda _=False,index=i:self._choose_reference(index)); rem=QPushButton("Remove"); rem.clicked.connect(lambda _=False,index=i:self.remove_reference(index)); crop=QPushButton("Crop"); crop.clicked.connect(lambda _=False,index=i:self.crop_reference(index)); button_row=QHBoxLayout(); button_row.setSpacing(6); [button_row.addWidget(x) for x in (add,rem,crop)]; card_lay.addLayout(button_row); self.reference_grid.addWidget(card,i//2,i%2,Qt.AlignTop); self.reference_grid.setColumnStretch(i%2,1); self.reference_buttons.append(add); self.reference_action_buttons.extend((add,rem,crop))
         self.chunk_count=_ChunkSpinBox(); self.chunk_count.setRange(2, 2147483647); self.chunk_count.setValue(2)
         self.add_chunk_button=QPushButton("Add chunk"); self.remove_chunk_button=QPushButton("Remove chunk"); self.move_up_button=QPushButton("Move Up"); self.move_down_button=QPushButton("Move Down"); self.duplicate_button=QPushButton("Duplicate")
         self.megapixels=QDoubleSpinBox(); self.megapixels.setRange(0.01,1000); self.megapixels.setDecimals(2); self.megapixels.setSingleStep(0.01); self.megapixels.setValue(DEFAULT_MEGAPIXELS)
@@ -154,10 +155,11 @@ class MainWindow(QMainWindow):
         self.parameters=QLabel("Supported parameters: provided by profile"); self.parameters.setObjectName("supportedParameters"); chunks_lay.addWidget(self.parameters)
         override_row=QHBoxLayout(); override_row.addWidget(QLabel("Chunk override (approved H3 only)")); self.override_key=QComboBox(); self.override_key.setObjectName("chunkOverrideKey"); self.override_key.addItems(["prompt","megapixels","length","steps","fps","ref_image_size","also_ref_first_frame"]); override_row.addWidget(self.override_key); self.override_value=QLineEdit(); self.override_value.setObjectName("chunkOverrideValue"); override_row.addWidget(self.override_value); self.set_override_button=QPushButton("Set override"); self.clear_override_button=QPushButton("Restore inherited"); override_row.addWidget(self.set_override_button); override_row.addWidget(self.clear_override_button); chunks_lay.addLayout(override_row)
         self.provenance=QLabel("Effective values: select a chunk"); self.provenance.setObjectName("chunkProvenance"); self.provenance.setWordWrap(True); chunks_lay.addWidget(self.provenance)
+        library_page=QWidget(); self.library_tab_index=self.tabs.addTab(library_page,"Biblioteca"); library_layout=QVBoxLayout(library_page); self.library_panel=PreparationLibraryPanel(self.facade,self._run,library_page); library_layout.addWidget(self.library_panel)
         acts=QHBoxLayout(); self.preferences=QPushButton("Preferences…"); self.preferences.clicked.connect(self._preferences); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.preferences,self.start,self.resume,self.retry,self.cancel,self.assemble)]; lay.addLayout(acts)
         self.status=QLabel("Ready"); self.status.setObjectName("durableStatus"); lay.addWidget(self.status); self.paths=QLabel("Chunks/intermediates/results: not loaded"); self.paths.setObjectName("resultPaths"); self.paths.setWordWrap(True); lay.addWidget(self.paths); self.chunks=QListWidget(); self.chunks.setObjectName("chunkResults"); lay.addWidget(self.chunks); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
         self.initial_confirmation=QLabel("Initial image: empty — choose a file"); self.initial_confirmation.setObjectName("initialImagePreview"); lay.insertWidget(1,self.initial_confirmation)
-        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(lambda:self._run(lambda:self.facade.retry_execution(self.project.text().strip(), self.execution.text().strip()))); self.cancel.clicked.connect(lambda:self._run(lambda:self.facade.cancel_pending(self.project.text().strip(), self.execution.text().strip()))); self.assemble.clicked.connect(self._assemble); self._sync_prompt_visibility(); self.start.setEnabled(False); self._update_resume_recover()
+        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(lambda:self._run(lambda:self.facade.retry_execution(self.project.text().strip(), self.execution.text().strip()))); self.cancel.clicked.connect(lambda:self._run(lambda:self.facade.cancel_pending(self.project.text().strip(), self.execution.text().strip()))); self.assemble.clicked.connect(self._assemble); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self._update_resume_recover()
         self.move_up_button.clicked.connect(lambda:self._move_sequence(-1)); self.move_down_button.clicked.connect(lambda:self._move_sequence(1)); self.duplicate_button.clicked.connect(self._duplicate_sequence); self.chunk_tabs.currentChanged.connect(lambda i: (self._show_provenance(), self._update_sequence_controls()))
         self.set_override_button.clicked.connect(self._set_override); self.clear_override_button.clicked.connect(lambda _=False: self._clear_override()); self.chunks.currentRowChanged.connect(lambda i: self.chunk_tabs.setCurrentIndex(i))
         self._prompt_timer=QTimer(self); self._prompt_timer.setSingleShot(True); self._prompt_timer.setInterval(400); self._prompt_timer.timeout.connect(self._flush_prompt); self._prompt_dirty=None; self._pending_action=None; self._continuation=None
@@ -237,14 +239,14 @@ class MainWindow(QMainWindow):
             elif key=="megapixels": value=float(raw)
             elif key=="also_ref_first_frame": value=raw.strip().lower() in {"1","true","yes","on"}
             self._sequence_op("set_override", cid, key=key, value=value)
-    def _clear_override(self, key=None):
-        key=self.override_key.currentText() if key is None else key; i=self.chunk_tabs.currentIndex()
+    def _clear_override(self, key=None, index=None):
+        key=self.override_key.currentText() if key is None else key; i=self.chunk_tabs.currentIndex() if index is None else index
         if not 0 <= i < len(self._drafts): return
         self._drafts[i].overrides.pop(key,None); self._sync_draft_controls(); self._invalidate()
-        cid=self._selected_chunk_id()
+        cid=self._sequence_ids[i] if i < len(self._sequence_ids) else None
         if cid is not None: self._sequence_op("clear_override", cid, key=key)
     def _direct_override_toggle(self, i, key, on, editor, toggle, prov):
-        if i >= len(self._drafts): return
+        if not 0 <= i < len(self._drafts): return
         if on:
             value=self._effective_value(i,key)
             self._drafts[i].overrides[key]=value
@@ -252,7 +254,7 @@ class MainWindow(QMainWindow):
         else:
             self._drafts[i].overrides.pop(key,None)
             self._set_editor_value(editor,self._effective_value(i,key))
-        prov.setText("Override" if on else "Inherited (general)"); self._invalidate()
+        prov.setText("Personalizado para este chunk" if on else "Heredado de la configuración general"); self._invalidate()
         cid=self._sequence_ids[i] if i < len(self._sequence_ids) else None
         if cid is not None: self._sequence_op("set_override" if on else "clear_override",cid,key=key,**({"value":self._drafts[i].overrides[key]} if on else {}))
     def _effective_value(self,i,key):
@@ -276,7 +278,7 @@ class MainWindow(QMainWindow):
     def _general_value_changed(self,*_):
         self._refresh_inherited_chunk_editors(); self._invalidate()
     def _direct_override_value(self,i,key,value):
-        if i>=len(self._drafts): return
+        if not 0 <= i < len(self._drafts): return
         page=self.chunk_tabs.widget(i); toggle=getattr(page,f"chunk_{key}_override",None)
         if not toggle or not toggle.isChecked(): return
         self._drafts[i].overrides[key]=value; self._invalidate()
@@ -344,23 +346,27 @@ class MainWindow(QMainWindow):
         for i in range(len(self.prompts)):
             page=self.chunk_tabs.widget(i)
             if page is not None and not page.findChildren(QGroupBox, "chunkSettings"):
-                box=QGroupBox("Chunk settings / Overrides", page); box.setObjectName("chunkSettings"); form=QFormLayout(box)
-                for key,label in (("megapixels","Megapixels"),("length","Length / Frames"),("steps","Steps"),("fps","FPS"),("ref_image_size","Reference image size"),("also_ref_first_frame","Also reference first frame")):
-                    toggle=QCheckBox("Override"); toggle.setObjectName(f"chunk_{key}_override")
+                box=QGroupBox("Configuración del chunk / sobrescrituras", page); box.setObjectName("chunkSettings"); grid=QGridLayout(box); grid.setContentsMargins(12,12,12,12); grid.setHorizontalSpacing(12); grid.setVerticalSpacing(8)
+                for column, heading in enumerate(("Parámetro", "Personalizar", "Valor", "Origen", "")):
+                    header=QLabel(heading); header.setObjectName(f"chunkSettingsHeader{column}"); grid.addWidget(header,0,column)
+                grid.setColumnStretch(0,1); grid.setColumnStretch(2,1); grid.setColumnStretch(3,1)
+                for row,(key,label) in enumerate((("megapixels","Megapixels"),("length","Duración / frames"),("steps","Pasos"),("fps","FPS"),("ref_image_size","Tamaño de referencia"),("also_ref_first_frame","Primer frame como referencia")), start=1):
+                    name=QLabel(label); name.setObjectName(f"chunk_{key}_label"); name.setWordWrap(True)
+                    toggle=QCheckBox("Personalizar"); toggle.setObjectName(f"chunk_{key}_override")
                     if key=="megapixels": editor=QDoubleSpinBox(); editor.setRange(0.01,1000); editor.setDecimals(2)
                     elif key in {"length","steps","fps"}: editor=QSpinBox(); editor.setRange(1,100000)
                     elif key=="ref_image_size": editor=QComboBox(); editor.addItems(sorted(SUPPORTED_REF_IMAGE_SIZES))
                     else: editor=QCheckBox()
-                    editor.setObjectName(f"chunk_{key}_editor"); editor.setEnabled(False); self._set_editor_value(editor,self._effective_value(i,key))
-                    prov=QLabel("Inherited (general)"); prov.setObjectName(f"chunk_{key}_provenance")
-                    toggle.toggled.connect(editor.setEnabled); toggle.toggled.connect(lambda on,k=key,p=prov: p.setText("Override" if on else "Inherited (general)"));
-                    toggle.toggled.connect(lambda on,i=i,k=key,e=editor,t=toggle,p=prov: self._direct_override_toggle(i,k,on,e,t,p))
-                    if key == "also_ref_first_frame": editor.toggled.connect(lambda v,i=i,k=key: self._direct_override_value(i,k,v))
-                    elif key == "ref_image_size": editor.currentTextChanged.connect(lambda v,i=i,k=key: self._direct_override_value(i,k,v))
-                    else: editor.valueChanged.connect(lambda v,i=i,k=key: self._direct_override_value(i,k,v))
-                    form.addRow(label+":",toggle); form.addRow("",editor); form.addRow("",prov)
+                    editor.setObjectName(f"chunk_{key}_editor"); editor.setEnabled(False); editor.setMinimumWidth(120); self._set_editor_value(editor,self._effective_value(i,key))
+                    prov=QLabel("Heredado de la configuración general"); prov.setObjectName(f"chunk_{key}_provenance"); prov.setWordWrap(True); prov.setMinimumWidth(120)
+                    toggle.toggled.connect(editor.setEnabled); toggle.toggled.connect(lambda on,p=prov: p.setText("Personalizado para este chunk" if on else "Heredado de la configuración general"));
+                    toggle.toggled.connect(lambda on,k=key,e=editor,t=toggle,p=prov,page=page: self._direct_override_toggle(self.chunk_tabs.indexOf(page),k,on,e,t,p))
+                    if key == "also_ref_first_frame": editor.toggled.connect(lambda v,k=key,page=page: self._direct_override_value(self.chunk_tabs.indexOf(page),k,v))
+                    elif key == "ref_image_size": editor.currentTextChanged.connect(lambda v,k=key,page=page: self._direct_override_value(self.chunk_tabs.indexOf(page),k,v))
+                    else: editor.valueChanged.connect(lambda v,k=key,page=page: self._direct_override_value(self.chunk_tabs.indexOf(page),k,v))
                     setattr(page, f"chunk_{key}_editor", editor); setattr(page, f"chunk_{key}_override", toggle)
-                    restore=QPushButton("Restore inherited"); restore.setObjectName(f"chunk_{key}_restore"); restore.setToolTip("Clear this chunk override and use the general value"); restore.clicked.connect(lambda _=False,k=key: self._clear_override(k)); form.addRow("Overrides:",restore)
+                    restore=QPushButton("Restaurar heredado"); restore.setObjectName(f"chunk_{key}_restore"); restore.setToolTip("Quitar la sobrescritura y usar el valor general"); restore.clicked.connect(lambda _=False,k=key,page=page: self._clear_override(k,index=self.chunk_tabs.indexOf(page)))
+                    grid.addWidget(name,row,0); grid.addWidget(toggle,row,1); grid.addWidget(editor,row,2); grid.addWidget(prov,row,3); grid.addWidget(restore,row,4)
                 page.layout().addWidget(box)
         self._sync_draft_controls(); self._update_sequence_controls()
     def _ensure_prompt_count(self):
@@ -380,12 +386,12 @@ class MainWindow(QMainWindow):
                 toggle=getattr(page,f"chunk_{key}_override",None); value_editor=getattr(page,f"chunk_{key}_editor",None); provenance=getattr(page,f"chunk_{key}_provenance",None)
                 if toggle is None or value_editor is None: continue
                 on=key in draft.overrides; toggle.blockSignals(True); toggle.setChecked(on); toggle.blockSignals(False); value_editor.setEnabled(on); self._set_editor_value(value_editor,draft.overrides.get(key,self._general_value(key)))
-                if provenance is not None: provenance.setText("Override" if on else "Inherited (general)")
+                if provenance is not None: provenance.setText("Personalizado para este chunk" if on else "Heredado de la configuración general")
     def _update_sequence_controls(self):
         if not hasattr(self,"chunk_tabs") or not hasattr(self,"remove_chunk_button"): return
-        n=len(self._sequence_ids) or len(self._drafts); idx=self.chunk_tabs.currentIndex()
-        self.add_chunk_button.setEnabled(not self._busy); self.remove_chunk_button.setEnabled(not self._busy and n>2); self.remove_chunk_button.setToolTip("Minimum is 2 chunks" if n<=2 else "Remove selected chunk")
-        self.move_up_button.setEnabled(not self._busy and idx>0); self.move_down_button.setEnabled(not self._busy and idx>=0 and idx<n-1); self.duplicate_button.setEnabled(not self._busy)
+        n=len(self._sequence_ids) or len(self._drafts); idx=self.chunk_tabs.currentIndex(); editable=bool(self._auth_can_edit and not self._busy)
+        self.add_chunk_button.setEnabled(editable); self.remove_chunk_button.setEnabled(editable and n>2); self.remove_chunk_button.setToolTip("Minimum is 2 chunks" if n<=2 else ("Remove selected chunk" if editable else "This execution is not editable"))
+        self.move_up_button.setEnabled(editable and idx>0); self.move_down_button.setEnabled(editable and idx>=0 and idx<n-1); self.duplicate_button.setEnabled(editable)
     def _preflight(self): self._run(lambda:self.facade.preflight(**self._inputs()), "preflight")
     def _load_project(self):
         project_id = self.project.text().strip()
@@ -394,11 +400,17 @@ class MainWindow(QMainWindow):
             self.execution.blockSignals(True); self.execution.clear(); self.execution.blockSignals(False)
             self._run(lambda: self.facade.load_project(project_id), "load_project")
     def _prepare(self):
+        if not self._auth_can_edit:
+            self.status.setText(getattr(self._last_snapshot,"edit_reason","") or "This execution is not editable")
+            return
         if self._flush_prompt_before_action(("prepare",None,{})): return
         # A new Prepare supersedes any older deferred restoration.  The
         # successful operation will install a fresh immutable identity.
         self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
         self._run(lambda:self.facade.prepare(**self._inputs()), "prepare")
+    def _tab_changed(self, index):
+        if index == getattr(self, "library_tab_index", -1):
+            self.library_panel.ensure_loaded()
     def _start_chain(self):
         if self._prompt_dirty:
             self.status.setText("Prompt changes must be flushed before Start"); return
@@ -449,14 +461,73 @@ class MainWindow(QMainWindow):
         return tuple((key, self._freeze_form_value(value)) for key, value in self._inputs().items())
     def _selection(self): return (self.project.text().strip(), self.execution.text().strip())
     def _update_start(self): self.start.setEnabled(bool(self._auth_can_start and not self._auth_busy and not self._busy and self._prepared_key is not None and self._form_key()==self._prepared_key))
+    @staticmethod
+    def _is_technical_uuid(value):
+        if not isinstance(value, str):
+            return False
+        try:
+            return str(UUID(value)) == value.lower()
+        except (TypeError, ValueError, AttributeError):
+            return False
+    @staticmethod
+    def _state_label(state):
+        return {
+            "pending": "Borrador",
+            "draft": "Borrador",
+            "queued": "En cola",
+            "running": "En ejecución",
+            "recovering": "En recuperación",
+            "succeeded": "Finalizada",
+            "failed": "Fallida",
+            "cancelled": "Cancelada",
+            "attention_required": "Requiere revisión",
+        }.get(str(state).lower(), str(state) or "sin estado")
+    def _display_project_name(self, project_id):
+        if project_id in self._project_display_names:
+            return self._project_display_names[project_id]
+        if self._is_technical_uuid(project_id):
+            return "Proyecto generado"
+        return str(project_id).strip() or "sin selección"
+    def _update_current_context(self, snapshot):
+        project_id = str(getattr(snapshot, "project_id", "") or self.project.text().strip())
+        number = getattr(snapshot, "execution_number", None)
+        execution = "sin seleccionar" if number is None else str(number)
+        self.current_context.setText(
+            f"Proyecto: {self._display_project_name(project_id)} · "
+            f"Ejecución: {execution} · Estado: {self._state_label(getattr(snapshot, 'state', ''))}"
+        )
+    def _update_read_only_notice(self):
+        snapshot = self._last_snapshot
+        locked = snapshot is not None and getattr(snapshot, "can_edit", None) is False
+        if not locked:
+            self.read_only_notice.hide()
+            return
+        reason = str(getattr(snapshot, "edit_reason", "") or "").lower()
+        state = str(getattr(snapshot, "state", "") or "").lower()
+        if "queue" in reason or state == "queued":
+            explanation = "la ejecución está en cola"
+        elif state in {"running", "recovering"} or "runtime" in reason:
+            explanation = "la ejecución tiene actividad o evidencia de ejecución"
+        elif state in {"succeeded", "failed", "cancelled"}:
+            explanation = "la ejecución es histórica"
+        else:
+            explanation = "el ciclo de vida de la ejecución no admite cambios estructurales"
+        self.read_only_notice.setText(
+            "Solo lectura — " + explanation + ". Para modificar la configuración, "
+            "usá «Crear a partir de esta» en Biblioteca."
+        )
+        self.read_only_notice.show()
     def render(self,s):
         previous_selected_id=self._selected_chunk_id() if hasattr(self,"chunk_tabs") else None
         previous_index=self.chunk_tabs.currentIndex() if hasattr(self,"chunk_tabs") else 0
         self._last_snapshot=s
-        self._auth_can_start = bool(s.can_start); self._auth_busy = bool(s.busy)
+        self._auth_can_start = bool(s.can_start); self._auth_busy = bool(s.busy); self._auth_can_edit = getattr(s, "can_edit", None) is not False
+        if s.project_id:
+            self.project.blockSignals(True); self.project.setText(s.project_id); self.project.blockSignals(False)
         if s.execution_id:
             self.execution.setText(s.execution_id)
         self.execution_number.setText(f"Execution {s.execution_number}" if s.execution_number is not None else "Execution: assigned automatically")
+        self._update_current_context(s)
         self.status.setText(s.state + (": "+"; ".join(s.errors) if s.errors else "")); self.chunks.clear(); self._sequence_ids=[c.chunk_id for c in s.chunks];
         if self._sequence_ids:
             self.chunk_count.blockSignals(True); self.chunk_count.setValue(max(2,len(self._sequence_ids))); self.chunk_count.blockSignals(False)
@@ -508,6 +579,8 @@ class MainWindow(QMainWindow):
         try: artifacts = tuple(s.artifacts or ())
         except TypeError: artifacts = ()
         self.paths.setText("Chunks/intermediates/results: " + ("; ".join(artifacts) if artifacts else "none published yet"))
+        self._update_edit_controls()
+        self._update_read_only_notice()
         self._update_sequence_controls()
         self._update_resume_recover()
         self._update_start()
@@ -537,6 +610,9 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_worker_failed(self,error):
         self.log.append(error)
+        if str(getattr(self, "_operation_kind", "")).startswith("library_"):
+            self.library_panel.show_error(error)
+            return
         if self._operation_kind == "prepare":
             self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
         # A failed prompt flush must be terminal for the deferred gesture:
@@ -550,6 +626,24 @@ class MainWindow(QMainWindow):
         except Exception: self._last_snapshot=None
     @Slot(object)
     def _done(self,r):
+        if isinstance(r, LibraryOperationResult):
+            self.library_panel.handle_result(r)
+            if r.selection is not None:
+                self._project_display_names[r.selection.project_id] = (
+                    self.library_panel.display_project_name(r.selection.project_id)
+                )
+            if r.success and r.snapshot is not None:
+                # Opening, cloning and applying configuration select an
+                # authoritative durable execution; they invalidate a prior
+                # PreparedIdentity rather than restoring stale form authority.
+                self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
+                self.render(r.snapshot)
+            # Successful library actions have one visible confirmation in the
+            # Biblioteca panel.  Keep failures in the durable log as well as
+            # in the panel, but do not add a second generic success message.
+            if not r.success:
+                self.log.append(r.message or "Operación de Biblioteca falló")
+            return
         self.render(r.snapshot)
         if self._operation_kind=="prompt_flush":
             pending=self._pending_action; self._pending_action=None
@@ -608,8 +702,50 @@ class MainWindow(QMainWindow):
             return
         enabled = bool(self.project.text().strip() and self.execution.text().strip()) and not self._busy
         self.resume.setEnabled(enabled)
+    def _update_edit_controls(self):
+        """Reflect the authoritative draft/queue gate without changing data.
+
+        Historical, queued and active executions remain inspectable.  Their
+        controls are read-only here; the same application use cases enforce
+        the durable gate again for races or non-GUI callers.
+        """
+        if not hasattr(self, "initial"):
+            return
+        editable = bool(self._auth_can_edit and not self._busy)
+        for widget in (
+            self.initial, self.initial_button, self.references, self.chunk_count,
+            self.megapixels, self.length, self.steps, self.fps,
+            self.ref_image_size, self.also_ref_first_frame,
+            self.first_frame_as_primary_reference, self.override_key,
+            self.override_value, self.preflight, self.prepare,
+            self.set_override_button, self.clear_override_button,
+        ):
+            widget.setEnabled(editable)
+        for button in getattr(self, "reference_action_buttons", ()):
+            button.setEnabled(editable)
+        for editor in getattr(self, "prompts", ()):
+            editor.setReadOnly(not editable)
+        tabs = getattr(self, "chunk_tabs", None)
+        if tabs is not None:
+            for index in range(tabs.count()):
+                page = tabs.widget(index)
+                for key in ("megapixels", "length", "steps", "fps", "ref_image_size", "also_ref_first_frame"):
+                    toggle = getattr(page, f"chunk_{key}_override", None)
+                    value_editor = getattr(page, f"chunk_{key}_editor", None)
+                    restore = page.findChild(QPushButton, f"chunk_{key}_restore")
+                    if toggle is not None:
+                        toggle.setEnabled(editable)
+                    if value_editor is not None:
+                        value_editor.setEnabled(editable and toggle is not None and toggle.isChecked())
+                    if restore is not None:
+                        restore.setEnabled(editable)
+        self._update_sequence_controls()
     def _set_enabled(self,v):
         [x.setEnabled(v) for x in (self.preflight,self.prepare,self.start,self.retry,self.cancel,self.assemble,self.add_chunk_button,self.remove_chunk_button,self.move_up_button,self.move_down_button,self.duplicate_button,self.set_override_button,self.clear_override_button)]
+        self.project.setEnabled(v)
+        self._update_edit_controls()
+        if hasattr(self, "library_panel"):
+            self.library_panel.set_busy(not v)
         self._update_resume_recover()
     def _assemble(self):
         p,_=QFileDialog.getSaveFileName(self,"Destination MP4",resolve_folder(OUTPUT_KEY, project_root=self.project_root),filter="MP4 (*.mp4)");

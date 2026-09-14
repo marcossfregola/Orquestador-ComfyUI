@@ -27,7 +27,7 @@ class F114HumanValidationCorrections(unittest.TestCase):
   w=MainWindow(F()); self.addCleanup(w.close); return w
  def test_general_controls_have_explicit_labels(self):
   labels=' '.join(x.text() for x in self.make().findChildren(QLabel))
-  for s in ('Megapixels','Length / Frames','Steps','FPS','Reference image size','Also reference first frame'): self.assertIn(s,labels)
+  for s in ('Megapixels','Length / Frames','Steps','FPS','Reference image size','Incluir también el primer frame como referencia'): self.assertIn(s,labels)
  def test_direct_chunk_overrides_edit_draft_and_restore_inheritance(self):
   w=self.make(); w._ensure_prompt_count(); p=w.chunk_tabs.widget(0); untouched=dict(w._drafts[1].overrides)
   shown=lambda e: e.value() if hasattr(e,'value') else e.currentText() if hasattr(e,'currentText') else e.isChecked()
@@ -133,7 +133,7 @@ class F114HumanValidationCorrections(unittest.TestCase):
   for _ in range(4): self.app.processEvents(); QTest.qWait(2)
   self.assertEqual(len(calls),2); self.assertEqual(calls[1]['steps'],edited_steps); self.assertTrue(w.start.isEnabled())
  def test_refs_and_tabs_regression(self):
-  w=self.make(); self.assertEqual([w.tabs.tabText(i) for i in range(3)],['Principal','Referencias','Chunks']); self.assertIs(w.ref_image_size.parentWidget(),w.tabs.widget(2)); self.assertIs(w.also_ref_first_frame.parentWidget(),w.tabs.widget(2))
+  w=self.make(); self.assertEqual([w.tabs.tabText(i) for i in range(4)],['Principal','Referencias','Chunks','Biblioteca']); self.assertIs(w.ref_image_size.parentWidget(),w.tabs.widget(2)); self.assertIs(w.also_ref_first_frame.parentWidget(),w.tabs.widget(2))
  def test_f11_5_smoke_capability_gating_and_worker_boundary(self):
   gui=QThread.currentThread(); seen=[]; mode={'ok':True}
   chunks=tuple(ChunkSnapshot(i,'pending',chunk_id=f'c{i+1}') for i in range(3))

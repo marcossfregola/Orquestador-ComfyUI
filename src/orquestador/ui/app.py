@@ -20,10 +20,11 @@ from ..application.recover_execution import ResumeExecutionUseCase, RecoverExecu
 from ..application.chain_execution import ChainExecutionUseCase
 from ..application.assembly import AssembleExecutionUseCase, AssemblySource, AssemblySourceRoot
 from ..adapters.video import FFmpegVideoAdapter
-from ..domain.core import Lifecycle, MaterializedInputRef
+from ..domain.core import Lifecycle, MaterializedInputRef, editable_virgin
 from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
+from ..application.preparation_library import PreparationLibraryUseCase
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
 
@@ -133,17 +134,23 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             project, executions = repo.load(project_id)
         except PersistenceError as exc:
             if str(exc).strip().lower() == "project not found" and execution_id is None:
-                return {"project_id":str(project_id), "state":"new", "errors":()}
+                return {"project_id":str(project_id), "state":"new", "errors":(), "can_edit":True}
             raise
         if execution_id is None:
-            matches = [e for e in executions if e.workflow_profile_ref is not None and e.workflow_profile_ref.value == H3_PROFILE.name and not e.artifacts and not e.errors and e.state is Lifecycle.PENDING and all(c.state is Lifecycle.PENDING and not c.attempts and c.first_frame is None for c in e.chunks)]
+            matches = [
+                e for e in executions
+                if e.workflow_profile_ref is not None
+                and e.workflow_profile_ref.value == H3_PROFILE.name
+                and editable_virgin(e)
+                and not repo.has_live_queue_item(e.id)
+            ]
             if not matches:
-                return {"project_id":str(project_id), "state":"new", "errors":()}
+                return {"project_id":str(project_id), "state":"new", "errors":(), "can_edit":True}
             if len(matches) > 1:
-                return {"project_id":str(project_id), "state":"error", "errors":("multiple editable unstarted executions; specify an execution",)}
+                return {"project_id":str(project_id), "state":"error", "errors":("multiple editable unstarted executions; specify an execution",), "can_edit":False}
         else:
             matches=[e for e in executions if str(e.id)==str(execution_id)]
-        if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",)}
+        if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",), "can_edit":False}
         e=matches[0]; chunks=[]; outputs=[]
         for c in e.chunks:
             a=c.attempts[-1] if c.attempts else None
@@ -156,12 +163,26 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         retryable = (retry_usecase is not None and e.state is Lifecycle.FAILED and
                      any(c.state is Lifecycle.FAILED and len(c.attempts) == 1 and
                          c.attempts[0].state is Lifecycle.FAILED for c in e.chunks))
+        live_queue = repo.has_live_queue_item(e.id)
+        editable = editable_virgin(e) and not live_queue
         caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
-            startable=True, assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
-        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else ""}
+            startable=not live_queue, assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
+        edit_reason = "" if editable else (
+            "live durable queue item locks editing" if live_queue
+            else (
+                "execution lifecycle is not an editable draft"
+                if e.state is not Lifecycle.PENDING
+                else "runtime evidence locks editing"
+            )
+        )
+        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else "", "can_edit":editable, "edit_reason":edit_reason}
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
-        snapshot["initial_image"] = durable_defaults.get("initial_image")
+        # A persisted execution is authoritative even when it has not yet
+        # received an input.  Spell that absence as an empty value so opening
+        # a new library draft cannot retain an image from a previously viewed
+        # execution in the GUI form.
+        snapshot["initial_image"] = durable_defaults.get("initial_image", "")
         config_keys = ("profile_ref", "chunk_count", "megapixels", "length", "steps",
                        "fps", "ref_image_size", "also_ref_first_frame", "first_frame_as_primary_reference",
                        "orchestration_timeout_seconds")
@@ -204,6 +225,37 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         return {**s,"state":("cancellation_requested" if state=='requested' else state),"can_cancel":False,"message":result.issue or state}
     def _operation_repository():
         return repository_factory(cfg.project_root)
+
+    class _PreparationLibraryGateway:
+        """Open an operation-local application boundary for every UI worker.
+
+        The gateway intentionally exposes only F13.6 application methods;
+        widgets receive it only through ``GuiFacade`` and never hold a
+        repository connection.
+        """
+
+        _operations = frozenset({
+            "snapshot", "select", "create_draft", "clone", "update_global_defaults",
+            "create_preset", "update_preset", "rename_preset", "delete_preset",
+            "set_default_preset", "clear_default_preset", "apply_preset",
+            "create_template", "update_template", "rename_template",
+            "duplicate_template", "delete_template", "apply_template",
+        })
+
+        def _call(self, name, *args, **kwargs):
+            op_repo = _operation_repository()
+            try:
+                return getattr(PreparationLibraryUseCase(op_repo), name)(*args, **kwargs)
+            finally:
+                op_repo.close()
+
+        def snapshot(self):
+            return self._call("snapshot")
+
+        def __getattr__(self, name):
+            if name not in self._operations:
+                raise AttributeError(name)
+            return lambda *args, **kwargs: self._call(name, *args, **kwargs)
 
     def _worker_services(op_repo):
         # Every operation owns its backend transport and observation adapter;
@@ -373,14 +425,16 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         return _run_durable_chain(project_id, execution_id, **kwargs)
     from ..application.edit_chunk_sequence import EditChunkSequenceUseCase
     sequence_edit = EditChunkSequenceUseCase(repository_factory=lambda: repository_factory(cfg.project_root))
+    library = _PreparationLibraryGateway()
     facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
-                       cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit)
+                       cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit,
+                       library=library)
     return facade, {"repository": repository, "client": client, "cancellation": cancellation,
                     "assembler": assembler, "submitter": submitter, "coordinator": coordinator,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,
                     "retry": retry_usecase,
-                    "assemble": assembly_usecase}
+                    "assemble": assembly_usecase, "library": library}
 
 def launch(config: AppConfig) -> int:
     from importlib import import_module

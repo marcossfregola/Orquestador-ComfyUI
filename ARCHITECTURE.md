@@ -143,6 +143,10 @@ El preset se materializa al aplicarse; no agrega un scope runtime permanente ent
 
 La biblioteca es una proyección de lectura y un conjunto de casos de uso. No accede a SQLite desde widgets. Lista proyectos/ejecuciones y deriva la presentación `draft`, `queued`, `running`, `succeeded`, `failed` o `cancelled` desde lifecycle + QueueItem, sin inventar un segundo estado persistido de ejecución.
 
+F13.6 expone esa proyección por `PreparationLibraryUseCase` → `GuiFacade` → worker Qt → panel Biblioteca. El panel presenta un identificador de proyecto legible y `execution_number` local; conserva las identidades técnicas internamente para la llamada de aplicación y no pide que la persona las escriba. F13.2 genera deliberadamente un `ProjectId` nuevo sin campo durable de nombre ni lineage: la sesión que crea el clone lo presenta como `Copia de <origen>` y una sesión posterior usa el fallback honesto `Proyecto generado`, sin convertir el UUID en identidad normal de usuario ni inventar persistencia. Crear borrador delega en `DraftUseCase` —por eso captura los Global Defaults vigentes sólo en el nuevo snapshot—, clonar delega en F13.2 y los controles de defaults, presets y plantillas delegan respectivamente en F13.3, F13.4 y F13.5. Cada operación abre su repositorio local al worker y lo cierra allí; no cruza una conexión SQLite ligada a la UI.
+
+Una selección no editable sigue siendo consultable, pero el panel y el formulario principal reflejan el gate durable para impedir cambios estructurales si hay cola viva, runtime o evidencia. El gate definitivo continúa en los casos de uso y la persistencia; la biblioteca no implementa operaciones manuales de cola, scheduler ni recovery.
+
 La primera versión no incluye etiquetas, carpetas sofisticadas, búsqueda avanzada, cloud ni colaboración.
 
 ## Propiedad de los datos

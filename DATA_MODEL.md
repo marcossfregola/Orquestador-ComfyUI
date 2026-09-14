@@ -146,6 +146,8 @@ La clasificación visible se deriva en este orden:
 4. Execution lifecycle terminal → `succeeded|failed|cancelled`;
 5. inconsistencias → `attention_required`, sólo como proyección UI, no nuevo lifecycle persistido.
 
+F13.6 no añade columnas, tablas ni una relación nueva. Su snapshot de UI transporta solamente la clasificación derivada y la capability `can_edit`; crear desde la biblioteca usa el mismo `DraftUseCase` y materializa por copia los ocho Global Defaults y `workflow_profile_ref` en la nueva `Execution`. Presets, plantillas y clones siguen siendo copias sin IDs o referencias dinámicas en la ejecución creada.
+
 ## Clonación de configuración
 
 La clonación construye agregados nuevos. Copia:

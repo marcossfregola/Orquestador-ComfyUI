@@ -148,6 +148,8 @@ F13 incorpora borradores, reutilización, configuración guardada, biblioteca y 
 
 **Incluye:** vista de proyectos/ejecuciones con estados derivados; abrir; `Crear a partir de este`; controles mínimos para F13.3–F13.5; ocultar UUID técnico salvo diagnóstico.
 
+La vista integra los estados `queued`/activos ya durables de F13.7 sólo como proyección y lock de edición; no administra la cola ni reclama, inicia, recupera o planifica trabajo.
+
 **No incluye:** etiquetas, carpetas sofisticadas, búsqueda avanzada, cloud o colaboración.
 
 **Áreas probables:** facade/snapshots, `ui/main_window.py` o componentes dedicados, workers y pruebas Qt.
@@ -158,6 +160,8 @@ F13 incorpora borradores, reutilización, configuración guardada, biblioteca y 
 **Validación humana:** sí, Windows.
 **Dependencias:** F13.2–F13.5.
 **Cierre:** pruebas focales + regresión, validación humana, auditoría y aprobación.
+
+**Estado:** **CLOSED — APROBADA — 2026-09-14.** La evidencia automática focal y la validación humana final Windows completaron el criterio de cierre. F13.6 no ejecutó ComfyUI, FFmpeg/FFprobe ni una generación de video.
 
 ### F13.7 — Operaciones de cola durable
 

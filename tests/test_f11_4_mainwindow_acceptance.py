@@ -94,7 +94,7 @@ class MainWindowF114AcceptanceTests(unittest.TestCase):
         snap=ExecutionSnapshot('p','e','pending',reference_slots=tuple(f'r{i}.png' for i in range(6)))
         w=MainWindow(GuiFacade(snapshot=lambda *_:snap)); self.addCleanup(w.close)
         self.assertIsInstance(w.tabs, QTabWidget)
-        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ['Principal','Referencias','Chunks'])
+        self.assertEqual([w.tabs.tabText(i) for i in range(w.tabs.count())], ['Principal','Referencias','Chunks','Biblioteca'])
         self.assertIs(w.initial_confirmation.parentWidget(), w.tabs.widget(0))
         self.assertIs(w.reference_scroll_area.parentWidget(), w.tabs.widget(1))
         self.assertEqual(w.reference_grid.columnCount(), 2)
