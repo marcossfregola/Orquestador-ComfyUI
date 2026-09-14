@@ -138,6 +138,24 @@ class StartGuiChainUseCase:
             raise StartPreparationError("scheduler queue item id must be nonblank")
         return self._start(project_id, execution_id, queue_item_id=queue_item_id.strip(), **kwargs)
 
+    def resume_claimed(self, project_id, execution_id, queue_item_id, **kwargs):
+        """Re-enter an exact active claim through the existing chain engine.
+
+        Unlike ``start_claimed``, this route accepts the already-durable
+        RUNNING lifecycle left by a crash.  It carries a recovery flag down to
+        the chain, which permits observation/completion but never an automatic
+        replacement submit for an existing attempt.
+        """
+        if not isinstance(queue_item_id, str) or not queue_item_id.strip():
+            raise StartPreparationError("scheduler queue item id must be nonblank")
+        return self._start(
+            project_id,
+            execution_id,
+            queue_item_id=queue_item_id.strip(),
+            queue_recovery=True,
+            **kwargs,
+        )
+
     def __call__(self, *args, **kwargs):
         """Manual Start entrypoint; queue authorization is intentionally absent."""
         if "queue_item_id" in kwargs or len(args) >= 17:
@@ -163,10 +181,15 @@ class StartGuiChainUseCase:
         orchestration_timeout_seconds=None,
         fast_e2e=False,
         queue_item_id=None,
+        queue_recovery=False,
         **extra,
     ):
         if type(fast_e2e) is not bool:
             raise StartPreparationError("fast_e2e must be a boolean")
+        if type(queue_recovery) is not bool:
+            raise StartPreparationError("queue_recovery must be a boolean")
+        if queue_recovery and queue_item_id is None:
+            raise StartPreparationError("queue recovery requires an active queue item")
         updates = self._updates(
             config=config,
             generation_config=generation_config,
@@ -315,4 +338,5 @@ class StartGuiChainUseCase:
             transition_rebinder=partial(rebind_first_frame, first_frame_as_primary_reference=selected.first_frame_as_primary_reference),
             transition_materializer=self.transition_materializer,
             queue_item_id=queue_item_id,
+            queue_recovery=queue_recovery,
         )

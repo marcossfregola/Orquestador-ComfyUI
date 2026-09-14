@@ -13,6 +13,7 @@ from pathlib import Path
 import threading
 
 from ..domain.core import Lifecycle, QueueClaimStatus
+from .queue_recovery import QueueRecoveryOutcome
 
 
 class SchedulerError(RuntimeError):
@@ -131,12 +132,15 @@ class SchedulerTickResult:
 class SchedulerExecutionBoundary:
     """Explicit authorization bridge from a durable claim to the old motor."""
 
-    def __init__(self, start_claimed, *, readiness=None):
+    def __init__(self, start_claimed, *, reconcile_active=None, readiness=None):
         if not callable(start_claimed):
             raise SchedulerError("scheduler claimed-start boundary must be callable")
+        if reconcile_active is not None and not callable(reconcile_active):
+            raise SchedulerError("scheduler active-recovery boundary must be callable")
         if readiness is not None and not callable(readiness):
             raise SchedulerError("scheduler readiness boundary must be callable")
         self._start_claimed = start_claimed
+        self._reconcile_active = reconcile_active
         self._readiness = readiness
 
     def ensure_ready(self):
@@ -145,6 +149,15 @@ class SchedulerExecutionBoundary:
 
     def start_claimed(self, project_id, execution_id, queue_item_id):
         return self._start_claimed(project_id, execution_id, queue_item_id)
+
+    @property
+    def supports_active_reconciliation(self):
+        return self._reconcile_active is not None
+
+    def reconcile_active(self, project_id, execution_id, queue_item_id):
+        if self._reconcile_active is None:
+            raise SchedulerError("scheduler active-recovery boundary is unavailable")
+        return self._reconcile_active(project_id, execution_id, queue_item_id)
 
 
 class SingleExecutionScheduler:
@@ -207,8 +220,103 @@ class SingleExecutionScheduler:
             raise SchedulerError("claimed execution selection is missing or ambiguous")
         return project, matches[0]
 
+    def _reconcile_active(self, queue_item_id):
+        """Drive only the durable survivor before considering another claim."""
+        if not getattr(self.execution_boundary, "supports_active_reconciliation", False):
+            return self._result(
+                SchedulerTickOutcome.RECOVERY_REQUIRED,
+                queue_item_id,
+                reason="durable active queue item requires F13.9 reconciliation",
+            )
+        try:
+            control = self.repository.get_queue_control()
+        except Exception as exc:
+            return self._result(
+                SchedulerTickOutcome.BLOCKED,
+                queue_item_id,
+                reason=f"active queue control reload failed: {exc}",
+            )
+        if control.paused:
+            return self._result(
+                SchedulerTickOutcome.RECOVERY_REQUIRED,
+                queue_item_id,
+                reason="active queue item is paused; reconciliation is deferred",
+            )
+        try:
+            item = self.repository.get_queue_item(queue_item_id)
+            project, execution = self._load_claimed_execution(item.execution_id)
+        except Exception as exc:
+            return self._result(
+                SchedulerTickOutcome.BLOCKED,
+                queue_item_id,
+                reason=f"active queue execution load failed: {exc}",
+            )
+        try:
+            recovery = self.execution_boundary.reconcile_active(
+                str(project.id), str(execution.id), str(item.id)
+            )
+        except Exception as exc:
+            return self._result(
+                SchedulerTickOutcome.BLOCKED,
+                item.id,
+                item.execution_id,
+                f"active queue reconciliation failed: {exc}",
+            )
+        if str(getattr(recovery, "execution_id", execution.id)) != str(execution.id):
+            return self._result(
+                SchedulerTickOutcome.BLOCKED,
+                item.id,
+                item.execution_id,
+                "active queue reconciliation returned a mismatched execution",
+            )
+        outcome = getattr(recovery, "outcome", None)
+        if outcome is QueueRecoveryOutcome.TERMINAL:
+            try:
+                _, refreshed = self._load_claimed_execution(item.execution_id)
+            except Exception as exc:
+                return self._result(
+                    SchedulerTickOutcome.BLOCKED,
+                    item.id,
+                    item.execution_id,
+                    f"reconciled execution reload failed: {exc}",
+                )
+            if refreshed.state not in {
+                Lifecycle.SUCCEEDED,
+                Lifecycle.FAILED,
+                Lifecycle.CANCELLED,
+            }:
+                return self._result(
+                    SchedulerTickOutcome.BLOCKED,
+                    item.id,
+                    item.execution_id,
+                    "active queue reconciliation reported terminal without a terminal execution",
+                )
+            try:
+                self.repository.finish_claimed_queue_item(item.id, item.execution_id)
+            except Exception as exc:
+                return self._result(
+                    SchedulerTickOutcome.BLOCKED,
+                    item.id,
+                    item.execution_id,
+                    f"queue completion failed: {exc}",
+                )
+            return self._result(SchedulerTickOutcome.FINISHED, item.id, item.execution_id)
+        if outcome in {QueueRecoveryOutcome.WAIT, QueueRecoveryOutcome.MANUAL_REVIEW}:
+            return self._result(
+                SchedulerTickOutcome.RECOVERY_REQUIRED,
+                item.id,
+                item.execution_id,
+                getattr(recovery, "reason", "") or "active queue reconciliation is incomplete",
+            )
+        return self._result(
+            SchedulerTickOutcome.BLOCKED,
+            item.id,
+            item.execution_id,
+            getattr(recovery, "reason", "") or "active queue reconciliation is blocked",
+        )
+
     def tick(self):
-        """Drive at most one claimed item; never recover or resubmit an active one."""
+        """Drive one durable item, reconciling a survivor before any new claim."""
         if not self._started:
             return self._result(SchedulerTickOutcome.NOT_STARTED)
         if not self._drive_lock.acquire(blocking=False):
@@ -229,11 +337,7 @@ class SingleExecutionScheduler:
             if claim.status is QueueClaimStatus.PAUSED:
                 return self._result(SchedulerTickOutcome.PAUSED)
             if claim.status is QueueClaimStatus.ACTIVE_PRESENT:
-                return self._result(
-                    SchedulerTickOutcome.RECOVERY_REQUIRED,
-                    claim.active_queue_item_id,
-                    reason="durable active queue item requires F13.9 reconciliation",
-                )
+                return self._reconcile_active(claim.active_queue_item_id)
             if claim.status is not QueueClaimStatus.CLAIMED or claim.item is None:
                 return self._result(SchedulerTickOutcome.BLOCKED, reason="invalid queue claim result")
             item = claim.item

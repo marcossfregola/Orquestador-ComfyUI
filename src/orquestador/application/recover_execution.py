@@ -19,7 +19,7 @@ from ..profiles.minimax_h3 import H3_PROFILE, load_api_template, bind_inputs
 
 class RecoveryOutcome(str, Enum):
     COMPLETE='complete'; WAIT='wait'; RETRIED_WAIT='retried_wait'; RETRIED_COMPLETE='retried_complete'
-    NEEDS_MANUAL_REVIEW='needs_manual_review'; BLOCKED='blocked'
+    FAILED='failed'; CANCELLED='cancelled'; NEEDS_MANUAL_REVIEW='needs_manual_review'; BLOCKED='blocked'
 
 @dataclass(frozen=True)
 class RecoveryExecutionResult:
@@ -100,6 +100,57 @@ class ResumeExecutionUseCase:
             return f'configured output root is invalid: {exc}'
         return None
 
+    def is_durably_complete(self, execution):
+        """Public read-only success-evidence check reused by queue recovery."""
+        return self._durably_complete(execution)
+
+    def _persist_observed_terminal(self, project, execution, chunk, attempt, target):
+        """Record a freshly observed terminal backend state without retrying it."""
+        if target not in {Lifecycle.FAILED, Lifecycle.CANCELLED}:
+            return self._manual(execution, chunk, attempt, 'unsupported observed terminal state')
+        try:
+            clone = _clone_execution(execution)
+            cc = next(item for item in clone.chunks if str(item.id) == str(chunk.id))
+            aa = next(item for item in cc.attempts if str(item.id) == str(attempt.id))
+            code = 'backend_failed' if target is Lifecycle.FAILED else 'backend_cancelled'
+            message = 'backend reported FAILED' if target is Lifecycle.FAILED else 'backend reported CANCELLED'
+            if target is Lifecycle.FAILED:
+                if aa.state is Lifecycle.PENDING:
+                    aa.transition(Lifecycle.RUNNING)
+                if aa.state is Lifecycle.RUNNING:
+                    aa.transition(Lifecycle.FAILED, error=ErrorRecord(code, message))
+                elif aa.state is not Lifecycle.FAILED:
+                    return self._manual(execution, chunk, attempt, 'backend failure conflicts with durable attempt state')
+                if cc.state is Lifecycle.PENDING:
+                    cc.transition(Lifecycle.RUNNING)
+                if cc.state is Lifecycle.RUNNING:
+                    cc.transition(Lifecycle.FAILED)
+                elif cc.state is not Lifecycle.FAILED:
+                    return self._manual(execution, chunk, attempt, 'backend failure conflicts with durable chunk state')
+                if clone.state is Lifecycle.RUNNING:
+                    clone.transition(Lifecycle.FAILED)
+                elif clone.state is not Lifecycle.FAILED:
+                    return self._manual(execution, chunk, attempt, 'backend failure conflicts with durable execution state')
+            else:
+                if aa.state in {Lifecycle.PENDING, Lifecycle.RUNNING}:
+                    aa.transition(Lifecycle.CANCELLED)
+                elif aa.state is not Lifecycle.CANCELLED:
+                    return self._manual(execution, chunk, attempt, 'backend cancellation conflicts with durable attempt state')
+                if cc.state in {Lifecycle.PENDING, Lifecycle.RUNNING}:
+                    cc.transition(Lifecycle.CANCELLED)
+                elif cc.state is not Lifecycle.CANCELLED:
+                    return self._manual(execution, chunk, attempt, 'backend cancellation conflicts with durable chunk state')
+                if clone.state in {Lifecycle.PENDING, Lifecycle.RUNNING}:
+                    clone.transition(Lifecycle.CANCELLED)
+                elif clone.state is not Lifecycle.CANCELLED:
+                    return self._manual(execution, chunk, attempt, 'backend cancellation conflicts with durable execution state')
+            self.repository.save(project, [clone])
+            _copy_execution_state(execution, clone)
+        except Exception as exc:
+            return self._manual(execution, chunk, attempt, f'observed terminal persistence failed: {exc}')
+        outcome = RecoveryOutcome.FAILED if target is Lifecycle.FAILED else RecoveryOutcome.CANCELLED
+        return RecoveryExecutionResult(outcome, str(execution.id), str(chunk.id), str(attempt.id))
+
     def retry_existing_pending(self, project, execution, chunk, attempt, prompt=None):
         """Submit the exact durable Attempt 2 selected by explicit Retry."""
         if attempt.external_job_ref is not None:
@@ -138,7 +189,9 @@ class ResumeExecutionUseCase:
             return RecoveryExecutionResult(RecoveryOutcome.RETRIED_COMPLETE if getattr(completion, 'success', False) else RecoveryOutcome.NEEDS_MANUAL_REVIEW, str(execution.id), str(chunk.id), str(attempt.id), completion=completion)
         return self._manual(execution, chunk, attempt, 'retry attempt did not complete successfully')
 
-    def resume(self, project_id, execution_id=None, *, prompt=None, project=None):
+    def resume(self, project_id, execution_id=None, *, prompt=None, project=None, allow_submit=True):
+        if type(allow_submit) is not bool:
+            return RecoveryExecutionResult(RecoveryOutcome.BLOCKED, str(execution_id or 'ambiguous'), reason='allow_submit must be a boolean')
         project, executions = self.repository.load(project_id) if project is None else (project, self.repository.load(project_id)[1])
         matches=[e for e in executions if execution_id is None or str(e.id)==str(execution_id)]
         if len(matches)!=1: return RecoveryExecutionResult(RecoveryOutcome.BLOCKED, str(execution_id or 'ambiguous'), reason='execution selection is ambiguous or missing')
@@ -156,6 +209,8 @@ class ResumeExecutionUseCase:
         # it is safe to enter the existing bounded retry path directly.
         if a.external_job_ref is None:
             if a.state is Lifecycle.FAILED and getattr(a.error, 'code', None) == 'submit_rejected':
+                if not allow_submit:
+                    return self._manual(e, c, a, 'submit rejection requires explicit Retry')
                 if len(c.attempts) >= 2:
                     return self._manual(e,c,a,'retry budget exhausted')
                 result = self.submit_boundary.submit(project, e, c.id, prompt)
@@ -205,13 +260,22 @@ class ResumeExecutionUseCase:
             except DomainError as exc:
                 return self._manual(e,c,a,str(exc))
         if state in (BackendJobState.QUEUED,BackendJobState.RUNNING): return RecoveryExecutionResult(RecoveryOutcome.WAIT,str(e.id),str(c.id),str(a.id))
-        if state in (BackendJobState.UNKNOWN,BackendJobState.CANCELLED): return self._manual(e,c,a,f'backend state {state.value}')
+        if state is BackendJobState.UNKNOWN: return self._manual(e,c,a,f'backend state {state.value}')
+        if state is BackendJobState.CANCELLED:
+            if not allow_submit:
+                return self._persist_observed_terminal(project, e, c, a, Lifecycle.CANCELLED)
+            return self._manual(e,c,a,f'backend state {state.value}')
         if state is BackendJobState.COMPLETED:
             history = source if isinstance(source,HistoryResult) else (self.backend.history(ref) if hasattr(self.backend,'history') else None)
             if not isinstance(history,HistoryResult) or history.prompt_id!=ref: return self._manual(e,c,a,'missing or mismatched HistoryResult')
             completion=self.coordinator.complete_submitted_attempt(project,e,c,a,history)
             if not getattr(completion,'success',False): return self._manual(e,c,a,getattr(completion,'reason','completion failed'))
             return RecoveryExecutionResult(RecoveryOutcome.RETRIED_COMPLETE if a.number>1 else RecoveryOutcome.COMPLETE,str(e.id),str(c.id),str(a.id),completion=completion)
+        # F13.9 restart recovery may persist a fresh terminal observation, but
+        # it never authorizes the bounded retry.  Explicit Retry retains that
+        # authority in the normal ``allow_submit=True`` route below.
+        if not allow_submit:
+            return self._persist_observed_terminal(project, e, c, a, Lifecycle.FAILED)
         # FAILED: persist terminal attempt before delegating exactly one retry.
         if len(c.attempts)>=2 or a.state is Lifecycle.CANCELLED: return self._manual(e,c,a,'retry budget exhausted or cancelled')
         if a.state is not Lifecycle.FAILED:

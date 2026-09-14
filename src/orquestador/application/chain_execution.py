@@ -6,6 +6,7 @@ details remain behind their existing ports.
 """
 from dataclasses import dataclass, replace
 from enum import Enum
+from typing import Any
 
 from ..domain.core import Lifecycle, MaterializedInputRef, Phase
 from .chunk_execution import ChunkExecutionResult
@@ -25,6 +26,7 @@ class ChainExecutionResult:
     next_chunk: int | None = None
     reason: str = ""
     chunk_result: ChunkExecutionResult | None = None
+    recovery_result: Any = None
 
 
 class ChainExecutionUseCase:
@@ -39,12 +41,15 @@ class ChainExecutionUseCase:
         self.recovery = recovery
         self.orchestrator = orchestrator
 
-    def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None, queue_item_id=None):
+    def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None,
+            queue_item_id=None, queue_recovery=False):
         if len(execution.chunks) < 2:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason="at least two chunks are required")
-        if execution.state is Lifecycle.CANCELLED:
+        if execution.state is Lifecycle.CANCELLED and not queue_recovery:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='execution cancelled')
-        if queue_item_id is not None and execution.state is not Lifecycle.PENDING:
+        if queue_recovery and queue_item_id is None:
+            return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='queue recovery requires an active queue claim')
+        if queue_item_id is not None and execution.state is not Lifecycle.PENDING and not queue_recovery:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='scheduler claim execution is not pending')
         if execution.state is Lifecycle.PENDING:
             previous_state = execution.state
@@ -77,7 +82,7 @@ class ChainExecutionUseCase:
         except Exception as exc:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason=f'transition load failed: {exc}')
         for index, chunk in enumerate(execution.chunks):
-            if execution.state is Lifecycle.CANCELLED or chunk.state is Lifecycle.CANCELLED:
+            if (execution.state is Lifecycle.CANCELLED or chunk.state is Lifecycle.CANCELLED) and not queue_recovery:
                 return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), index, 'cancelled')
             if chunk.state is Lifecycle.SUCCEEDED:
                 if index < len(execution.chunks)-1:
@@ -237,12 +242,42 @@ class ChainExecutionUseCase:
             use_recovery = route is not None and route.action.value == 'recover_resume'
             if chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING) and self.recovery is None:
                 return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),index,'recovery required')
-            runner = self.recovery if use_recovery or (route is None and chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING)) else self.coordinator
+            cancelled_bound_recovery = (
+                queue_recovery
+                and (execution.state is Lifecycle.CANCELLED or chunk.state is Lifecycle.CANCELLED)
+                and bool(chunk.attempts)
+                and chunk.attempts[-1].external_job_ref is not None
+            )
+            unattempted_running_continuation = (
+                queue_recovery
+                and chunk.state is Lifecycle.RUNNING
+                and not chunk.attempts
+            )
+            runner = (self.coordinator if unattempted_running_continuation else
+                      self.recovery if (cancelled_bound_recovery or use_recovery
+                                        or (route is None and chunk.state in (Lifecycle.FAILED, Lifecycle.RUNNING)))
+                      else self.coordinator)
             if hasattr(runner, 'resume'):
-                rr = runner.resume(project.id, execution.id, prompt=prompt, project=project)
+                recovery_kwargs = {'prompt': prompt, 'project': project}
+                if queue_recovery:
+                    # F13.9 may observe/completely reconcile a known job, but
+                    # it can never let a restart path authorize a new retry.
+                    recovery_kwargs['allow_submit'] = False
+                rr = runner.resume(project.id, execution.id, **recovery_kwargs)
                 result = getattr(rr, 'completion', None)
                 if result is None:
-                    return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), index, getattr(rr, 'reason', 'recovery did not complete'))
+                    outcome = getattr(getattr(rr, 'outcome', None), 'value', getattr(rr, 'outcome', None))
+                    if outcome in {'wait', 'retried_wait'}:
+                        return ChainExecutionResult(
+                            ChainOutcome.WAIT, str(execution.id), index,
+                            getattr(rr, 'reason', '') or 'recovery is waiting for the bound backend job',
+                            recovery_result=rr,
+                        )
+                    return ChainExecutionResult(
+                        ChainOutcome.BLOCKED, str(execution.id), index,
+                        getattr(rr, 'reason', 'recovery did not complete'),
+                        recovery_result=rr,
+                    )
             else:
                 if self.orchestrator is not None and runner is self.coordinator:
                     result = self.orchestrator.execute_chunk_with_policy(

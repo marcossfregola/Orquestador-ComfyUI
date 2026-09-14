@@ -364,7 +364,13 @@ Con `ORQ_TEST_TMP` dirigido a un directorio nuevo y aislado, la regresión de F1
 
 `tests.test_f9_composition.CompositionTests.test_snapshot_missing_fails_closed` continúa fallando con `state == "new"` frente a su expectativa histórica `"error"`: el mismo retorno `new` ya existe en `HEAD` de `src/orquestador/ui/app.py` fuera del diff F13.8. No se corrigió ni se reinterpretó como regresión de esta slice. `python -B -m compileall -q src tests` y `git diff --check` terminan con código 0.
 
-No se ejecutó ComfyUI real, FFmpeg/FFprobe real, generación de video ni validación humana adicional. Para este cierre formal no se repitieron auditorías, suites ni smoke; F13.9 permanece NOT STARTED.
+No se ejecutó ComfyUI real, FFmpeg/FFprobe real, generación de video ni validación humana adicional. Para aquel cierre formal no se repitieron auditorías, suites ni smoke; en ese momento F13.9 permanecía NOT STARTED.
+
+## Evidencia técnica F13.9
+
+F13.9 está **CLOSED — APROBADA** sobre la implementación y los 82 tests focales registrados. El scheduler reconcilia un `QueueItem active` antes de reclamar otro, mediante la misma cadena de aplicación y el recovery F6. La ruta de cola conserva `allow_submit=False`: observa y completa referencias durables existentes, pero no autoriza retry ni reenvío por incertidumbre. Un Attempt sin `external_job_ref`, un backend `UNKNOWN` o un job `NOT_FOUND` no liberan el activo; la pausa también conserva y difiere su reconciliación. Éxito durable con outputs importados, artefactos y transiciones válidos puede recuperar la terminalización perdida; fallo/cancelación observados se persisten terminales sin retry automático.
+
+`PYTHONPATH=src ORQ_TEST_TMP=C:\Codex\Orquestador-Test-Temp python -B -m unittest tests.test_f13_9_queue_recovery tests.test_f6_recover_execution tests.test_f7_chain_execution tests.test_f13_8_scheduler -v` ejecutó **82 tests, OK**: los 11 de F13.9 cubren restart completo, Execution terminal con QueueItem activo, outputs durables sin transición final, job observable vivo, intento ambiguo sin ref, crash antes de submit en los estados claimed/running, continuidad de un chunk posterior sin Attempt, job desaparecido, staging de retry explícito, fallo/cancelación observados, pausa, no doble submit y bloqueo del siguiente item; 16 conservan scheduler F13.8 y 55 cubren recovery/chaining F6/F7. No se ejecutó ComfyUI real, FFmpeg/FFprobe real, generación de video ni validación humana. Para este cierre formal no se repitieron tests, auditorías ni smoke; F13.10 permanece NOT STARTED.
 
 ## Evidencia de cierre F13.6
 
@@ -395,7 +401,7 @@ La prueba histórica `tests.test_f11_4_mainwindow_acceptance.MainWindowF114Accep
 | F13.6 | facade/snapshots, Qt offscreen, navegación, capabilities, locks de cola y delegación por copia F13.3–F13.5 | Windows final aprobada; CLOSED |
 | F13.7 | enqueue/select/reorder/remove/skip/pause, clone por valor, restart, rollback, constraints y concurrencia SQLite | no; CLOSED backend, F13.6 sólo proyecta sus estados |
 | F13.8 | claim/finalización atómicos, activo único, dos conexiones SQLite, lock local, pausa, no doble submit, runtime no-Qt y smoke compuesto simulado | CLOSED — APROBADA sobre evidencia técnica registrada; sin smoke adicional |
-| F13.9 | crash matrix, backend reiniciado, artifacts discrepantes, active-first recovery | NOT STARTED; Windows + ComfyUI real acotado |
-| F13.10 | regresión, E2E de cola/restart, acciones Qt y sesión real representativa | Windows completa |
+| F13.9 | restart, activo terminal, outputs durable, job vivo/ausente, no-ref ambiguo, pre-submit, no doble submit y active-first recovery | CLOSED — APROBADA sobre implementación y 82 tests focales registrados; sin validación adicional |
+| F13.10 | regresión, E2E de cola/restart, acciones Qt y sesión real representativa | NOT STARTED; próxima etapa, Windows completa |
 
 En toda slice, tests automáticos, ejecución real y validación humana se informan por separado. Ninguna prueba con fake acredita una generación real ni una observación visual.

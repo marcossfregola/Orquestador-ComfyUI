@@ -26,6 +26,7 @@ from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
 from ..application.preparation_library import PreparationLibraryUseCase
 from ..application.scheduler import SchedulerBackgroundRunner, SchedulerExecutionBoundary, SchedulerInstanceLock, SingleExecutionScheduler
+from ..application.queue_recovery import ActiveQueueRecoveryUseCase
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
 
@@ -376,7 +377,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         """Construct every SQLite/network-bound scheduler dependency in its worker."""
         op_repo = _operation_repository()
         try:
-            op_chain, _, _, _, orchestrator = _worker_services(op_repo)
+            op_chain, op_resume, _, _, orchestrator = _worker_services(op_repo)
             op_materializer = orchestrator.materializer
             op_start = StartGuiChainUseCase(
                 op_repo,
@@ -386,8 +387,15 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 op_materializer,
                 _materialize_transition(op_materializer),
             )
+            active_recovery = ActiveQueueRecoveryUseCase(
+                op_repo,
+                op_start.start_claimed,
+                op_start.resume_claimed,
+                completion_validator=op_resume.is_durably_complete,
+            )
             boundary = SchedulerExecutionBoundary(
                 op_start.start_claimed,
+                reconcile_active=active_recovery.reconcile,
                 readiness=_require_output_root,
             )
             return SingleExecutionScheduler(

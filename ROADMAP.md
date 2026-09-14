@@ -204,24 +204,26 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ### F13.9 — Recovery y reconciliación de cola
 
-**Estado:** **NOT STARTED — próxima etapa decidida.**
+**Estado:** **CLOSED — APROBADA.**
 
 **Objetivo:** sobrevivir cierre/crash/reinicio sin abandonar ni duplicar trabajos.
 
-**Incluye:** reconciliar primero el item activo con ejecución durable, artifacts y ComfyUI observable; continuar/retry/manual review conforme a contratos existentes; recién después considerar el siguiente item.
+**Incluye:** reconciliar primero el item activo con ejecución durable, chunks/intentos, outputs/artefactos/transiciones y ComfyUI observable; continuar sólo mediante el motor existente; conservar la autoridad de retry explícito; recién después considerar el siguiente item.
 
 **No incluye:** limpiar outputs, retry ilimitado, asumir éxito por ausencia de error ni auto-saltar ambigüedades.
 
 **Áreas probables:** scheduler, recovery, adaptador ComfyUI, persistencia y tests E2E controlados.
 
-**Aceptación:** activo sobreviviente se reconcilia antes de otro claim; job existente reutiliza `external_job_ref`; un estado ambiguo bloquea sin submit; un pending nunca iniciado permanece en cola.
+**Aceptación técnica actual:** activo sobreviviente se reconcilia antes de otro claim; job existente reutiliza `external_job_ref`; un estado ambiguo bloquea sin submit; un pending/`RUNNING` sin Attempt puede continuar sólo por la invariante durable de `SubmitBoundary`; éxito durable completo, fallo y cancelación observados pueden liberar exactamente ese activo; pausa lo conserva y no habilita el siguiente.
 
-**Tests:** crash antes/después de claim, submit y terminalización; ComfyUI reiniciado; UI ausente; discrepancias durable/artefactos; exactamente un submit.
-**Validación humana:** sí, Windows + ComfyUI real en escenario acotado.
+**Tests ejecutados:** `tests.test_f13_9_queue_recovery` (11 OK) cubre restart, éxito terminal, promoción de éxito con output durable, job vivo, intento sin ref, las dos ventanas pre-submit, continuidad de un chunk posterior sin Attempt, job `NOT_FOUND`, staging de retry explícito, fallo/cancelación observados, pausa y el flag no-submit hacia Resume. Las regresiones focales `tests.test_f13_8_scheduler` (16 OK) y `tests.test_f6_recover_execution tests.test_f7_chain_execution` (55 OK) conservan claim, pausa, recovery y chaining. No se ejecutó ComfyUI real ni GUI humana.
+**Validación humana:** no se realizó ni se reclama para este cierre; la aprobación formal se otorgó sobre la implementación y los 82 tests focales registrados.
 **Dependencias:** F13.8.
-**Cierre:** matriz de recovery, evidencia real acotada, regresión, auditoría y aprobación.
+**Cierre:** aprobado formalmente sobre la implementación y los 82 tests focales registrados. No se repitieron tests, auditorías ni validación adicional.
 
 ### F13.10 — UX de cola y cierre integrado
+
+**Estado:** **NOT STARTED — próxima etapa.**
 
 **Objetivo:** completar la operación cotidiana y absorber el pulido pendiente de F11.6 sin rehacer dos veces la navegación.
 
