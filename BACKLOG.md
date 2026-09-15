@@ -32,4 +32,11 @@ Este documento reúne ideas futuras no comprometidas. No cambia el alcance del p
 - Métricas detalladas de GPU/VRAM/RAM.
 - Limpieza asistida y políticas de retención configurables, siempre explícitas y recuperables.
 
+## Pendientes futuros identificados al cierre de F13.10
+
+Estos puntos quedan registrados sin implementación y no amplían el alcance de F13.10:
+
+- **Modo de inicio de cola configurable:** conservar el modo automático actual y agregar, en una etapa futura, un modo manual en el que abrir el Orquestador no inicie trabajos hasta que la persona pulse `Iniciar/Reanudar cola`.
+- **Finalización real de una ejecución:** distinguir la finalización de todos los chunks del ensamblado del MP4 único; alcanzar el estado final sólo después de ensamblar y validar ese MP4, preservando chunks e intermedios y permitiendo reintentar únicamente el ensamblado si falla.
+
 Cada elemento requiere una decisión posterior, evidencia y actualización de los documentos autoridad antes de entrar al roadmap.

@@ -100,6 +100,181 @@ class ResumeExecutionUseCase:
             return f'configured output root is invalid: {exc}'
         return None
 
+    def _staged_stale_retry_is_valid(self, execution, chunk):
+        """Validate the exact retry shape produced by stale-job retirement.
+
+        This is deliberately narrower than a generic "failed plus pending"
+        pattern.  Only the durable Attempt 1 error written by
+        ``_retire_stale_attempt`` can authorize re-associating Attempt 2 with
+        that same backend job, and the predecessor checkpoint must still be
+        intact.  A malformed or independently-created unbound attempt remains
+        manual review.
+        """
+        if execution.state is not Lifecycle.FAILED or chunk.state is not Lifecycle.FAILED:
+            return False
+        if len(chunk.attempts) != 2:
+            return False
+        first, staged = chunk.attempts
+        if not (
+            first.number == 1
+            and first.state is Lifecycle.FAILED
+            and first.external_job_ref is not None
+            and getattr(first.error, 'code', None) == 'stale_external_job_not_found'
+            and first.output is None
+            and first.evidence is None
+            and staged.number == 2
+            and staged.state is Lifecycle.PENDING
+            and staged.external_job_ref is None
+        ):
+            return False
+        if chunk.order <= 0 or chunk.order >= len(execution.chunks):
+            return False
+        predecessor = execution.chunks[chunk.order - 1]
+        successes = [
+            attempt for attempt in predecessor.attempts
+            if attempt.state is Lifecycle.SUCCEEDED and attempt.output and attempt.evidence
+        ]
+        if predecessor.state is not Lifecycle.SUCCEEDED or len(successes) != 1:
+            return False
+        previous = successes[0]
+        artifacts = [
+            artifact for artifact in (getattr(execution, 'artifacts', None) or ())
+            if str(artifact.project_id) == str(execution.project_id)
+            and str(artifact.execution_id) == str(execution.id)
+            and str(artifact.chunk_id) == str(predecessor.id)
+            and str(artifact.attempt_id) == str(previous.id)
+            and artifact.phase is Phase.OUTPUT
+            and artifact.output == previous.output
+        ]
+        if len(artifacts) != 1:
+            return False
+        try:
+            transitions = tuple(self.repository.load_transitions(execution.id))
+        except Exception:
+            return False
+        frames = [
+            frame for frame in transitions
+            if str(frame.source_chunk_id) == str(predecessor.id)
+            and str(frame.source_attempt_id) == str(previous.id)
+            and str(frame.target_chunk_id) == str(chunk.id)
+            and frame.source_output == previous.output
+        ]
+        if len(frames) != 1:
+            return False
+        frame = frames[0]
+        return (
+            str(frame.project_id) == str(execution.project_id)
+            and str(frame.execution_id) == str(execution.id)
+            and isinstance(frame.frame_count, int)
+            and not isinstance(frame.frame_count, bool)
+            and frame.frame_count > 0
+            and isinstance(frame.source_frame_index, int)
+            and not isinstance(frame.source_frame_index, bool)
+            and frame.source_frame_index == frame.frame_count - 1
+        )
+
+    def _bind_staged_stale_retry(self, project, execution, chunk, staged, ref):
+        """Bind the already-accepted backend job to the staged Attempt 2.
+
+        Rebinding is only called after a fresh observation of Attempt 1's
+        exact reference.  It never calls SubmitBoundary; it only repairs the
+        false stale demotion and reopens the two durable aggregates so the
+        normal completion path can consume the eventual HistoryResult.
+        """
+        try:
+            clone = _clone_execution(execution)
+            cc = next(item for item in clone.chunks if str(item.id) == str(chunk.id))
+            ca = next(item for item in cc.attempts if str(item.id) == str(staged.id))
+            if ca.external_job_ref not in (None, ref):
+                return 'staged retry backend reference conflict'
+            ca.assign_external_job_ref(ref)
+            if clone.state is Lifecycle.FAILED:
+                clone.reopen_for_retry()
+            if cc.state is Lifecycle.FAILED:
+                cc.reopen_for_retry()
+            self.repository.save(project, [clone], allow_retry_reopen=True)
+            _copy_execution_state(execution, clone)
+        except Exception as exc:
+            return f'failed to durably rebind staged retry: {exc}'
+        return ''
+
+    def _recover_staged_stale_retry(self, project, execution, chunk, staged):
+        """Reconcile the post-crash stale demotion without submitting again."""
+        if not self._staged_stale_retry_is_valid(execution, chunk):
+            return self._manual(execution, chunk, staged, 'staged stale retry provenance is invalid')
+        first = chunk.attempts[0]
+        ref = first.external_job_ref
+        try:
+            source = self.backend.observe(ref)
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            return self._manual(execution, chunk, staged, str(exc))
+        if isinstance(source, BackendJobObservation):
+            if (
+                source.project_id,
+                source.execution_id,
+                source.chunk_id,
+                source.attempt_id,
+                source.external_job_ref,
+            ) != (
+                str(execution.project_id),
+                str(execution.id),
+                str(chunk.id),
+                str(first.id),
+                ref,
+            ):
+                return self._manual(execution, chunk, staged, 'staged retry backend observation provenance mismatch')
+            state = source.state
+        else:
+            try:
+                state = map_backend_evidence(
+                    execution=execution,
+                    project_id=str(execution.project_id),
+                    execution_id=str(execution.id),
+                    chunk_id=str(chunk.id),
+                    attempt_id=str(first.id),
+                    job_ref=ref,
+                    source=source,
+                ).state
+            except (TypeError, ValueError) as exc:
+                return self._manual(execution, chunk, staged, str(exc))
+        if isinstance(source, HistoryResult) and source.state.name == 'NOT_FOUND':
+            # Both fresh backend projections agree that the old job is absent;
+            # preserve the existing explicit-retry/manual-review contract.
+            return self._manual(execution, chunk, staged, 'stale Attempt 1 retired; explicit Retry required')
+        if state in (BackendJobState.QUEUED, BackendJobState.RUNNING):
+            reason = self._bind_staged_stale_retry(project, execution, chunk, staged, ref)
+            if reason:
+                return self._manual(execution, chunk, staged, reason)
+            return RecoveryExecutionResult(RecoveryOutcome.WAIT, str(execution.id), str(chunk.id), str(staged.id))
+        if state is not BackendJobState.COMPLETED:
+            return self._manual(execution, chunk, staged, 'staged retry backend evidence is not active or completed')
+        history = source if isinstance(source, HistoryResult) else (
+            self.backend.history(ref) if hasattr(self.backend, 'history') else None
+        )
+        if not isinstance(history, HistoryResult) or history.prompt_id != ref or history.state.name != 'SUCCEEDED':
+            return self._manual(execution, chunk, staged, 'missing or ambiguous HistoryResult for staged retry')
+        reason = self._bind_staged_stale_retry(project, execution, chunk, staged, ref)
+        if reason:
+            return self._manual(execution, chunk, staged, reason)
+        try:
+            completion = self.coordinator.complete_submitted_attempt(
+                project, execution, chunk, staged, history
+            )
+        except Exception as exc:
+            return self._manual(execution, chunk, staged, f'completion failed: {exc}')
+        if not getattr(completion, 'success', False):
+            return self._manual(
+                execution, chunk, staged,
+                getattr(completion, 'reason', 'completion failed'),
+            )
+        return RecoveryExecutionResult(
+            RecoveryOutcome.RETRIED_COMPLETE,
+            str(execution.id),
+            str(chunk.id),
+            str(staged.id),
+            completion=completion,
+        )
+
     def is_durably_complete(self, execution):
         """Public read-only success-evidence check reused by queue recovery."""
         return self._durably_complete(execution)
@@ -205,6 +380,24 @@ class ResumeExecutionUseCase:
         output_error = self._output_root_error()
         if output_error:
             return self._manual(e, c, a, output_error)
+        if (
+            a is not None
+            and e.state is Lifecycle.FAILED
+            and c.state is Lifecycle.FAILED
+            and len(c.attempts) == 2
+            and a is c.attempts[-1]
+            and a.number == 2
+            and a.state is Lifecycle.PENDING
+            and a.external_job_ref is None
+            and getattr(c.attempts[0].error, 'code', None) == 'stale_external_job_not_found'
+        ):
+            # This is the durable shape produced when the old observer saw an
+            # empty history while the backend job was still live.  Reconcile
+            # the original bound ref before treating the unbound retry as an
+            # unknown transport outcome; no submit is authorized here.
+            staged = self._recover_staged_stale_retry(project, e, c, a)
+            if staged is not None:
+                return staged
         # Definite local submit rejection has no backend reference by design;
         # it is safe to enter the existing bounded retry path directly.
         if a.external_job_ref is None:
@@ -395,22 +588,72 @@ class RetryExecutionUseCase:
     def __init__(self, repository, resume):
         self.repository, self.resume_usecase = repository, resume
 
+    @staticmethod
+    def _staged_stale_retry_shape(execution, chunk):
+        """Recognize the durable row that explicitly owns the next retry.
+
+        The first attempt must be the stale bound attempt retired by F6 and
+        the second must be the single pending, unbound retry row.  Other
+        multi-attempt or multi-failure shapes remain fail-closed.
+        """
+        if execution.state is not Lifecycle.FAILED or chunk.state is not Lifecycle.FAILED:
+            return False
+        if len(chunk.attempts) != 2:
+            return False
+        first, staged = chunk.attempts
+        return (
+            first.number == 1
+            and first.state is Lifecycle.FAILED
+            and first.external_job_ref is not None
+            and getattr(first.error, 'code', None) == 'stale_external_job_not_found'
+            and first.output is None
+            and first.evidence is None
+            and staged.number == 2
+            and staged.state is Lifecycle.PENDING
+            and staged.external_job_ref is None
+        )
+
+    @staticmethod
+    def _failed_target(execution):
+        failed = [chunk for chunk in execution.chunks if chunk.state is Lifecycle.FAILED]
+        return failed[0] if len(failed) == 1 else None
+
+    def can_retry(self, execution, *, repository=None):
+        """Return the bounded retry capability enforced by ``retry``."""
+        if execution.state is not Lifecycle.FAILED:
+            return False
+        chunk = self._failed_target(execution)
+        if chunk is None:
+            return False
+        if len(chunk.attempts) == 1:
+            return chunk.attempts[0].state is Lifecycle.FAILED
+        return self._staged_stale_retry_shape(execution, chunk) and self._predecessor_valid(
+            execution, chunk, repository=repository
+        )
+
+    def requires_explicit_retry(self, execution, *, repository=None):
+        """Whether Retry is the sole user action for this durable state."""
+        chunk = self._failed_target(execution)
+        return bool(
+            chunk is not None
+            and self._staged_stale_retry_shape(execution, chunk)
+            and self._predecessor_valid(execution, chunk, repository=repository)
+        )
+
     def retry(self, project_id, execution_id=None, **kwargs):
         project, executions = self.repository.load(project_id)
         matches = [e for e in executions if execution_id is None or str(e.id) == str(execution_id)]
         if len(matches) != 1:
             raise ValueError("execution selection is ambiguous or missing")
         execution = matches[0]
-        chunk = next((c for c in execution.chunks if c.state is Lifecycle.FAILED), None)
+        chunk = self._failed_target(execution)
         if execution.state is not Lifecycle.FAILED or chunk is None:
-            raise ValueError("retry requires a durably failed execution")
+            raise ValueError("retry requires exactly one durably failed chunk")
         # Narrow, user-authorized recovery of the durable stale-job shape:
         # reuse the already-created unbound Attempt 2, never create Attempt 3.
         if len(chunk.attempts) == 2:
             a1, a2 = chunk.attempts
-            if (a1.number == 1 and a2.number == 2 and a1.state is Lifecycle.FAILED
-                    and getattr(a1.error, 'code', None) == 'stale_external_job_not_found'
-                    and self._predecessor_valid(execution, chunk)):
+            if self._staged_stale_retry_shape(execution, chunk) and self._predecessor_valid(execution, chunk):
                 if a2.state is Lifecycle.PENDING and a2.external_job_ref is not None:
                     return self.resume_usecase.resume(project_id, execution_id, **kwargs)
                 if a2.state is not Lifecycle.PENDING or a2.external_job_ref is not None:
@@ -429,7 +672,7 @@ class RetryExecutionUseCase:
         # durable Attempt 2 creation, budget enforcement, and completion flow.
         return self.resume_usecase.resume(project_id, execution_id, **kwargs)
 
-    def _predecessor_valid(self, execution, chunk):
+    def _predecessor_valid(self, execution, chunk, *, repository=None):
         if chunk.order <= 0: return False
         prev = execution.chunks[chunk.order - 1]
         successes = [a for a in prev.attempts if a.state is Lifecycle.SUCCEEDED and a.output and a.evidence]
@@ -440,7 +683,8 @@ class RetryExecutionUseCase:
                 and str(x.chunk_id)==str(prev.id) and str(x.attempt_id)==str(p.id)
                 and x.phase is Phase.OUTPUT and x.output == p.output]
         if len(arts) != 1: return False
-        try: frames = tuple(self.repository.load_transitions(execution.id))
+        source = self.repository if repository is None else repository
+        try: frames = tuple(source.load_transitions(execution.id))
         except Exception: return False
         frames = [t for t in frames if str(t.source_chunk_id)==str(prev.id) and str(t.source_attempt_id)==str(p.id)]
         if len(frames) != 1: return False

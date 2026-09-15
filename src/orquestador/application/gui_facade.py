@@ -45,12 +45,28 @@ class LibraryOperationResult:
     message: str = ""
     detail: Any = None
 
+@dataclass(frozen=True)
+class QueueOperationResult:
+    """Result of an F13.10 queue action through the UI facade.
+
+    The queue projection is separate from an execution snapshot because a
+    refresh can be useful without changing the MainWindow selection.  Actions
+    that select a QueueItem also carry the authoritative Execution snapshot.
+    """
+    success: bool
+    queue: Any = None
+    selection: Any = None
+    snapshot: ExecutionSnapshot | None = None
+    message: str = ""
+    detail: Any = None
+
 class GuiFacade:
-    def __init__(self, *, prepare=None, preflight=None, chain=None, resume=None, recover=None, retry=None, assemble=None, cancel=None, snapshot=None, sequence_edit=None, library=None):
+    def __init__(self, *, prepare=None, preflight=None, chain=None, resume=None, recover=None, retry=None, assemble=None, cancel=None, snapshot=None, sequence_edit=None, library=None, queue=None):
         self._ops = locals()
         self._snapshot = snapshot
         self._sequence_edit = sequence_edit
         self._library = library
+        self._queue = queue
     def refresh(self, project_id=None, execution_id=None):
         if self._snapshot is None: return ExecutionSnapshot(project_id=str(project_id) if project_id else None, execution_id=str(execution_id) if execution_id else None)
         try: return self._to_snapshot(self._snapshot(project_id, execution_id))
@@ -112,6 +128,14 @@ class GuiFacade:
     def prepare(self,*a,**k): return self._call("prepare",*a,**k)
     def preflight(self,*a,**k): return self._call("preflight",*a,**k)
     def start_chain(self,*a,**k): return self._call("chain",*a,**k)
+    def start_queued(self, project_id, execution_id):
+        """Enqueue a prepared execution for immediate scheduler ownership.
+
+        The desktop Start button uses this queue-only route.  The legacy
+        ``start_chain`` seam remains available for injected/application tests,
+        but the production UI never submits directly from its Qt worker.
+        """
+        return self.enqueue_execution(project_id, execution_id)
     def resume_execution(self,*a,**k): return self._call("resume",*a,**k)
     def recover_execution(self,*a,**k): return self._call("recover",*a,**k)
     def retry_execution(self,*a,**k): return self._call("retry",*a,**k)
@@ -218,6 +242,68 @@ class GuiFacade:
     def apply_template(self, template_id, project_id, execution_id):
         return self._library_call("apply_template", template_id, project_id, execution_id,
                                   selection=(project_id, execution_id), refresh_selection=True)
+    def _queue_snapshot_after(self):
+        if self._queue is None or not callable(getattr(self._queue, "snapshot", None)):
+            raise RuntimeError("queue dashboard unavailable")
+        return self._queue.snapshot()
+    def _queue_call(self, operation, *args, message="", **kwargs):
+        if self._queue is None:
+            return QueueOperationResult(False, message="queue dashboard unavailable")
+        fn = getattr(self._queue, operation, None)
+        if not callable(fn):
+            return QueueOperationResult(False, message=f"queue dashboard {operation} unavailable")
+        try:
+            value = fn(*args, **kwargs)
+            queue = getattr(value, "snapshot", None)
+            if queue is None:
+                queue = self._queue_snapshot_after()
+            selection = getattr(value, "selection", None)
+            snapshot = None
+            if selection is not None:
+                snapshot = self.refresh(selection.project_id, selection.execution_id)
+                if snapshot.state in {"error", "unavailable"}:
+                    return QueueOperationResult(
+                        False,
+                        queue,
+                        selection,
+                        snapshot,
+                        "; ".join(snapshot.errors) or "queue selection could not be opened",
+                        value,
+                    )
+            return QueueOperationResult(True, queue, selection, snapshot, message, value)
+        except Exception as exc:
+            return QueueOperationResult(False, message=str(exc), detail=exc)
+    def queue_snapshot(self):
+        try:
+            return QueueOperationResult(True, queue=self._queue_snapshot_after())
+        except Exception as exc:
+            return QueueOperationResult(False, message=str(exc), detail=exc)
+    def select_queue_item(self, queue_item_id):
+        return self._queue_call("select", queue_item_id, message="Selección de cola abierta")
+    def enqueue_execution(self, project_id, execution_id):
+        return self._queue_call("enqueue", project_id, execution_id, message="Agregada a la cola")
+    def reorder_queue(self, queue_item_ids, *, selection_queue_item_id=None):
+        return self._queue_call(
+            "reorder", queue_item_ids, selection_id=selection_queue_item_id
+        )
+    def remove_queue_item(self, queue_item_id, *, reason=None):
+        return self._queue_call("remove", queue_item_id, reason=reason)
+    def skip_queue_item(self, queue_item_id, *, reason=None):
+        return self._queue_call("skip", queue_item_id, reason=reason)
+    def pause_queue(self, *, expected_revision=None, selection_queue_item_id=None):
+        return self._queue_call(
+            "pause",
+            expected_revision=expected_revision,
+            selection_id=selection_queue_item_id,
+        )
+    def resume_queue(self, *, expected_revision=None, selection_queue_item_id=None):
+        return self._queue_call(
+            "resume",
+            expected_revision=expected_revision,
+            selection_id=selection_queue_item_id,
+        )
+    def duplicate_queue_item(self, queue_item_id):
+        return self._queue_call("duplicate", queue_item_id)
     def _to_snapshot(self,v):
         if isinstance(v,ExecutionSnapshot): return v
         if v is None: return self.refresh()

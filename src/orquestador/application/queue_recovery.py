@@ -134,6 +134,30 @@ class ActiveQueueRecoveryUseCase:
         return chunk, (chunk.attempts[-1] if chunk.attempts else None)
 
     @staticmethod
+    def _staged_stale_retry(execution, chunk, attempt):
+        """Recognize only the retry row created by stale-job retirement.
+
+        A generic unbound live attempt is still ambiguous and must remain a
+        manual-review stop.  This exact two-attempt shape is different: its
+        predecessor carries the durable stale-observation error and the first
+        attempt retains the backend reference that recovery can observe again.
+        """
+        if execution.state is not Lifecycle.FAILED or chunk.state is not Lifecycle.FAILED:
+            return False
+        if len(chunk.attempts) != 2 or attempt is not chunk.attempts[-1]:
+            return False
+        first, staged = chunk.attempts
+        return (
+            first.number == 1
+            and first.state is Lifecycle.FAILED
+            and first.external_job_ref is not None
+            and getattr(first.error, "code", None) == "stale_external_job_not_found"
+            and staged.number == 2
+            and staged.state is Lifecycle.PENDING
+            and staged.external_job_ref is None
+        )
+
+    @staticmethod
     def _outcome_value(result):
         outcome = getattr(result, "outcome", None)
         value = getattr(outcome, "value", outcome)
@@ -217,6 +241,11 @@ class ActiveQueueRecoveryUseCase:
             # queue slot.
             return None
         if attempt is not None and attempt.state in {Lifecycle.PENDING, Lifecycle.RUNNING}:
+            if self._staged_stale_retry(execution, chunk, attempt):
+                # Let the existing resume boundary re-observe Attempt 1's
+                # exact reference and repair the staged retry.  It will bind
+                # only after fresh active/completed evidence and never submit.
+                return None
             return self._result(
                 QueueRecoveryOutcome.MANUAL_REVIEW, execution.id, queue_item_id,
                 "terminal execution retains an unbound live attempt",

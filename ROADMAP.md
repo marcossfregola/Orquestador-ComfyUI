@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: **OPEN**, pospuesto hasta integrar la gestión de trabajos para evitar rehacer la navegación.
+- F11.6 pulido UX: **OPEN — NO INICIADA**, pospuesto hasta integrar la gestión de trabajos para evitar rehacer la navegación.
 
 ## F12 — first frame como referencia primaria
 
@@ -223,22 +223,22 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ### F13.10 — UX de cola y cierre integrado
 
-**Estado:** **NOT STARTED — próxima etapa.**
+**Estado:** **CLOSED — APROBADA — 2026-09-15.**
 
 **Objetivo:** completar la operación cotidiana y absorber el pulido pendiente de F11.6 sin rehacer dos veces la navegación.
 
-**Incluye:** panel de cola, estados reales, selección/edición permitida, reordenar/quitar/saltar, pausa/reanudar, accesos a biblioteca/resultados, mensajes accionables y pulido visual pendiente.
+**Incluye:** pestaña `Cola` con proyección durable de `QueueItem`/`Execution`; `Agregar a cola` sólo para un snapshot preparado y editable; selección y consulta; reordenar/mover; quitar/saltar; duplicar; pausa/reanudación; estados globales `idle`/`running`/`paused`/`recovery`/`manual_review`/`blocked`; y refresco visual no bloqueante con persistencia SQLite.
 
 **No incluye:** estimaciones inventadas, multi-GPU, etiquetas avanzadas, cloud o automatización inteligente.
 
-**Áreas probables:** UI, facade, workers, snapshots y documentación.
+**Áreas:** `QueueDashboardUseCase`, `GuiFacade`, worker Qt, `QueuePanel`, scheduler no-Qt y documentación.
 
-**Aceptación:** preparar varios trabajos, encolarlos, cerrar/reabrir, procesarlos uno por uno y consultar resultados desde Windows; controles reflejan capabilities reales.
+**Aceptación técnica actual:** la UI sólo invoca la fachada; las mutaciones delegan en F13.7; el scheduler expone estado de sólo lectura; el item activo queda protegido; los estados de recovery/manual review/blocked no liberan ni duplican el trabajo; y el orden/selección sobreviven al reinicio.
 
-**Tests:** regresión completa, Qt offscreen, E2E controlado de cola/restart y evidencia de no doble submit.
-**Validación humana:** sí, Windows y una cadena real representativa.
+**Tests ejecutados:** `tests.test_f13_10_queue_gui` (4 OK), regresión focal F13.7–F13.9 (38 OK) y regresión GUI F13.6/F11.1B/F11.5 (53 OK); `python -B -m compileall -q src` terminó con código 0. La batería GUI histórica emitió sólo `ResourceWarning` no bloqueantes de fixtures SQLite.
+**Validación humana:** aprobada en Windows sobre una cadena real representativa: `Start chain` quedó integrado con la cola, el activo permaneció visible y único, el cierre/reinicio reconcilió sin doble submit, y el retry explícito quedó habilitado únicamente para el chunk fallido.
 **Dependencias:** F13.6–F13.9.
-**Cierre:** pruebas, evidencia real, validación humana, auditoría y aprobación formal de F13.
+**Cierre:** implementación, controles técnicos y validación humana aprobada — completados. No se repitieron suites, auditorías ni crashes/restarts para este cierre. No se inicia ninguna etapa posterior.
 
 ## Regla de avance
 

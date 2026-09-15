@@ -2,9 +2,23 @@ import ast
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from orquestador.application.f11_1b import derive_capabilities
-from orquestador.domain.core import Lifecycle
+from orquestador.application.recover_execution import RetryExecutionUseCase
+from orquestador.domain.core import (
+    Artifact,
+    BackendJobRef,
+    Chunk,
+    ErrorRecord,
+    Evidence,
+    Execution,
+    Lifecycle,
+    OutputRef,
+    Phase,
+    Project,
+    TransitionFrame,
+)
 
 
 class F111BCapabilityTests(unittest.TestCase):
@@ -28,6 +42,56 @@ class F111BCapabilityTests(unittest.TestCase):
         self.assertTrue(caps.can_cancel)
         self.assertTrue(caps.can_resume)
         self.assertTrue(caps.can_recover)
+
+    def test_retry_only_hides_resume_and_recover(self):
+        caps = derive_capabilities(
+            self.execution(Lifecycle.FAILED), retryable=True, retry_only=True
+        )
+        self.assertTrue(caps.can_retry)
+        self.assertFalse(caps.can_resume)
+        self.assertFalse(caps.can_recover)
+
+    def test_staged_stale_retry_is_the_only_retry_capability_for_exact_shape(self):
+        project = Project()
+        execution = Execution(project.id)
+        predecessor = Chunk(order=0)
+        target = Chunk(order=1)
+        execution.add_chunk(predecessor)
+        execution.add_chunk(target)
+        execution.transition(Lifecycle.RUNNING)
+        predecessor.transition(Lifecycle.RUNNING)
+        previous = predecessor.new_attempt()
+        previous.transition(
+            Lifecycle.RUNNING,
+        )
+        output = OutputRef("video/chunk1.mp4")
+        previous.transition(Lifecycle.SUCCEEDED, output=output, evidence=Evidence("verified"))
+        predecessor.transition(Lifecycle.SUCCEEDED)
+        target.transition(Lifecycle.RUNNING)
+        first = target.new_attempt()
+        first.assign_external_job_ref(BackendJobRef("stale-ref"))
+        first.transition(Lifecycle.RUNNING)
+        first.transition(
+            Lifecycle.FAILED,
+            error=ErrorRecord("stale_external_job_not_found", "history was absent"),
+        )
+        target.transition(Lifecycle.FAILED)
+        target.new_attempt()
+        execution.transition(Lifecycle.FAILED)
+        execution.artifacts = [
+            Artifact(project.id, execution.id, predecessor.id, previous.id, Phase.OUTPUT, output)
+        ]
+        repo = Mock()
+        repo.load_transitions.return_value = (
+            TransitionFrame(
+                project.id, execution.id, predecessor.id, previous.id,
+                output, 9, 10, target.id,
+            ),
+        )
+        usecase = RetryExecutionUseCase(repo, None)
+
+        self.assertTrue(usecase.can_retry(execution, repository=repo))
+        self.assertTrue(usecase.requires_explicit_retry(execution, repository=repo))
 
     def test_productive_snapshot_computes_retryable_before_canonical_derivation(self):
         tree = ast.parse(Path('src/orquestador/ui/app.py').read_text(encoding='utf-8'))

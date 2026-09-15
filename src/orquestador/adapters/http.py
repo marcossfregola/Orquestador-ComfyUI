@@ -136,10 +136,16 @@ class ComfyUIClient:
         return QueueSnapshot(running, pending, state)
     queue_snapshot = queue
 
+    @staticmethod
+    def _prompt_ref(prompt_id: BackendJobRef | str) -> BackendJobRef:
+        if isinstance(prompt_id, BackendJobRef):
+            return prompt_id
+        if isinstance(prompt_id, str) and prompt_id.strip():
+            return BackendJobRef(prompt_id)
+        raise ComfyUIProtocolError('prompt_id must be a nonblank string or BackendJobRef')
+
     def history(self, prompt_id: BackendJobRef | str) -> HistoryResult:
-        if isinstance(prompt_id, BackendJobRef): ref = prompt_id
-        elif isinstance(prompt_id, str) and prompt_id.strip(): ref = BackendJobRef(prompt_id)
-        else: raise ComfyUIProtocolError('prompt_id must be a nonblank string or BackendJobRef')
+        ref = self._prompt_ref(prompt_id)
         try: value = self._request('GET', '/history/' + quote(ref.value, safe=''))
         except ComfyUIRejectedError as exc:
             if exc.status == 404: return HistoryResult(ref, HistoryState.NOT_FOUND, error=str(exc))
@@ -164,6 +170,73 @@ class ComfyUIClient:
         if text in {'queued','pending'}: return HistoryResult(ref, HistoryState.QUEUED, entry)
         return HistoryResult(ref, HistoryState.UNKNOWN, entry, 'unrecognized terminal status')
     history_lookup = history
+
+    def job_status(self, prompt_id: BackendJobRef | str) -> HistoryResult:
+        """Read ComfyUI Desktop's durable job-status projection.
+
+        ``/api/jobs/{id}`` is the only fresh signal available while a job is
+        executing: the native history endpoint may legitimately omit that
+        same id until execution has completed.  This method intentionally
+        reports only the explicit status field and never treats output counts
+        or a filesystem path as completion evidence.
+        """
+        ref = self._prompt_ref(prompt_id)
+        try:
+            value = self._request('GET', '/api/jobs/' + quote(ref.value, safe=''))
+        except ComfyUIRejectedError as exc:
+            if exc.status == 404:
+                return HistoryResult(ref, HistoryState.NOT_FOUND, error=str(exc))
+            raise
+        if not isinstance(value, dict):
+            raise ComfyUIProtocolError('/api/jobs/{id} response must be an object')
+        job_id = value.get('id')
+        if job_id is not None and (not isinstance(job_id, str) or job_id.strip() != ref.value):
+            return HistoryResult(ref, HistoryState.UNKNOWN, value, 'job status reference mismatch')
+        status = value.get('status')
+        if not isinstance(status, str):
+            return HistoryResult(ref, HistoryState.UNKNOWN, value, 'missing job status')
+        text = status.strip().lower()
+        states = {
+            'queued': HistoryState.QUEUED,
+            'pending': HistoryState.QUEUED,
+            'running': HistoryState.RUNNING,
+            'executing': HistoryState.RUNNING,
+            'in_progress': HistoryState.RUNNING,
+            'completed': HistoryState.SUCCEEDED,
+            'success': HistoryState.SUCCEEDED,
+            'succeeded': HistoryState.SUCCEEDED,
+            'failed': HistoryState.FAILED,
+            'failure': HistoryState.FAILED,
+            'error': HistoryState.FAILED,
+        }
+        state = states.get(text)
+        if state is None:
+            return HistoryResult(ref, HistoryState.UNKNOWN, value, 'unrecognized job status')
+        return HistoryResult(ref, state, value)
+
+    def observe(self, prompt_id: BackendJobRef | str) -> HistoryResult:
+        """Observe history first, then disambiguate an absent live job.
+
+        History remains the completion authority because it carries the
+        SaveVideo descriptor.  The Desktop job projection is used only when
+        history has no entry, preventing a live job from being misclassified
+        as stale while retaining fail-closed behavior for ambiguous results.
+        """
+        ref = self._prompt_ref(prompt_id)
+        history = self.history(ref)
+        if history.state is not HistoryState.NOT_FOUND:
+            return history
+        status = self.job_status(ref)
+        if status.state in {HistoryState.QUEUED, HistoryState.RUNNING, HistoryState.FAILED}:
+            return status
+        if status.state is HistoryState.SUCCEEDED:
+            return HistoryResult(
+                ref,
+                HistoryState.UNKNOWN,
+                status.raw,
+                'job is completed but HistoryResult output evidence is unavailable',
+            )
+        return history if status.state is HistoryState.NOT_FOUND else status
 
     @staticmethod
     def _mutation_ids(prompt_ids: Any) -> list[str]:

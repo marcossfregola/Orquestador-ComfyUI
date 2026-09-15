@@ -32,6 +32,7 @@ from orquestador.domain import (
     Artifact,
     BackendJobRef,
     Chunk,
+    ErrorRecord,
     Evidence,
     Execution,
     Lifecycle,
@@ -252,6 +253,104 @@ class F115OperationsTests(unittest.TestCase):
         self.assertTrue(window.resume.isEnabled())
         window.execution.clear()
         self.assertFalse(window.resume.isEnabled())
+
+    def test_mainwindow_explicit_retry_state_offers_retry_only(self):
+        from orquestador.ui.main_window import MainWindow
+
+        calls = []
+        snapshot = ExecutionSnapshot(
+            "p", "e", "failed", can_retry=True,
+            can_resume=False, can_recover=False,
+            chunks=(
+                ChunkSnapshot(0, "succeeded", chunk_id="c1", output="video/chunk1.mp4"),
+                ChunkSnapshot(1, "failed", chunk_id="c2"),
+            ),
+        )
+
+        class FakeFacade:
+            def refresh(self, project_id=None, execution_id=None):
+                return snapshot
+
+            def retry_execution(self, *args, **kwargs):
+                calls.append(("retry", args, kwargs))
+                return OperationResult(True, snapshot, "retried")
+
+            def resume_execution(self, *args, **kwargs):
+                calls.append(("resume", args, kwargs))
+                raise AssertionError("Resume must not be offered for explicit Retry")
+
+            def recover_execution(self, *args, **kwargs):
+                calls.append(("recover", args, kwargs))
+                raise AssertionError("Recover must not be offered for explicit Retry")
+
+        window = MainWindow(FakeFacade())
+        self.addCleanup(window.close)
+        window.render(snapshot)
+        self.assertTrue(window.retry.isEnabled())
+        self.assertFalse(window.resume.isEnabled())
+        self.assertIn("Use Retry", window.resume.toolTip())
+
+        window._run = lambda operation, *_args, **_kwargs: setattr(
+            window, "_reopen_result", operation()
+        )
+        window._resume_or_recover()
+        self.assertFalse(window._reopen_result.success)
+        self.assertEqual(window._reopen_result.message, "Retry is required for this execution")
+        window._retry_execution()
+        self.assertEqual(calls, [("retry", ("p", "e"), {})])
+
+    def test_composed_snapshot_enables_only_retry_for_staged_stale_state(self):
+        project = Project()
+        execution = Execution(
+            project.id,
+            workflow_profile_ref=WorkflowProfileRef(H3_PROFILE.name),
+        )
+        predecessor = Chunk(order=0)
+        target = Chunk(order=1)
+        execution.add_chunk(predecessor)
+        execution.add_chunk(target)
+        execution.transition(Lifecycle.RUNNING)
+        predecessor.transition(Lifecycle.RUNNING)
+        previous = predecessor.new_attempt()
+        previous.transition(Lifecycle.RUNNING)
+        output = OutputRef("video/chunk1.mp4")
+        previous.transition(Lifecycle.SUCCEEDED, output=output, evidence=Evidence("verified"))
+        predecessor.transition(Lifecycle.SUCCEEDED)
+        target.transition(Lifecycle.RUNNING)
+        first = target.new_attempt()
+        first.assign_external_job_ref(BackendJobRef("stale-ref"))
+        first.transition(Lifecycle.RUNNING)
+        first.transition(
+            Lifecycle.FAILED,
+            error=ErrorRecord("stale_external_job_not_found", "history was absent"),
+        )
+        target.transition(Lifecycle.FAILED)
+        target.new_attempt()
+        execution.transition(Lifecycle.FAILED)
+        execution.artifacts = [
+            Artifact(project.id, execution.id, predecessor.id, previous.id, Phase.OUTPUT, output)
+        ]
+        root = self._temp_root()
+        repo = SQLiteProjectRepository(root)
+        repo.save(
+            project,
+            [execution],
+            artifacts=list(execution.artifacts),
+            transitions=[
+                TransitionFrame(
+                    project.id, execution.id, predecessor.id, previous.id,
+                    output, 9, 10, target.id,
+                )
+            ],
+        )
+        facade, resources = compose(AppConfig(root))
+        self.addCleanup(resources["repository"].close)
+        repo.close()
+
+        snapshot = facade.refresh(str(project.id), str(execution.id))
+        self.assertTrue(snapshot.can_retry)
+        self.assertFalse(snapshot.can_resume)
+        self.assertFalse(snapshot.can_recover)
 
     def _temp_root(self):
         base = Path(os.environ.get("ORQ_TEST_TMP", tempfile.gettempdir())).resolve()

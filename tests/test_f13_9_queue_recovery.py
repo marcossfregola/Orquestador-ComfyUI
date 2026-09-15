@@ -12,8 +12,10 @@ from orquestador.application.queue_recovery import ActiveQueueRecoveryUseCase
 from orquestador.application.recover_execution import (
     RecoveryExecutionResult,
     RecoveryOutcome,
+    RetryExecutionUseCase,
     ResumeExecutionUseCase,
 )
+from orquestador.application.submit_boundary import SubmitBoundary
 from orquestador.application.scheduler import (
     SchedulerExecutionBoundary,
     SchedulerInstanceLock,
@@ -25,6 +27,7 @@ from orquestador.domain import (
     BackendJobRef,
     BackendJobObservation,
     BackendJobState,
+    ErrorRecord,
     Evidence,
     Lifecycle,
     OutputRef,
@@ -442,6 +445,237 @@ class F139QueueRecoveryTests(unittest.TestCase):
         self.assertEqual(attempts[-1].external_job_ref, None)
         submit.submit.assert_not_called()
         self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
+        self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
+
+    def test_explicit_retry_reuses_attempt2_only_and_keeps_active_queue_claim(self):
+        active, queued = self._queue_two()
+        project, execution = self._load()
+        execution.transition(Lifecycle.RUNNING)
+        self.repo.start_execution_from_active_queue_claim(project, execution, active.id)
+        predecessor = execution.chunks[0]
+        predecessor.transition(Lifecycle.RUNNING)
+        previous = predecessor.new_attempt()
+        previous.transition(Lifecycle.RUNNING)
+        previous_output = OutputRef("outputs/predecessor.mp4")
+        previous.transition(Lifecycle.SUCCEEDED, output=previous_output, evidence=Evidence("verified"))
+        predecessor.transition(Lifecycle.SUCCEEDED)
+        target = execution.chunks[1]
+        target.transition(Lifecycle.RUNNING)
+        first = target.new_attempt()
+        first.assign_external_job_ref(BackendJobRef("stale-ref"))
+        first.transition(Lifecycle.RUNNING)
+        first.transition(
+            Lifecycle.FAILED,
+            error=ErrorRecord("stale_external_job_not_found", "history was absent"),
+        )
+        target.transition(Lifecycle.FAILED)
+        staged = target.new_attempt()
+        execution.transition(Lifecycle.FAILED)
+        artifact = Artifact(project.id, execution.id, predecessor.id, previous.id, Phase.OUTPUT, previous_output)
+        frame = TransitionFrame(
+            project.id, execution.id, predecessor.id, previous.id,
+            previous_output, 9, 10, target.id,
+        )
+        self.repo.save(project, [execution], artifacts=[artifact], transitions=[frame])
+
+        transport = Mock()
+        retry_ref = BackendJobRef("retry-ref")
+        transport.submit.return_value = retry_ref
+        submit_boundary = SubmitBoundary(transport, repository=self.repo)
+
+        class RunningBackend:
+            def __init__(self):
+                self.calls = []
+
+            def observe(self, ref):
+                self.calls.append(ref)
+                return BackendJobObservation(
+                    str(project.id), str(execution.id), str(target.id),
+                    str(staged.id), BackendJobState.RUNNING, ref,
+                )
+
+        backend = RunningBackend()
+        resume = ResumeExecutionUseCase(
+            self.repo, backend, None, submit_boundary, self.output_root
+        )
+        result = RetryExecutionUseCase(self.repo, resume).retry(
+            project.id, execution.id, prompt={}
+        )
+
+        self.assertEqual(result.outcome, RecoveryOutcome.RETRIED_WAIT)
+        self.assertEqual(transport.submit.call_count, 1)
+        self.assertEqual(backend.calls, [retry_ref])
+        _, recovered = self._load()
+        recovered_predecessor, recovered_target = recovered.chunks
+        self.assertEqual(recovered_predecessor.state, Lifecycle.SUCCEEDED)
+        self.assertEqual(recovered_predecessor.attempts[0].output, previous_output)
+        self.assertEqual(recovered_target.state, Lifecycle.PENDING)
+        self.assertEqual(len(recovered_target.attempts), 2)
+        self.assertEqual(recovered_target.attempts[0].state, Lifecycle.FAILED)
+        self.assertEqual(recovered_target.attempts[1].state, Lifecycle.PENDING)
+        self.assertEqual(recovered_target.attempts[1].external_job_ref, retry_ref)
+        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
+        self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
+
+    def test_staged_stale_retry_rebinds_live_job_without_resubmit(self):
+        active, queued = self._queue_two()
+        project, execution = self._load()
+        execution.transition(Lifecycle.RUNNING)
+        self.repo.start_execution_from_active_queue_claim(project, execution, active.id)
+        predecessor = execution.chunks[0]
+        predecessor.transition(Lifecycle.RUNNING)
+        previous = predecessor.new_attempt()
+        previous.transition(Lifecycle.RUNNING)
+        previous_output = OutputRef("outputs/predecessor.mp4")
+        path = self.root / previous_output.uri
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"predecessor")
+        previous.transition(Lifecycle.SUCCEEDED, output=previous_output, evidence=Evidence("verified"))
+        predecessor.transition(Lifecycle.SUCCEEDED)
+        target = execution.chunks[1]
+        target.transition(Lifecycle.RUNNING)
+        stale_ref = BackendJobRef("live-after-restart")
+        first = target.new_attempt()
+        first.assign_external_job_ref(stale_ref)
+        first.transition(Lifecycle.RUNNING)
+        first.transition(
+            Lifecycle.FAILED,
+            error=ErrorRecord("stale_external_job_not_found", "history was empty while job remained live"),
+        )
+        target.transition(Lifecycle.FAILED)
+        staged = target.new_attempt()
+        execution.transition(Lifecycle.FAILED)
+        artifact = Artifact(project.id, execution.id, predecessor.id, previous.id, Phase.OUTPUT, previous_output)
+        frame = TransitionFrame(
+            project.id, execution.id, predecessor.id, previous.id,
+            previous_output, 9, 10, target.id,
+        )
+        self.repo.save(project, [execution], artifacts=[artifact], transitions=[frame])
+
+        class LiveBackend:
+            def __init__(self):
+                self.calls = []
+
+            def observe(self, ref):
+                self.calls.append(ref)
+                return HistoryResult(ref, HistoryState.RUNNING, {"id": ref.value, "status": "in_progress"})
+
+        backend = LiveBackend()
+        submit = Mock()
+        resume = ResumeExecutionUseCase(self.repo, backend, None, submit, self.output_root)
+        scheduler = self._scheduler(
+            lambda *args: self.fail("staged stale retry must not restart the chain"),
+            lambda project_id, execution_id, queue_item_id: resume.resume(
+                project_id, execution_id, allow_submit=False
+            ),
+            validator=resume.is_durably_complete,
+        )
+        result = scheduler.tick()
+
+        self.assertEqual(result.outcome, SchedulerTickOutcome.RECOVERY_REQUIRED)
+        self.assertEqual(backend.calls, [stale_ref])
+        submit.submit.assert_not_called()
+        _, recovered = self._load()
+        recovered_target = recovered.chunks[1]
+        self.assertEqual(recovered.state, Lifecycle.RUNNING)
+        self.assertEqual(recovered_target.state, Lifecycle.PENDING)
+        self.assertEqual([attempt.state for attempt in recovered_target.attempts], [Lifecycle.FAILED, Lifecycle.PENDING])
+        self.assertEqual(recovered_target.attempts[-1].external_job_ref, stale_ref)
+        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
+        self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
+
+    def test_staged_stale_retry_completed_history_finishes_chunk_without_submit(self):
+        from orquestador.application.chunk_execution import ChunkExecutionCoordinator
+
+        active, queued = self._queue_two()
+        project, execution = self._load()
+        execution.transition(Lifecycle.RUNNING)
+        self.repo.start_execution_from_active_queue_claim(project, execution, active.id)
+        predecessor = execution.chunks[0]
+        predecessor.transition(Lifecycle.RUNNING)
+        previous = predecessor.new_attempt()
+        previous.transition(Lifecycle.RUNNING)
+        previous_output = OutputRef("outputs/predecessor.mp4")
+        previous_path = self.root / previous_output.uri
+        previous_path.parent.mkdir(parents=True, exist_ok=True)
+        previous_path.write_bytes(b"predecessor")
+        previous.transition(Lifecycle.SUCCEEDED, output=previous_output, evidence=Evidence("verified"))
+        predecessor.transition(Lifecycle.SUCCEEDED)
+        target = execution.chunks[1]
+        target.transition(Lifecycle.RUNNING)
+        stale_ref = BackendJobRef("completed-after-restart")
+        first = target.new_attempt()
+        first.assign_external_job_ref(stale_ref)
+        first.transition(Lifecycle.RUNNING)
+        first.transition(
+            Lifecycle.FAILED,
+            error=ErrorRecord("stale_external_job_not_found", "history was empty while job remained live"),
+        )
+        target.transition(Lifecycle.FAILED)
+        target.new_attempt()
+        execution.transition(Lifecycle.FAILED)
+        artifact = Artifact(project.id, execution.id, predecessor.id, previous.id, Phase.OUTPUT, previous_output)
+        frame = TransitionFrame(project.id, execution.id, predecessor.id, previous.id, previous_output, 9, 10, target.id)
+        self.repo.save(project, [execution], artifacts=[artifact], transitions=[frame])
+
+        output_path = self.output_root / "video" / "recovered.mp4"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"recovered video")
+        history = HistoryResult(
+            stale_ref,
+            HistoryState.SUCCEEDED,
+            {
+                "status": {"status_str": "success", "completed": True},
+                "outputs": {"92": {"images": [{"filename": "recovered.mp4", "subfolder": "video", "type": "output"}]}},
+            },
+        )
+
+        class CompletedBackend:
+            def __init__(self):
+                self.calls = []
+
+            def observe(self, ref):
+                self.calls.append(ref)
+                return history
+
+        class Extractor:
+            def extract_last_frame(self, source, destination):
+                Path(destination).parent.mkdir(parents=True, exist_ok=True)
+                Path(destination).write_bytes(b"frame")
+                return SimpleNamespace(frame_index=4, frame_count=5)
+
+        backend = CompletedBackend()
+        submit = Mock()
+        coordinator = ChunkExecutionCoordinator(
+            self.repo,
+            submit,
+            backend,
+            extractor=Extractor(),
+            trusted_root=self.root,
+            comfyui_output_root=self.output_root,
+        )
+        resume = ResumeExecutionUseCase(self.repo, backend, coordinator, submit, self.output_root)
+        scheduler = self._scheduler(
+            lambda *args: self.fail("staged stale retry must not restart the chain"),
+            lambda project_id, execution_id, queue_item_id: resume.resume(
+                project_id, execution_id, allow_submit=False
+            ),
+            validator=resume.is_durably_complete,
+        )
+        result = scheduler.tick()
+
+        self.assertEqual(result.outcome, SchedulerTickOutcome.FINISHED)
+        self.assertEqual(backend.calls, [stale_ref])
+        submit.submit.assert_not_called()
+        _, recovered = self._load()
+        recovered_target = recovered.chunks[1]
+        self.assertEqual(recovered.state, Lifecycle.SUCCEEDED)
+        self.assertEqual(recovered_target.state, Lifecycle.SUCCEEDED)
+        self.assertEqual(recovered_target.attempts[-1].state, Lifecycle.SUCCEEDED)
+        self.assertEqual(recovered_target.attempts[-1].external_job_ref, stale_ref)
+        self.assertEqual(len(recovered.artifacts), 2)
+        self.assertEqual(len(self.repo.load_transitions(recovered.id)), 2)
+        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.FINISHED)
         self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
 
     def test_observed_failed_or_cancelled_job_is_terminalized_without_auto_retry(self):

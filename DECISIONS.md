@@ -76,3 +76,12 @@ Adopt the verified ComfyUI 0.33.0 pending-delete contract with mandatory post-ve
 - F13.8 usa `BEGIN IMMEDIATE` para claim/finalización y un lock local de byte del SO en `.orquestador-scheduler.lock`, adquirido por el runtime de composición; SQLite sigue siendo la autoridad durable y no se introduce coordinación distribuida.
 - La entrada `start_claimed` está reservada al QueueItem activo validado y converge en el motor existente. Un activo sobreviviente, submit ambiguo o error no vuelve automáticamente a `queued` ni inicia otro item: F13.9 conserva la reconciliación.
 - F13 no introduce multi-GPU, cloud, IA, plugins generales ni cancelación running.
+
+## Decisiones F13.10 — UX de cola (2026-09-14)
+
+- La UI de cola es una proyección de aplicación (`QueueDashboardUseCase → GuiFacade → worker Qt → QueuePanel`); los widgets no acceden directamente a SQLite, ComfyUI ni al scheduler.
+- `Agregar a cola` sólo acepta el snapshot preparado e inmutable de una ejecución editable. No existe una segunda ruta UI de submit ni se permite encolar una identidad stale.
+- Las mutaciones de cola (`reorder`, `remove`, `skip`, `duplicate`, `pause`, `resume`) delegan en F13.7 y conservan sus invariantes; un item active no se quita/salta y pausar no cancela.
+- F13.8/F13.9 siguen siendo la autoridad fuera del hilo UI. La fachada sólo consume `SchedulerRuntimeStatus` de lectura y la UI refresca la proyección con un timer no bloqueante.
+- Los estados globales y por fila se derivan de QueueItem, Execution, recovery y capabilities reales. No se agregan progreso, ETA ni éxito inventados, y recovery/manual review/blocked mantienen la cola detenida hasta la decisión durable correspondiente.
+- La slice queda **CLOSED — APROBADA** tras la validación humana Windows de la integración Start→Cola, la visibilidad del activo, el recovery tras reinicio y el retry exclusivo del chunk fallido sin doble submit. No se inicia una etapa posterior automáticamente.

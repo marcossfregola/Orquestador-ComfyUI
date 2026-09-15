@@ -829,8 +829,9 @@ class PreparationLibraryPanel(QWidget):
 
     def save_global_defaults(self):
         self._form_mode = "globals"
+        mapping = self._mapping()
         self._dispatch(
-            lambda: self.facade.update_global_defaults(self._mapping()),
+            lambda mapping=mapping: self.facade.update_global_defaults(mapping),
             "library_globals",
             "Valores globales guardados",
         )
@@ -844,11 +845,12 @@ class PreparationLibraryPanel(QWidget):
         self.refresh()
 
     def create_preset(self):
+        name = self.preset_name.text()
+        mapping = self._mapping()
+        is_default = self.preset_default.isChecked()
         self._dispatch(
-            lambda: self.facade.create_preset(
-                self.preset_name.text(),
-                self._mapping(),
-                is_default=self.preset_default.isChecked(),
+            lambda name=name, mapping=mapping, is_default=is_default: self.facade.create_preset(
+                name, mapping, is_default=is_default
             ),
             "library_preset_create",
             "Preset creado",
@@ -858,8 +860,11 @@ class PreparationLibraryPanel(QWidget):
         preset_id = self._current_preset_id()
         if preset_id is None:
             return
+        mapping = self._mapping()
         self._dispatch(
-            lambda: self.facade.update_preset(preset_id, self._mapping()),
+            lambda preset_id=preset_id, mapping=mapping: self.facade.update_preset(
+                preset_id, mapping
+            ),
             "library_preset_update",
             "Valores del preset actualizados",
         )
@@ -868,8 +873,11 @@ class PreparationLibraryPanel(QWidget):
         preset_id = self._current_preset_id()
         if preset_id is None:
             return
+        name = self.preset_name.text()
         self._dispatch(
-            lambda: self.facade.rename_preset(preset_id, self.preset_name.text()),
+            lambda preset_id=preset_id, name=name: self.facade.rename_preset(
+                preset_id, name
+            ),
             "library_preset_rename",
             "Preset renombrado",
         )
@@ -913,10 +921,10 @@ class PreparationLibraryPanel(QWidget):
         )
 
     def create_template(self):
+        name = self.template_name.text()
+        prompts = self._template_prompts()
         self._dispatch(
-            lambda: self.facade.create_template(
-                self.template_name.text(), self._template_prompts()
-            ),
+            lambda name=name, prompts=prompts: self.facade.create_template(name, prompts),
             "library_template_create",
             "Plantilla creada",
         )
@@ -924,9 +932,10 @@ class PreparationLibraryPanel(QWidget):
     def update_template(self):
         template_id = self._current_template_id()
         if template_id is not None:
+            prompts = self._template_prompts()
             self._dispatch(
-                lambda: self.facade.update_template(
-                    template_id, self._template_prompts()
+                lambda template_id=template_id, prompts=prompts: self.facade.update_template(
+                    template_id, prompts
                 ),
                 "library_template_update",
                 "Prompts de la plantilla actualizados",
@@ -935,9 +944,10 @@ class PreparationLibraryPanel(QWidget):
     def rename_template(self):
         template_id = self._current_template_id()
         if template_id is not None:
+            name = self.template_name.text()
             self._dispatch(
-                lambda: self.facade.rename_template(
-                    template_id, self.template_name.text()
+                lambda template_id=template_id, name=name: self.facade.rename_template(
+                    template_id, name
                 ),
                 "library_template_rename",
                 "Plantilla renombrada",
@@ -946,9 +956,10 @@ class PreparationLibraryPanel(QWidget):
     def duplicate_template(self):
         template_id = self._current_template_id()
         if template_id is not None:
+            name = self.template_name.text()
             self._dispatch(
-                lambda: self.facade.duplicate_template(
-                    template_id, self.template_name.text()
+                lambda template_id=template_id, name=name: self.facade.duplicate_template(
+                    template_id, name
                 ),
                 "library_template_duplicate",
                 "Plantilla duplicada",

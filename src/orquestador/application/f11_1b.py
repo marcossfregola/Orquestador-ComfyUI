@@ -51,12 +51,14 @@ def select_active_cancellation_target(execution):
     unique={r.value:r for r in candidates}
     return next(iter(unique.values())) if len(unique)==1 else None
 
-def derive_capabilities(execution, *, can_cancel_candidate=False, retryable=False, startable=True, assemble=False):
+def derive_capabilities(execution, *, can_cancel_candidate=False, retryable=False,
+                        retry_only=False, startable=True, assemble=False):
     state=getattr(getattr(execution,'state',None),'value',getattr(execution,'state','unknown'))
     state=str(state).lower()
     return UiCapabilities(
         can_start=state=='pending' and bool(startable),
-        can_resume=state in ('running','failed'), can_recover=state in ('running','failed'),
+        can_resume=state in ('running','failed') and not retry_only,
+        can_recover=state in ('running','failed') and not retry_only,
         can_retry=state=='failed' and bool(retryable),
         can_cancel=state in ('pending','running','failed') and bool(can_cancel_candidate),
         can_assemble=state=='succeeded' and bool(assemble),
@@ -210,12 +212,14 @@ class F11_1BOrchestrator:
         return result
 
     def derive_ui_capabilities(self, execution, *, can_cancel_candidate=False,
-                               retryable=False, startable=True, assemble=False):
+                               retryable=False, retry_only=False, startable=True,
+                               assemble=False):
         """Compatibility delegate to the single canonical capability authority."""
         return derive_capabilities(
             execution,
             can_cancel_candidate=can_cancel_candidate,
             retryable=retryable,
+            retry_only=retry_only,
             startable=startable,
             assemble=assemble,
         ).__dict__.copy()

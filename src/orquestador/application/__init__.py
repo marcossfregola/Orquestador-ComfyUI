@@ -25,9 +25,11 @@ from .chunk_templates import ChunkTemplate, ChunkTemplateError, ChunkTemplatesUs
 __all__ += ["ChunkTemplate", "ChunkTemplateError", "ChunkTemplatesUseCase"]
 from .queue_operations import QueueControlSnapshot, QueueEntry, QueueOperationError, QueueOperationsUseCase, QueueSnapshot, QueuedClone
 __all__ += ["QueueControlSnapshot", "QueueEntry", "QueueOperationError", "QueueOperationsUseCase", "QueueSnapshot", "QueuedClone"]
-from .scheduler import SchedulerBackgroundRunner, SchedulerError, SchedulerExecutionBoundary, SchedulerInstanceLock, SchedulerLockError, SchedulerTickOutcome, SchedulerTickResult, SingleExecutionScheduler
-__all__ += ["SchedulerBackgroundRunner", "SchedulerError", "SchedulerExecutionBoundary", "SchedulerInstanceLock", "SchedulerLockError", "SchedulerTickOutcome", "SchedulerTickResult", "SingleExecutionScheduler"]
+from .scheduler import SchedulerBackgroundRunner, SchedulerError, SchedulerExecutionBoundary, SchedulerInstanceLock, SchedulerLockError, SchedulerRuntimeStatus, SchedulerTickOutcome, SchedulerTickResult, SingleExecutionScheduler
+__all__ += ["SchedulerBackgroundRunner", "SchedulerError", "SchedulerExecutionBoundary", "SchedulerInstanceLock", "SchedulerLockError", "SchedulerRuntimeStatus", "SchedulerTickOutcome", "SchedulerTickResult", "SingleExecutionScheduler"]
 from .queue_recovery import ActiveQueueRecoveryUseCase, QueueRecoveryOutcome, QueueRecoveryResult
 __all__ += ["ActiveQueueRecoveryUseCase", "QueueRecoveryOutcome", "QueueRecoveryResult"]
+from .queue_dashboard import QueueDashboardAction, QueueDashboardEntry, QueueDashboardError, QueueDashboardSnapshot, QueueDashboardUseCase, QueueRuntimeSnapshot
+__all__ += ["QueueDashboardAction", "QueueDashboardEntry", "QueueDashboardError", "QueueDashboardSnapshot", "QueueDashboardUseCase", "QueueRuntimeSnapshot"]
 from .preparation_library import LibraryChunkTemplate, LibraryExecution, LibraryProject, LibrarySelection, LibraryTechnicalPreset, PreparationLibraryError, PreparationLibrarySnapshot, PreparationLibraryUseCase
 __all__ += ["LibraryChunkTemplate", "LibraryExecution", "LibraryProject", "LibrarySelection", "LibraryTechnicalPreset", "PreparationLibraryError", "PreparationLibrarySnapshot", "PreparationLibraryUseCase"]

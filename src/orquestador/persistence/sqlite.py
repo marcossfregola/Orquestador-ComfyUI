@@ -218,6 +218,53 @@ class SQLiteProjectRepository:
  def enqueue_execution(self, execution_id, *, queue_item_id=None):
   """Durably append one editable virgin Execution to the product queue."""
   return self._queue_transaction(lambda:self._enqueue_execution_in_transaction(execution_id,queue_item_id))
+ def adopt_orphaned_running_executions(self):
+  """Adopt one crash-surviving RUNNING execution into the active queue slot.
+
+  A legacy/direct start could persist an execution and bind a backend job
+  before the scheduler-owned ``QueueItem`` existed.  On the next process
+  start that aggregate is still authoritative evidence of work, so silently
+  leaving it outside the dashboard would create a second hidden execution
+  authority.  Adoption only creates the missing active queue row; it never
+  rewrites the execution, attempts, outputs, or backend reference.  Multiple
+  candidates or an existing active item fail closed rather than guessing.
+  """
+  def action():
+   control,active=self._queue_control_and_active()
+   rows=self.db.execute("SELECT id,project_id FROM executions WHERE state='running' ORDER BY project_id,execution_number,id").fetchall()
+   candidates=[]
+   for execution_id,project_id in rows:
+    live=self.db.execute("SELECT 1 FROM queue_items WHERE execution_id=? AND state IN ('queued','active') LIMIT 1",(execution_id,)).fetchone()
+    if live is not None:
+     continue
+    chunk_rows=self.db.execute('SELECT state FROM chunks WHERE execution_id=? ORDER BY ord,id',(execution_id,)).fetchall()
+    if not chunk_rows:
+     raise PersistenceDataError('running execution has no durable chunks')
+    try:
+     states=tuple(Lifecycle(row[0]) for row in chunk_rows)
+    except (IndexError,TypeError,ValueError) as exc:
+     raise PersistenceDataError('running execution has an invalid chunk state') from exc
+    if any(state is Lifecycle.UNKNOWN for state in states):
+     raise PersistenceDataError('running execution has an unknown chunk state')
+    try:
+     candidates.append((ExecutionId(execution_id),ProjectId(project_id)))
+    except Exception as exc:
+     raise PersistenceDataError('running execution identity is invalid') from exc
+   if not candidates:
+    return ()
+   if active is not None:
+    raise PersistenceConflictError('orphaned running execution conflicts with active queue item')
+   if len(candidates) > 1:
+    raise PersistenceConflictError('multiple orphaned running executions require manual review')
+   execution_id,_=candidates[0]
+   now=datetime.now(timezone.utc)
+   item=QueueItem(execution_id,self._queue_next_position(),QueueItemId(str(uuid4())),QueueItemState.ACTIVE,now,now)
+   self.db.execute('INSERT INTO queue_items VALUES(?,?,?,?,?,?,?)',(str(item.id),str(item.execution_id),item.position,item.state.value,self._queue_time(item.created_at),self._queue_time(item.updated_at),item.terminal_reason))
+   changed=QueueControl(control.paused,item.id,control.revision+1)
+   if self.db.execute('UPDATE queue_control SET paused=?,active_queue_item_id=?,revision=? WHERE singleton=1 AND active_queue_item_id IS NULL AND revision=?',(int(changed.paused),str(changed.active_queue_item_id),changed.revision,control.revision)).rowcount!=1:
+    raise PersistenceConflictError('queue control changed during orphan adoption')
+   return (item,)
+  return self._queue_transaction(action)
  def save_new_execution_and_enqueue(self, project, execution, *, queue_item_id=None, expected_source_queue_item_id=None):
   """Atomically persist a cloned draft and append its first QueueItem."""
   def action():

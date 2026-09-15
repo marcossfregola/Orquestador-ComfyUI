@@ -213,7 +213,7 @@ Defaults globales y preset son mecanismos de autoría. En runtime sólo mandan e
 
 ## Recovery de cola
 
-Después de reinicio, un QueueItem active obliga a reconciliar su Execution antes de reclamar otro. F13.8 lo detecta y bloquea explícitamente sin mutar o reenviar; la decisión completa usa estado durable, attempts, BackendJobRef, artifacts, TransitionFrame y observación fresca de ComfyUI y pertenece a F13.9.
+Después de reinicio, un QueueItem active obliga a reconciliar su Execution antes de reclamar otro. F13.8 lo detecta y bloquea explícitamente sin mutar o reenviar; la decisión completa usa estado durable, attempts, BackendJobRef, artifacts, TransitionFrame y observación fresca de ComfyUI, y F13.9 la resuelve. F13.10 sólo presenta el resultado de esa autoridad y conserva el bloqueo cuando la evidencia es ambigua.
 
 - Evidencia terminal coherente permite finalizar el item.
 - Job queued/running coherente conserva el activo y continúa esperando/recuperando.
@@ -221,6 +221,12 @@ Después de reinicio, un QueueItem active obliga a reconciliar su Execution ante
 - Evidencia ambigua o contradictoria bloquea; no inicia el siguiente trabajo.
 
 Nunca se infiere éxito sólo porque ComfyUI no muestre el job.
+
+## Proyección UI de cola F13.10
+
+La UI no agrega una tabla ni un lifecycle paralelo: `QueueDashboardUseCase` lee QueueItem, Execution y el estado de runtime para construir filas y un estado global derivado. La selección conserva el `execution_id` opaco y las capabilities de la autoridad de aplicación; los widgets no abren repositorios ni llaman ComfyUI.
+
+`Agregar a cola` requiere el snapshot preparado e inmutable del flujo normal. Reordenar, quitar, saltar, duplicar, pausar y reanudar siguen siendo mutaciones de los casos de uso F13.7 y respetan sus invariantes: el item active no se elimina ni se salta y pausar no cancela. Recovery, manual review y blocked se muestran como estados de espera/bloqueo, nunca como permiso para liberar o reenviar automáticamente.
 
 ## Persistencia y compatibilidad
 

@@ -101,6 +101,20 @@ class AdapterTests(unittest.TestCase):
  def test_history_explicit_failure(self): self.put({'x':{'status':{'status_str':'error','exception_message':'bad'}}}); self.assertEqual(self.c.history('x').state,HistoryState.FAILED)
  def test_history_execution_error_form(self): self.put({'x':{'status':{'error':'bad'}}}); self.assertEqual(self.c.history('x').state,HistoryState.FAILED)
  def test_history_malformed_unknown(self): self.put({'x':{'status':{}}}); self.assertEqual(self.c.history('x').state,HistoryState.UNKNOWN)
+ def test_observe_uses_desktop_job_status_for_history_absent_live_job(self):
+  calls=[]; responses=[{}, {'id':'x','status':'in_progress'}]
+  def request(method,path,*args,**kwargs):
+   calls.append((method,path)); return responses.pop(0)
+  self.c._request=request
+  result=self.c.observe('x')
+  self.assertEqual(result.state,HistoryState.RUNNING)
+  self.assertEqual(calls,[('GET','/history/x'),('GET','/api/jobs/x')])
+ def test_observe_does_not_promote_api_completed_without_history(self):
+  responses=[{}, {'id':'x','status':'completed','outputs_count':1}]
+  self.c._request=lambda *args,**kwargs: responses.pop(0)
+  result=self.c.observe('x')
+  self.assertEqual(result.state,HistoryState.UNKNOWN)
+  self.assertIn('HistoryResult output evidence',result.error)
  def test_refused_connection(self): self.assertRaises(ComfyUITransportError,ComfyUIClient('http://127.0.0.1:1',.1).health)
  def test_timeout(self):
   self.c._request=lambda *a,**k: (_ for _ in ()).throw(ComfyUITimeoutError('timeout'))

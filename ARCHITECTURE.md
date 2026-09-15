@@ -100,7 +100,7 @@ Para impedir dos schedulers simultáneos, la raíz de composición adquiere un l
 
 En F13.8, el runtime inicia automáticamente, adquiere la autoridad única local, abre una conexión propia de worker y hace ticks fuera de Qt. La ausencia del output root confiable bloquea la frontera de readiness antes de un claim. Un tick con activo previo devuelve explícitamente `recovery_required` y no toca backend, attempts ni la cola; un tick con pausa no reclama. Sólo un claim nuevo entra mediante `start_claimed`; después del retorno se relee la `Execution` durable y sólo un lifecycle terminal permite finalizar el item. El siguiente tick puede evaluar el orden recién entonces.
 
-F13.9 agregará la reconciliación de un activo sobreviviente con `Execution`, attempts, artifacts y backend observable. Mientras no exista, la evidencia ambigua o un activo previo bloquean y requieren revisión; nunca reclaman otro item.
+F13.9 agrega la reconciliación de un activo sobreviviente con `Execution`, attempts, artifacts y backend observable. La evidencia ambigua o un activo previo bloquean y requieren revisión; nunca reclaman otro item. F13.10 sólo proyecta ese resultado y no sustituye la autoridad de recovery.
 
 Un item activo no se devuelve automáticamente a pendiente por timeout o reinicio. `external_job_ref` durable y los contratos existentes determinan si corresponde esperar, completar, retry explícito o revisión manual.
 
@@ -142,9 +142,15 @@ La biblioteca es una proyección de lectura y un conjunto de casos de uso. No ac
 
 F13.6 expone esa proyección por `PreparationLibraryUseCase` → `GuiFacade` → worker Qt → panel Biblioteca. El panel presenta un identificador de proyecto legible y `execution_number` local; conserva las identidades técnicas internamente para la llamada de aplicación y no pide que la persona las escriba. F13.2 genera deliberadamente un `ProjectId` nuevo sin campo durable de nombre ni lineage: la sesión que crea el clone lo presenta como `Copia de <origen>` y una sesión posterior usa el fallback honesto `Proyecto generado`, sin convertir el UUID en identidad normal de usuario ni inventar persistencia. Crear borrador delega en `DraftUseCase` —por eso captura los Global Defaults vigentes sólo en el nuevo snapshot—, clonar delega en F13.2 y los controles de defaults, presets y plantillas delegan respectivamente en F13.3, F13.4 y F13.5. Cada operación abre su repositorio local al worker y lo cierra allí; no cruza una conexión SQLite ligada a la UI.
 
-Una selección no editable sigue siendo consultable, pero el panel y el formulario principal reflejan el gate durable para impedir cambios estructurales si hay cola viva, runtime o evidencia. El gate definitivo continúa en los casos de uso y la persistencia; la biblioteca no implementa operaciones manuales de cola, scheduler ni recovery.
+Una selección no editable sigue siendo consultable, pero el panel y el formulario principal reflejan el gate durable para impedir cambios estructurales si hay cola viva, runtime o evidencia. El gate definitivo continúa en los casos de uso y la persistencia; la Biblioteca no implementa operaciones manuales de cola, scheduler ni recovery, que se exponen exclusivamente en el panel `Cola` de F13.10 mediante la fachada.
 
 La primera versión no incluye etiquetas, carpetas sofisticadas, búsqueda avanzada, cloud ni colaboración.
+
+### UX de cola F13.10
+
+F13.10 expone la cola durable como una proyección de aplicación: `QueueDashboardUseCase → GuiFacade → worker Qt → QueuePanel`. `QueuePanel` no accede a SQLite, ComfyUI ni al scheduler; el worker abre y cierra el repositorio por operación y la fachada devuelve snapshots/capabilities autoritativos. `Agregar a cola` acepta únicamente la identidad preparada e inmutable que ya pasó por el flujo normal de Prepare, por lo que no crea una segunda ruta de submit.
+
+Las operaciones de ordenar, quitar, saltar, duplicar, pausar y reanudar delegan en F13.7. El scheduler F13.8/F13.9 permanece fuera del hilo UI y sólo publica `SchedulerRuntimeStatus` de lectura; un `QTimer` refresca la proyección sin bloquear. Los estados globales y por fila se derivan de QueueItem, Execution, recovery y capabilities reales; no se inventan progreso, ETA ni éxito.
 
 ## Propiedad de los datos
 

@@ -25,6 +25,7 @@ from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
 from ..application.preparation_library import PreparationLibraryUseCase
+from ..application.queue_dashboard import QueueDashboardUseCase
 from ..application.scheduler import SchedulerBackgroundRunner, SchedulerExecutionBoundary, SchedulerInstanceLock, SingleExecutionScheduler
 from ..application.queue_recovery import ActiveQueueRecoveryUseCase
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
@@ -32,6 +33,36 @@ from ..profiles.minimax_h3 import H3_PROFILE
 
 class StartupConfigurationError(ValueError):
     """Actionable configuration error raised before external service calls."""
+
+
+def _retry_capability(usecase, execution, repository):
+    """Ask the retry policy for a read-only capability in this worker repo."""
+    checker = getattr(type(usecase), "can_retry", None)
+    if callable(checker):
+        try:
+            return bool(checker(usecase, execution, repository=repository))
+        except Exception:
+            return False
+    # Preserve the narrow compatibility seam used by older injected tests.
+    if usecase is None or execution.state is not Lifecycle.FAILED:
+        return False
+    failed = [chunk for chunk in execution.chunks if chunk.state is Lifecycle.FAILED]
+    return bool(
+        len(failed) == 1
+        and len(failed[0].attempts) == 1
+        and failed[0].attempts[0].state is Lifecycle.FAILED
+    )
+
+
+def _retry_only_capability(usecase, execution, repository):
+    """Return whether Resume/Recover must be suppressed for this state."""
+    checker = getattr(type(usecase), "requires_explicit_retry", None)
+    if not callable(checker):
+        return False
+    try:
+        return bool(checker(usecase, execution, repository=repository))
+    except Exception:
+        return False
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -96,9 +127,12 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     assembler = assembler_factory(cfg.ffprobe, cfg.ffmpeg) if assembler_factory is FFmpegAssemblyAdapter else assembler_factory()
     extractor = extractor_factory(cfg.ffprobe, cfg.ffmpeg) if extractor_factory is FFmpegVideoAdapter else extractor_factory()
     submitter = ComfyUISubmitTransport(client)
-    monitor = lambda ref, **_: client.history(ref)
+    def observe_backend(ref):
+        observer = getattr(client, "observe", None)
+        return observer(ref) if callable(observer) else client.history(ref)
+    monitor = lambda ref, **_: observe_backend(ref)
     class BackendObservationAdapter:
-        def observe(self, ref): return client.history(ref)
+        def observe(self, ref): return observe_backend(ref)
         def history(self, ref): return client.history(ref)
     backend = BackendObservationAdapter()
     submit_boundary = SubmitBoundary(submitter, repository=repository)
@@ -162,13 +196,13 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             chunks.append({"order":c.order,"chunk_id":str(c.id),"state":c.state.value,"attempt_ref":str(a.id) if a else None,"error":a.error.message if a and a.error else None,"output":a.output.uri if a and a.output else None,"transition":transition_uri,"prompt":str(dict(c.defaults).get("prompt", "")),"overrides":tuple((str(k),v) for k,v in dict(c.defaults).items() if k != "prompt")})
             if a and a.output and a.state is Lifecycle.SUCCEEDED: outputs.append(a.output.uri)
         target=select_active_cancellation_target(e)
-        retryable = (retry_usecase is not None and e.state is Lifecycle.FAILED and
-                     any(c.state is Lifecycle.FAILED and len(c.attempts) == 1 and
-                         c.attempts[0].state is Lifecycle.FAILED for c in e.chunks))
+        retryable = _retry_capability(retry_usecase, e, repo)
+        retry_only = _retry_only_capability(retry_usecase, e, repo)
         live_queue = repo.has_live_queue_item(e.id)
         editable = editable_virgin(e) and not live_queue
         caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
-            startable=not live_queue, assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
+            retry_only=retry_only, startable=not live_queue,
+            assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
         edit_reason = "" if editable else (
             "live durable queue item locks editing" if live_queue
             else (
@@ -259,6 +293,38 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 raise AttributeError(name)
             return lambda *args, **kwargs: self._call(name, *args, **kwargs)
 
+    class _QueueDashboardGateway:
+        """Open an operation-local F13.10 queue boundary for every UI worker.
+
+        The scheduler status reader is deliberately read-only.  It gives the
+        panel an honest recovery/manual-review explanation without handing a
+        widget any scheduler authority.
+        """
+
+        _operations = frozenset({
+            "snapshot", "select", "enqueue", "reorder", "remove", "skip",
+            "pause", "resume", "duplicate",
+        })
+
+        def _call(self, name, *args, **kwargs):
+            op_repo = _operation_repository()
+            try:
+                usecase = QueueDashboardUseCase(
+                    op_repo,
+                    scheduler_status=scheduler.status,
+                )
+                return getattr(usecase, name)(*args, **kwargs)
+            finally:
+                op_repo.close()
+
+        def snapshot(self):
+            return self._call("snapshot")
+
+        def __getattr__(self, name):
+            if name not in self._operations:
+                raise AttributeError(name)
+            return lambda *args, **kwargs: self._call(name, *args, **kwargs)
+
     def _worker_services(op_repo):
         # Every operation owns its backend transport and observation adapter;
         # no GUI-thread client is captured by worker execution.
@@ -266,9 +332,12 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         op_transport = ComfyUISubmitTransport(op_client)
         op_transport.repository = op_repo
         op_boundary = SubmitBoundary(op_transport)
-        op_monitor = lambda ref, **_: op_client.history(ref)
+        def op_observe_backend(ref):
+            observer = getattr(op_client, "observe", None)
+            return observer(ref) if callable(observer) else op_client.history(ref)
+        op_monitor = lambda ref, **_: op_observe_backend(ref)
         class OpBackend:
-            def observe(self, ref): return op_client.history(ref)
+            def observe(self, ref): return op_observe_backend(ref)
             def history(self, ref): return op_client.history(ref)
         op_backend = OpBackend()
         op_coordinator = ChunkExecutionCoordinator(
@@ -377,6 +446,13 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         """Construct every SQLite/network-bound scheduler dependency in its worker."""
         op_repo = _operation_repository()
         try:
+            # A crash may have left a RUNNING execution with a bound backend
+            # job before the old direct-Start route could create a QueueItem.
+            # Adopt that single durable survivor before the scheduler starts
+            # polling so recovery and the Cola dashboard share one authority.
+            adopt = getattr(op_repo, "adopt_orphaned_running_executions", None)
+            if callable(adopt):
+                adopt()
             op_chain, op_resume, _, _, orchestrator = _worker_services(op_repo)
             op_materializer = orchestrator.materializer
             op_start = StartGuiChainUseCase(
@@ -464,15 +540,17 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     sequence_edit = EditChunkSequenceUseCase(repository_factory=lambda: repository_factory(cfg.project_root))
     library = _PreparationLibraryGateway()
     scheduler = SchedulerBackgroundRunner(_scheduler_factory)
+    queue = _QueueDashboardGateway()
     facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
                        cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit,
-                       library=library)
+                       library=library, queue=queue)
     return facade, {"repository": repository, "client": client, "cancellation": cancellation,
                     "assembler": assembler, "submitter": submitter, "coordinator": coordinator,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,
                     "retry": retry_usecase,
-                    "assemble": assembly_usecase, "library": library, "scheduler": scheduler}
+                    "assemble": assembly_usecase, "library": library, "queue": queue,
+                    "scheduler": scheduler}
 
 def launch(config: AppConfig) -> int:
     from importlib import import_module

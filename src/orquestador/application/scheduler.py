@@ -127,6 +127,18 @@ class SchedulerTickResult:
     queue_item_id: str | None = None
     execution_id: str | None = None
     reason: str = ""
+    # F13.10 exposes this read-only detail so the UI can distinguish an
+    # observable active job from one that genuinely needs manual review.
+    recovery_outcome: str | None = None
+
+
+@dataclass(frozen=True)
+class SchedulerRuntimeStatus:
+    """Thread-safe, read-only scheduler facts for the presentation layer."""
+
+    running: bool
+    last_result: SchedulerTickResult | None = None
+    startup_error: str = ""
 
 
 class SchedulerExecutionBoundary:
@@ -204,12 +216,19 @@ class SingleExecutionScheduler:
                 close()
 
     @staticmethod
-    def _result(outcome, queue_item_id=None, execution_id=None, reason=""):
+    def _result(
+        outcome,
+        queue_item_id=None,
+        execution_id=None,
+        reason="",
+        recovery_outcome=None,
+    ):
         return SchedulerTickResult(
             SchedulerTickOutcome(outcome),
             None if queue_item_id is None else str(queue_item_id),
             None if execution_id is None else str(execution_id),
             reason,
+            None if recovery_outcome is None else str(recovery_outcome),
         )
 
     def _load_claimed_execution(self, execution_id):
@@ -301,18 +320,31 @@ class SingleExecutionScheduler:
                     f"queue completion failed: {exc}",
                 )
             return self._result(SchedulerTickOutcome.FINISHED, item.id, item.execution_id)
-        if outcome in {QueueRecoveryOutcome.WAIT, QueueRecoveryOutcome.MANUAL_REVIEW}:
+        if outcome is QueueRecoveryOutcome.WAIT:
             return self._result(
                 SchedulerTickOutcome.RECOVERY_REQUIRED,
                 item.id,
                 item.execution_id,
                 getattr(recovery, "reason", "") or "active queue reconciliation is incomplete",
+                recovery_outcome=outcome.value,
+            )
+        if outcome is QueueRecoveryOutcome.MANUAL_REVIEW:
+            return self._result(
+                SchedulerTickOutcome.RECOVERY_REQUIRED,
+                item.id,
+                item.execution_id,
+                getattr(recovery, "reason", "")
+                or "active queue reconciliation requires manual review",
+                recovery_outcome=outcome.value,
             )
         return self._result(
             SchedulerTickOutcome.BLOCKED,
             item.id,
             item.execution_id,
             getattr(recovery, "reason", "") or "active queue reconciliation is blocked",
+            recovery_outcome=getattr(outcome, "value", outcome)
+            if outcome is not None
+            else None,
         )
 
     def tick(self):
@@ -418,6 +450,17 @@ class SchedulerBackgroundRunner:
         thread = self._thread
         return thread is not None and thread.is_alive()
 
+    def status(self):
+        """Return a read-only snapshot without giving callers scheduler control."""
+        with self._state_lock:
+            result = self.last_result
+            startup_error = self._startup_error
+        return SchedulerRuntimeStatus(
+            self.running,
+            result,
+            "" if startup_error is None else str(startup_error),
+        )
+
     def start(self):
         with self._state_lock:
             if self.running:
@@ -449,7 +492,8 @@ class SchedulerBackgroundRunner:
             scheduler = self._factory()
             scheduler.start()
         except Exception as exc:
-            self._startup_error = exc
+            with self._state_lock:
+                self._startup_error = exc
             self._startup_event.set()
             if scheduler is not None:
                 try:
@@ -460,8 +504,10 @@ class SchedulerBackgroundRunner:
         self._startup_event.set()
         try:
             while not self._stop_event.is_set():
-                self.last_result = scheduler.tick()
-                delay = 0 if self.last_result.outcome is SchedulerTickOutcome.FINISHED else self._poll_interval
+                result = scheduler.tick()
+                with self._state_lock:
+                    self.last_result = result
+                delay = 0 if result.outcome is SchedulerTickOutcome.FINISHED else self._poll_interval
                 if delay:
                     self._stop_event.wait(delay)
         finally:
@@ -482,6 +528,7 @@ __all__ = [
     "SchedulerExecutionBoundary",
     "SchedulerInstanceLock",
     "SchedulerLockError",
+    "SchedulerRuntimeStatus",
     "SchedulerTickOutcome",
     "SchedulerTickResult",
     "SingleExecutionScheduler",

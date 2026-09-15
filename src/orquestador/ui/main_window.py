@@ -30,8 +30,9 @@ class PreparedIdentity:
 from .workers import OperationWorker
 from ..domain.config import DEFAULT_MEGAPIXELS, DEFAULT_LENGTH, DEFAULT_STEPS, DEFAULT_FPS, DEFAULT_REF_IMAGE_SIZE, DEFAULT_ALSO_REF_FIRST_FRAME, SUPPORTED_REF_IMAGE_SIZES
 from ..application.create_reference_derivative import CreateReferenceDerivativeUseCase, CropRectangle
-from ..application.gui_facade import LibraryOperationResult, OperationResult
+from ..application.gui_facade import LibraryOperationResult, OperationResult, QueueOperationResult
 from .preparation_library import PreparationLibraryPanel
+from .queue_panel import QueuePanel
 from .preferences import PreferencesDialog, resolve_folder, INPUT_KEY, OUTPUT_KEY
 
 class _CropDialog(QDialog):
@@ -156,10 +157,11 @@ class MainWindow(QMainWindow):
         override_row=QHBoxLayout(); override_row.addWidget(QLabel("Chunk override (approved H3 only)")); self.override_key=QComboBox(); self.override_key.setObjectName("chunkOverrideKey"); self.override_key.addItems(["prompt","megapixels","length","steps","fps","ref_image_size","also_ref_first_frame"]); override_row.addWidget(self.override_key); self.override_value=QLineEdit(); self.override_value.setObjectName("chunkOverrideValue"); override_row.addWidget(self.override_value); self.set_override_button=QPushButton("Set override"); self.clear_override_button=QPushButton("Restore inherited"); override_row.addWidget(self.set_override_button); override_row.addWidget(self.clear_override_button); chunks_lay.addLayout(override_row)
         self.provenance=QLabel("Effective values: select a chunk"); self.provenance.setObjectName("chunkProvenance"); self.provenance.setWordWrap(True); chunks_lay.addWidget(self.provenance)
         library_page=QWidget(); self.library_tab_index=self.tabs.addTab(library_page,"Biblioteca"); library_layout=QVBoxLayout(library_page); self.library_panel=PreparationLibraryPanel(self.facade,self._run,library_page); library_layout.addWidget(self.library_panel)
-        acts=QHBoxLayout(); self.preferences=QPushButton("Preferences…"); self.preferences.clicked.connect(self._preferences); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.preferences,self.start,self.resume,self.retry,self.cancel,self.assemble)]; lay.addLayout(acts)
+        queue_page=QWidget(); self.queue_tab_index=self.tabs.addTab(queue_page,"Cola"); queue_layout=QVBoxLayout(queue_page); self.queue_panel=QueuePanel(self.facade,self._run,queue_page); queue_layout.addWidget(self.queue_panel)
+        acts=QHBoxLayout(); self.preferences=QPushButton("Preferences…"); self.preferences.clicked.connect(self._preferences); self.enqueue=QPushButton("Agregar a cola"); self.enqueue.setObjectName("enqueueExecution"); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.preferences,self.enqueue,self.start,self.resume,self.retry,self.cancel,self.assemble)]; lay.addLayout(acts)
         self.status=QLabel("Ready"); self.status.setObjectName("durableStatus"); lay.addWidget(self.status); self.paths=QLabel("Chunks/intermediates/results: not loaded"); self.paths.setObjectName("resultPaths"); self.paths.setWordWrap(True); lay.addWidget(self.paths); self.chunks=QListWidget(); self.chunks.setObjectName("chunkResults"); lay.addWidget(self.chunks); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
         self.initial_confirmation=QLabel("Initial image: empty — choose a file"); self.initial_confirmation.setObjectName("initialImagePreview"); lay.insertWidget(1,self.initial_confirmation)
-        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(lambda:self._run(lambda:self.facade.retry_execution(self.project.text().strip(), self.execution.text().strip()))); self.cancel.clicked.connect(lambda:self._run(lambda:self.facade.cancel_pending(self.project.text().strip(), self.execution.text().strip()))); self.assemble.clicked.connect(self._assemble); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self._update_resume_recover()
+        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.enqueue.clicked.connect(self._enqueue_current); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(self._retry_execution); self.cancel.clicked.connect(self._cancel_pending); self.assemble.clicked.connect(self._assemble); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self.enqueue.setEnabled(False); self._update_resume_recover()
         self.move_up_button.clicked.connect(lambda:self._move_sequence(-1)); self.move_down_button.clicked.connect(lambda:self._move_sequence(1)); self.duplicate_button.clicked.connect(self._duplicate_sequence); self.chunk_tabs.currentChanged.connect(lambda i: (self._show_provenance(), self._update_sequence_controls()))
         self.set_override_button.clicked.connect(self._set_override); self.clear_override_button.clicked.connect(lambda _=False: self._clear_override()); self.chunks.currentRowChanged.connect(lambda i: self.chunk_tabs.setCurrentIndex(i))
         self._prompt_timer=QTimer(self); self._prompt_timer.setSingleShot(True); self._prompt_timer.setInterval(400); self._prompt_timer.timeout.connect(self._flush_prompt); self._prompt_dirty=None; self._pending_action=None; self._continuation=None
@@ -392,7 +394,12 @@ class MainWindow(QMainWindow):
         n=len(self._sequence_ids) or len(self._drafts); idx=self.chunk_tabs.currentIndex(); editable=bool(self._auth_can_edit and not self._busy)
         self.add_chunk_button.setEnabled(editable); self.remove_chunk_button.setEnabled(editable and n>2); self.remove_chunk_button.setToolTip("Minimum is 2 chunks" if n<=2 else ("Remove selected chunk" if editable else "This execution is not editable"))
         self.move_up_button.setEnabled(editable and idx>0); self.move_down_button.setEnabled(editable and idx>=0 and idx<n-1); self.duplicate_button.setEnabled(editable)
-    def _preflight(self): self._run(lambda:self.facade.preflight(**self._inputs()), "preflight")
+    def _preflight(self):
+        # Read Qt widgets on the GUI thread and pass an immutable-enough
+        # operation snapshot to the worker.  QWidget access from a QThread is
+        # undefined in Qt and was the source of the native Qt6Widgets crash.
+        inputs = self._inputs()
+        self._run(lambda inputs=inputs: self.facade.preflight(**inputs), "preflight")
     def _load_project(self):
         project_id = self.project.text().strip()
         if project_id:
@@ -407,17 +414,57 @@ class MainWindow(QMainWindow):
         # A new Prepare supersedes any older deferred restoration.  The
         # successful operation will install a fresh immutable identity.
         self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
-        self._run(lambda:self.facade.prepare(**self._inputs()), "prepare")
+        inputs = self._inputs()
+        self._run(lambda inputs=inputs: self.facade.prepare(**inputs), "prepare")
     def _tab_changed(self, index):
         if index == getattr(self, "library_tab_index", -1):
             self.library_panel.ensure_loaded()
+        if index == getattr(self, "queue_tab_index", -1):
+            self.queue_panel.activate()
+        elif hasattr(self, "queue_panel"):
+            self.queue_panel.deactivate()
     def _start_chain(self):
         if self._prompt_dirty:
             self.status.setText("Prompt changes must be flushed before Start"); return
         if self._prepared_key is None or self._form_key()!=self._prepared_key:
             self.status.setText("Prepare is stale; re-prepare before Start"); self._update_start(); return
         project_id, execution_id = self._prepared_selection or (self.project.text().strip(), self.execution.text().strip())
-        self._run(lambda:self.facade.start_chain(project_id, execution_id), "start")
+        # Production Start is queue admission.  The scheduler then claims the
+        # item and runs the existing chain/recovery engine; no Qt worker owns a
+        # long-lived generation anymore.  Keep the legacy fallback only for
+        # small injected GUI test seams that predate the queue facade.
+        queued_start = getattr(self.facade, "start_queued", None)
+        if callable(queued_start) and getattr(self.facade, "_queue", None) is not None:
+            self._run(lambda: queued_start(project_id, execution_id), "queue_start")
+        else:
+            self._run(lambda: self.facade.start_chain(project_id, execution_id), "start")
+
+    def _retry_execution(self):
+        project_id, execution_id = self._selection()
+        self._run(
+            lambda: self.facade.retry_execution(project_id, execution_id),
+            "retry",
+        )
+
+    def _cancel_pending(self):
+        project_id, execution_id = self._selection()
+        self._run(
+            lambda: self.facade.cancel_pending(project_id, execution_id),
+            "cancel",
+        )
+    def _enqueue_current(self):
+        """Persist the prepared durable snapshot without taking a direct Start path."""
+        if self._prompt_dirty:
+            self.status.setText("Prompt changes must be flushed before adding to the queue"); return
+        if self._prepared_key is None or self._form_key() != self._prepared_key:
+            self.status.setText("Prepare is stale; re-prepare before adding to the queue")
+            self._update_enqueue()
+            return
+        project_id, execution_id = self._prepared_selection or self._selection()
+        self._run(
+            lambda: self.facade.enqueue_execution(project_id, execution_id),
+            "queue_enqueue",
+        )
     def _resume_or_recover(self):
         """Reopen an execution from durable IDs, never from the GUI form.
 
@@ -443,6 +490,12 @@ class MainWindow(QMainWindow):
                 return self.facade.resume_execution(project_id, execution_id)
             if snapshot.can_recover:
                 return self.facade.recover_execution(project_id, execution_id)
+            if snapshot.can_retry:
+                return OperationResult(
+                    False,
+                    snapshot,
+                    "Retry is required for this execution",
+                )
             return OperationResult(
                 False,
                 snapshot,
@@ -460,7 +513,26 @@ class MainWindow(QMainWindow):
     def _form_key(self):
         return tuple((key, self._freeze_form_value(value)) for key, value in self._inputs().items())
     def _selection(self): return (self.project.text().strip(), self.execution.text().strip())
-    def _update_start(self): self.start.setEnabled(bool(self._auth_can_start and not self._auth_busy and not self._busy and self._prepared_key is not None and self._form_key()==self._prepared_key))
+    def _update_start(self):
+        self.start.setEnabled(bool(self._auth_can_start and not self._auth_busy and not self._busy and self._prepared_key is not None and self._form_key()==self._prepared_key))
+        self._update_enqueue()
+    def _update_enqueue(self):
+        if not hasattr(self, "enqueue"):
+            return
+        ready = bool(
+            self._auth_can_edit
+            and not self._auth_busy
+            and not self._busy
+            and self._prepared_key is not None
+            and self._form_key() == self._prepared_key
+            and self._prepared_selection is not None
+        )
+        self.enqueue.setEnabled(ready)
+        self.enqueue.setToolTip(
+            "Agregar el snapshot preparado a la cola sin iniciar la cadena directamente"
+            if ready
+            else "Prepare una ejecución editable antes de agregarla a la cola"
+        )
     @staticmethod
     def _is_technical_uuid(value):
         if not isinstance(value, str):
@@ -587,23 +659,24 @@ class MainWindow(QMainWindow):
     def _run(self,op,kind="other"):
         if self._busy: return
         self._operation_kind=kind; self._busy=True; self._set_enabled(False)
-        self._thread=QThread(); self._worker=OperationWorker(op); self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        self._worker.succeeded.connect(self._on_worker_succeeded, Qt.QueuedConnection)
-        self._worker.failed.connect(self._on_worker_failed, Qt.QueuedConnection)
-        # The deferred delete must be queued while the worker thread's event
-        # loop is still alive.  Scheduling it from QThread.finished races with
-        # loop teardown on Windows and can terminate Python with 0xC0000409.
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._worker.finished.connect(self._thread.quit)
-        # Marshal teardown back to the GUI thread explicitly; a bare lambda
-        # has no QObject receiver and may run on the just-stopped worker thread.
-        self._thread.finished.connect(self._cleanup, Qt.QueuedConnection)
-        self._thread.finished.connect(self._thread.deleteLater)
-        self._retired_workers.append(self._worker)
-        self._retired_threads.append(self._thread)
-        self._thread.destroyed.connect(lambda *_: self._retired_threads.remove(self._thread) if self._thread in self._retired_threads else None)
-        self._thread.start()
+        # Keep the QThread owned by the GUI window.  It is deliberately not
+        # deleted from ``QThread.finished``: on Windows that teardown can race
+        # the worker's deferred-delete event and crash inside Qt6Widgets.
+        # Generation itself no longer runs here (Start admits a queue item),
+        # but short UI operations still use this worker boundary safely.
+        thread=QThread(self); worker=OperationWorker(op)
+        self._thread=thread; self._worker=worker; worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_worker_succeeded, Qt.QueuedConnection)
+        worker.failed.connect(self._on_worker_failed, Qt.QueuedConnection)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(self._cleanup, Qt.QueuedConnection)
+        # Retain the worker wrapper until Qt processes its deferred deletion;
+        # the parent-owned thread keeps the native thread lifetime explicit.
+        self._retired_workers.append(worker)
+        self._retired_threads.append(thread)
+        thread.start()
     @Slot(object)
     def _on_worker_succeeded(self,r):
         self._done(r)
@@ -612,6 +685,9 @@ class MainWindow(QMainWindow):
         self.log.append(error)
         if str(getattr(self, "_operation_kind", "")).startswith("library_"):
             self.library_panel.show_error(error)
+            return
+        if str(getattr(self, "_operation_kind", "")).startswith("queue_"):
+            self.queue_panel.show_error(error)
             return
         if self._operation_kind == "prepare":
             self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
@@ -626,6 +702,18 @@ class MainWindow(QMainWindow):
         except Exception: self._last_snapshot=None
     @Slot(object)
     def _done(self,r):
+        if isinstance(r, QueueOperationResult):
+            self.queue_panel.handle_result(r)
+            if r.success and r.snapshot is not None:
+                # A queue selection or mutation can change the durable lock.
+                # Never keep a PreparedIdentity from a prior selection alive.
+                self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
+                self.render(r.snapshot)
+            if r.success and self._operation_kind in {"queue_enqueue", "queue_start"}:
+                self.tabs.setCurrentIndex(self.queue_tab_index)
+            if not r.success:
+                self.log.append(r.message or "Operación de cola falló")
+            return
         if isinstance(r, LibraryOperationResult):
             self.library_panel.handle_result(r)
             if r.selection is not None:
@@ -701,6 +789,25 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "resume"):
             return
         enabled = bool(self.project.text().strip() and self.execution.text().strip()) and not self._busy
+        snapshot = self._last_snapshot
+        if snapshot is not None and str(getattr(snapshot, "state", "")).lower() not in {"", "unavailable", "error"}:
+            enabled = enabled and bool(
+                getattr(snapshot, "can_resume", False)
+                or getattr(snapshot, "can_recover", False)
+            )
+        if (
+            snapshot is not None
+            and getattr(snapshot, "can_retry", False)
+            and not getattr(snapshot, "can_resume", False)
+            and not getattr(snapshot, "can_recover", False)
+        ):
+            self.resume.setToolTip("Use Retry; this execution requires an explicit retry")
+        else:
+            self.resume.setToolTip(
+                "Resume/recover the durable execution"
+                if enabled
+                else "Enter both IDs to request a fresh durable capability snapshot"
+            )
         self.resume.setEnabled(enabled)
     def _update_edit_controls(self):
         """Reflect the authoritative draft/queue gate without changing data.
@@ -741,11 +848,13 @@ class MainWindow(QMainWindow):
                         restore.setEnabled(editable)
         self._update_sequence_controls()
     def _set_enabled(self,v):
-        [x.setEnabled(v) for x in (self.preflight,self.prepare,self.start,self.retry,self.cancel,self.assemble,self.add_chunk_button,self.remove_chunk_button,self.move_up_button,self.move_down_button,self.duplicate_button,self.set_override_button,self.clear_override_button)]
+        [x.setEnabled(v) for x in (self.preflight,self.prepare,self.enqueue,self.start,self.retry,self.cancel,self.assemble,self.add_chunk_button,self.remove_chunk_button,self.move_up_button,self.move_down_button,self.duplicate_button,self.set_override_button,self.clear_override_button)]
         self.project.setEnabled(v)
         self._update_edit_controls()
         if hasattr(self, "library_panel"):
             self.library_panel.set_busy(not v)
+        if hasattr(self, "queue_panel"):
+            self.queue_panel.set_busy(not v)
         self._update_resume_recover()
     def _assemble(self):
         p,_=QFileDialog.getSaveFileName(self,"Destination MP4",resolve_folder(OUTPUT_KEY, project_root=self.project_root),filter="MP4 (*.mp4)");
@@ -760,5 +869,7 @@ class MainWindow(QMainWindow):
         else:
             self._closing=True
             self._prompt_timer.stop()
+            if hasattr(self, "queue_panel"):
+                self.queue_panel.deactivate()
             self._pending_action=None; self._continuation=None
             e.accept()
