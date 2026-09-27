@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import json
+import shutil
 import subprocess
 
 @dataclass(frozen=True)
@@ -15,7 +16,19 @@ class VideoExtractionError(RuntimeError):
 
 class FFmpegVideoAdapter:
     def __init__(self, ffprobe='ffprobe', ffmpeg='ffmpeg'):
-        self.ffprobe, self.ffmpeg = ffprobe, ffmpeg
+        # Resolve bare tool names once.  On Windows an earlier, inaccessible
+        # executable with the same name can make CreateProcess return
+        # ERROR_ACCESS_DENIED instead of continuing through PATH.  Passing the
+        # executable selected by shutil.which avoids that ambiguity while
+        # preserving explicit paths and test doubles.
+        self.ffprobe = self._resolve_tool(ffprobe)
+        self.ffmpeg = self._resolve_tool(ffmpeg)
+
+    @staticmethod
+    def _resolve_tool(value):
+        if isinstance(value, str) and not Path(value).is_absolute():
+            return shutil.which(value) or value
+        return value
     def extract_last_frame(self, source, destination):
         src, dst = Path(source), Path(destination)
         try:

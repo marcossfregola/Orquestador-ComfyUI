@@ -72,6 +72,45 @@ class OutputCorrelationTests(unittest.TestCase):
         )
         self.assertEqual(r.status, OutputCorrelationStatus.VALID)
         self.assertEqual(r.descriptors[0].subfolder, "folder\\nested")
+
+    def test_comfyui_animated_output_wrapper_is_valid(self):
+        ref = BackendJobRef("j")
+        r = correlate_outputs(
+            history(
+                ref,
+                {
+                    "92": {
+                        "images": [
+                            {"filename": "preview.png", "subfolder": "", "type": "temp"},
+                            {"filename": "chunk.mp4", "subfolder": "video", "type": "output"}
+                        ],
+                        "animated": [False, True],
+                    }
+                },
+            ),
+            ref,
+        )
+        self.assertEqual(r.status, OutputCorrelationStatus.VALID)
+        self.assertEqual(len(r.descriptors), 1)
+        self.assertEqual(r.descriptors[0].filename, "chunk.mp4")
+
+    def test_comfyui_animated_output_wrapper_stays_fail_closed_when_malformed(self):
+        ref = BackendJobRef("j")
+        r = correlate_outputs(
+            history(
+                ref,
+                {
+                    "92": {
+                        "images": [
+                            {"filename": "chunk.mp4", "subfolder": "video", "type": "output"}
+                        ],
+                        "animated": ["true"],
+                    }
+                },
+            ),
+            ref,
+        )
+        self.assertEqual(r.status, OutputCorrelationStatus.MALFORMED)
     def test_valid_and_identity(self):
         ref = BackendJobRef("job")
         r = correlate_outputs(history(ref, {"node": {"files": [{"filename": "a.mp4", "subfolder": "x/y", "type": "opaque"}]}}), ref)

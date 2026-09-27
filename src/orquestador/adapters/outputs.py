@@ -79,7 +79,7 @@ def correlate_outputs(history: HistoryResult, job_ref: BackendJobRef) -> OutputC
     found: list[OutputDescriptor] = []
     malformed = False
 
-    def walk(node_id: Any, value: Any) -> None:
+    def walk(node_id: Any, value: Any, *, ignore_temporary: bool = False) -> None:
         nonlocal malformed
         if isinstance(value, Mapping):
             present = _FIELDS.intersection(value.keys())
@@ -88,9 +88,34 @@ def correlate_outputs(history: HistoryResult, job_ref: BackendJobRef) -> OutputC
                     malformed = True
                 elif (_basename(value.get("filename")) and _subfolder(value.get("subfolder"))
                       and isinstance(value.get("type"), str) and bool(value["type"])):
-                    found.append(OutputDescriptor(job_ref, node_id, value["filename"], value["subfolder"], value["type"]))
+                    if not (ignore_temporary and value["type"] == "temp"):
+                        found.append(OutputDescriptor(job_ref, node_id, value["filename"], value["subfolder"], value["type"]))
                 else:
                     malformed = True
+                return
+            # ComfyUI's SaveVideo output wraps its file descriptors in an
+            # ``images`` collection and emits the parallel ``animated``
+            # metadata collection.  ``animated`` is not another output
+            # descriptor; validate the known wrapper strictly, then inspect
+            # only its descriptors.
+            if "images" in value:
+                if set(value) - {"images", "animated"}:
+                    malformed = True
+                    return
+                images = value.get("images")
+                animated = value.get("animated")
+                if not isinstance(images, list) or (
+                    animated is not None
+                    and (
+                        not isinstance(animated, list)
+                        or len(animated) != len(images)
+                        or any(type(flag) is not bool for flag in animated)
+                    )
+                ):
+                    malformed = True
+                    return
+                for item in images:
+                    walk(node_id, item, ignore_temporary=True)
                 return
             for key in sorted(value, key=lambda x: str(x)):
                 walk(node_id, value[key])
