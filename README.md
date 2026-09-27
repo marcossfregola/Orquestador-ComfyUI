@@ -14,7 +14,8 @@ Para conocer el estado actual del proyecto, consultar [STATUS.md](STATUS.md), qu
 - [ENVIRONMENT.md](ENVIRONMENT.md) — hechos verificados, antecedentes históricos y revalidaciones pendientes.
 - [RULES.md](RULES.md) — reglas permanentes de desarrollo, seguridad y auditoría.
 - [STATUS.md](STATUS.md) — autoridad única para el estado actual del proyecto.
-- [ROADMAP.md](ROADMAP.md) — trabajo decidido, cerrado y próximo, incluida la evolución F13.
+- [ROADMAP.md](ROADMAP.md) — trabajo decidido, cerrado y próximo, incluida la evolución F13 y el cierre funcional F14.
+- [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md) — contrato ejecutable de F14 para terminar el funcionamiento actual antes del pulido visual.
 - [BACKLOG.md](BACKLOG.md) — ideas futuras no comprometidas.
 - [DECISIONS.md](DECISIONS.md) — índice conciso de decisiones aprobadas.
 - [PREPROJECT.md](PREPROJECT.md) — antecedente histórico preservado, no estado vivo.

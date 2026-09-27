@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: **OPEN — NO INICIADA**, pospuesto hasta integrar la gestión de trabajos para evitar rehacer la navegación.
+- F11.6 pulido UX: **OPEN — NO INICIADA**, pospuesto por decisión de producto hasta cerrar F14; se tratará después como etapa visual separada.
 
 ## F12 — first frame como referencia primaria
 
@@ -239,6 +239,48 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 **Validación humana:** aprobada en Windows sobre una cadena real representativa: `Start chain` quedó integrado con la cola, el activo permaneció visible y único, el cierre/reinicio reconcilió sin doble submit, y el retry explícito quedó habilitado únicamente para el chunk fallido.
 **Dependencias:** F13.6–F13.9.
 **Cierre:** implementación, controles técnicos y validación humana aprobada — completados. No se repitieron suites, auditorías ni crashes/restarts para este cierre. No se inicia ninguna etapa posterior.
+
+
+## F14 — Cierre funcional del producto actual
+
+**DECIDIDA — NO INICIADA.** Contrato detallado: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+
+F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
+
+### F14.1 — Nombre durable y renombrado de proyectos
+
+**Estado:** NEXT — NO INICIADA.
+
+Separar `ProjectId` técnico de un nombre humano durable. Crear por nombre con ID interno, renombrar sin alterar identidad/evidencia, seleccionar/reabrir por nombre, dar nombre durable a clones y migrar proyectos existentes sin pérdida.
+
+**Cierre:** pruebas focales + regresión F13 relevante + migración schema 7 + smoke Windows de create/rename/restart/clone + auditoría + aprobación.
+
+### F14.2 — Política de inicio de cola auto/manual
+
+**Estado:** PLANNED — NO INICIADA.
+
+Conservar el autoarranque existente y agregar modo manual por sesión: abrir la aplicación no reclama ni envía trabajo nuevo hasta `Iniciar/Reanudar cola`. La política no sustituye la pausa durable y no cancela active/running.
+
+**Dependencia:** F14.1 cerrada.
+
+### F14.3 — Ensamblado como requisito de finalización real
+
+**Estado:** PLANNED — NO INICIADA.
+
+Completar chunks deja la ejecución pendiente de finalización. Sólo ensamblar y validar el MP4 final permite declarar éxito/liberar la cola. Un fallo de ensamblado preserva chunks y habilita retry exclusivo de ensamblado, sin submit a ComfyUI.
+
+**Dependencia:** F14.2 cerrada.
+
+### F14.4 — Regresión integral y cierre funcional
+
+**Estado:** PLANNED — NO INICIADA.
+
+Verificar migraciones, Biblioteca por nombre, clone, cola auto/manual, recovery, chaining, ensamblado final y separación entre retry de chunk y retry de ensamblado. Requiere validación Windows representativa y documentación de cierre.
+
+**Dependencia:** F14.1–F14.3 cerradas.
+
+**Fuera de F14:** F11.6 visual, nuevos modelos/workflows, IA, cloud, multi-GPU, búsqueda/etiquetas avanzadas y cualquier feature no necesaria para cerrar los tres huecos funcionales anteriores.
+
 
 ## Regla de avance
 

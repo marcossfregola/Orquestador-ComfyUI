@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-09-15
+**Última actualización:** 2026-09-27
 **Baseline publicada anterior a este trabajo:** `origin/main` en `0ddcff1b722105be6c0ecfbc99731dde8880395f`; Git es la autoridad del SHA vigente.
-**Estado de la evolución:** F13.0, F13.1, F13.2, F13.3, F13.4, F13.5, F13.6, F13.7, F13.8, F13.9 y F13.10 están implementadas, aprobadas y cerradas. F13.10 queda **CLOSED — APROBADA** con validación humana Windows; no se inicia una etapa posterior.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. Se decidió F14 — cierre funcional del producto actual. F14.1 es la próxima slice, todavía no iniciada. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -47,7 +47,16 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F13.6 — biblioteca e integración GUI de preparación — está **CLOSED — APROBADA** con evidencia automatizada y validación humana final en Windows. F13.7 fue independiente de esa UI, la referencia anterior a orden lineal no era una dependencia técnica y permanece CLOSED. F13.8 — scheduler de una sola ejecución — queda **CLOSED — APROBADA** por el cierre autorizado sobre su implementación y controles técnicos registrados. F13.9 — recovery y reconciliación de cola — queda **CLOSED — APROBADA** por el cierre autorizado sobre su implementación y los 82 tests focales registrados. F13.10 — UX de cola y cierre integrado — queda **CLOSED — APROBADA** con validación humana Windows. No se inicia una etapa posterior; la próxima etapa prevista sigue siendo F11.6 — pulido UX, OPEN, pospuesta y no iniciada.
+F14 — cierre funcional del producto actual — está **DECIDIDA, NO INICIADA**. El contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+
+Orden aprobado:
+
+1. **F14.1 — nombre durable y renombrado de proyectos**: separar identidad humana de `ProjectId`, migrar datos existentes, crear/renombrar/seleccionar por nombre y conservar clone/restart sin tocar evidencia.
+2. **F14.2 — política de inicio de cola auto/manual**: conservar auto y agregar manual sin confundirlo con pausa ni habilitar doble submit.
+3. **F14.3 — ensamblado como requisito de finalización real**: chunks completos no equivalen a ejecución final; el MP4 ensamblado y validado es requisito, con retry sólo de ensamblado.
+4. **F14.4 — regresión integral y cierre funcional**.
+
+F11.6 permanece **OPEN — NO INICIADA**, expresamente pospuesta por decisión de producto hasta cerrar F14. No se agregan características nuevas ni pulido visual dentro de F14.
 
 ## Alcance y evidencia no ejercitada en el cierre F13.6
 
