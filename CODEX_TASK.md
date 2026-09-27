@@ -1,65 +1,55 @@
 # CODEX_TASK — próxima tarea del Orquestador
 
-Este archivo es un handoff operativo, no una autoridad de arquitectura. Si hay conflicto, prevalecen `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y `TESTING.md`.
+Este archivo es un handoff operativo. Si hay conflicto, prevalecen `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y `TESTING.md`.
 
 ## Próxima tarea
 
-**Gate pre-F14 — reconciliar hotfixes runtime preservados antes de iniciar F14.1.**
+**Gate pre-F14 — verificación diferencial final de los hotfixes runtime antes de publicar.**
 
-Fuente de evidencia preservada:
+## Estado
 
-- rama remota: `origin/recovery/pre-f14-local-changes-2026-09-27`
-- commit: `55fb03a8aa8c72e7319be2c00137e4af36062926`
-- baseline de esa captura: `2fd5c6961cd007e6accb52ac34bd17a99e8938d0`
+Baseline limpio: `80943faeee828def5dda54fefa70cad13ba6a0b5`.
 
-La captura está aprobada sólo como resguardo. **No está aprobada para merge directo.** Contiene churn de CRLF/trailing-whitespace en `recover_execution.py` y no tiene CI/test run asociado en GitHub.
+Sobre ese baseline existen localmente cuatro hotfixes:
+1. wrapper SaveVideo `images + animated`, excluyendo previews temporales;
+2. resolución robusta de `ffmpeg`/`ffprobe` bare names;
+3. retry con rematerialización de inputs estáticos;
+4. detalle compacto de rechazo 4xx de ComfyUI.
 
-## Objetivo
+Las suites focales reportaron 27/27, 80/80 y 41/41; `compileall` y `git diff --check` reportaron OK. La suite completa reportó 778 tests, 9 failures, 5 errors y 2 skipped. Falta demostrar que esos failures/errors son preexistentes.
 
-Partiendo del `main` remoto actual, reconstruir únicamente los cambios semánticos útiles de la rama de resguardo, sin cherry-pick ciego y sin arrastrar cambios de fin de línea.
+## Objetivo único
 
-Los cuatro grupos observados a reconciliar son:
-
-1. correlación de outputs de ComfyUI: reconocer el wrapper `images + animated` de SaveVideo y no tratar previews `type=temp` como output durable;
-2. resolución robusta de nombres bare `ffmpeg`/`ffprobe` en Windows mediante el ejecutable encontrado en PATH, preservando paths explícitos y dobles de test;
-3. retry explícito de chunk fallido: reconstruir el prompt usando la misma autoridad de materialización de inputs estáticos que Start, para que las referencias durables locales se conviertan en rutas visibles por ComfyUI;
-4. conservar detalle compacto y accionable de rechazos 4xx de ComfyUI sin alterar la semántica fail-closed.
+Comparar la suite completa del baseline limpio contra la suite completa con hotfixes. No modificar implementación salvo que aparezca una regresión nueva.
 
 ## Instrucciones
 
-1. Trabajar exclusivamente en `C:\Codex\Orquestador-ComfyUI`.
-2. No modificar ni borrar la rama de resguardo.
-3. Ejecutar `git fetch origin`.
-4. Volver a `main` y sincronizar sólo mediante `git pull --ff-only`. El `main` remoto contiene documentación posterior a `2fd5c696`; debe preservarse.
-5. Verificar baseline real: rama, HEAD, `origin/main`, status, staging/untracked y `git diff --check`. El árbol debe quedar limpio antes de editar.
-6. Leer `RULES.md`, `STATUS.md`, este archivo y las autoridades relevantes.
-7. Comparar `2fd5c696..55fb03a8` usando también una vista que ignore whitespace/EOL para separar semántica de churn.
-8. **No hacer cherry-pick directo** de `55fb03a8`. Reaplicar/reconstruir los cambios semánticos mínimos sobre el `main` actual.
-9. Preservar las fronteras actuales: sin segunda ruta de submit, sin cambio de budget de retry, sin borrar outputs, sin DB manual.
-10. Mantener/ajustar pruebas para los cuatro grupos. Los dos tests nuevos de la rama de resguardo pueden reutilizarse sólo si siguen expresando correctamente el contrato.
-11. Ejecutar como mínimo:
-   - pruebas focales de outputs;
-   - pruebas focales de retry/recovery incluyendo stale-not-found;
-   - pruebas focales de composición/runtime F13.10;
-   - pruebas de video adapter;
-   - `python -B -m compileall -q src tests`;
-   - `python -B -m unittest discover -s tests`;
-   - `git diff --check`.
-12. Si la suite completa falla por un problema ambiental preexistente, aislarlo con evidencia; no relajar tests ni ocultarlo.
-13. Revisar el diff final y comprobar que no exista un reemplazo masivo sólo por CRLF.
-14. Actualizar documentación únicamente si la semántica durable/autoridad realmente cambia. No iniciar F14.1.
-15. Si todo queda verde, te autorizo a crear **un único commit lógico de hotfix pre-F14** y hacer push normal a `origin/main`, sin force, tag ni release.
-16. Detenerte después del push. No avanzar a F14.1.
+1. No perder, resetear ni reformatear el working tree actual.
+2. No usar cherry-pick, rebase, force ni merge.
+3. Crear un worktree temporal separado desde `80943faeee828def5dda54fefa70cad13ba6a0b5`, fuera del working tree principal.
+4. Ejecutar allí la suite completa con un `ORQ_TEST_TMP` fresco.
+5. Registrar lista exacta de tests FAILED/ERROR/SKIPPED del baseline.
+6. En el working tree con hotfixes, volver a ejecutar la suite completa con otro `ORQ_TEST_TMP` fresco y registrar la lista exacta.
+7. Comparar por nombre de test:
+   - si hotfix tiene la misma lista o menos failures/errors que baseline: `NEW_REGRESSIONS=0`;
+   - si aparece cualquier failure/error nuevo: detenerse, no commit/push y diagnosticar.
+8. Confirmar otra vez pruebas focales, `python -B -m compileall -q src tests`, `git diff --check` y ausencia de churn CRLF masivo.
+9. Eliminar el worktree temporal sólo con `git worktree remove` después de capturar evidencia.
+10. Si `NEW_REGRESSIONS=0` y los focales siguen verdes, queda autorizado:
+    - un único commit lógico con sólo los diez paths del hotfix;
+    - mensaje: `stabilize F13.10 runtime recovery paths`;
+    - push normal a `origin/main`;
+    - sin force, tag ni release.
+11. Detenerse después del push. No iniciar F14.1.
 
-## Evidencia requerida al terminar
+## Evidencia requerida
 
-Informar:
-
-- baseline y SHA final;
-- archivos realmente modificados;
-- resumen de cada uno de los cuatro hotfixes recuperados o motivo de exclusión;
-- comandos de pruebas y resultados exactos;
-- `git diff --check`;
-- confirmación de ausencia de churn CRLF masivo;
-- cualquier prueba real Windows/ComfyUI que NO se haya ejecutado;
-- commit/push realizados o bloqueo encontrado.
+- SHA baseline;
+- SHA final si se publica;
+- lista exacta FAILED/ERROR/SKIPPED baseline;
+- lista exacta FAILED/ERROR/SKIPPED hotfix;
+- `NEW_REGRESSIONS=0` o detalle;
+- focales, compileall y diff-check;
+- ausencia de churn CRLF;
+- paths del commit;
+- confirmación de que F14.1 no se inició.
