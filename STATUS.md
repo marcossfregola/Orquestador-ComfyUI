@@ -47,10 +47,11 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F14 — cierre funcional del producto actual — está **DECIDIDA, NO INICIADA**. El contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+F14 — cierre funcional del producto actual — está **DECIDIDA, NO INICIADA**. Antes de F14.1 hay un **gate técnico pre-F14**: reconciliar y probar cambios runtime locales preservados en `recovery/pre-f14-local-changes-2026-09-27` (`55fb03a8...`) sin incorporar el churn CRLF. El contrato de F14 está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
 
 Orden aprobado:
 
+0. **Gate pre-F14 — reconciliación de hotfixes runtime preservados**: reconstruir sólo cambios semánticos de output correlation, resolución FFmpeg/FFprobe Windows, retry con rematerialización de inputs y detalle de rechazo ComfyUI; ejecutar pruebas y auditar antes de integrar.
 1. **F14.1 — nombre durable y renombrado de proyectos**: separar identidad humana de `ProjectId`, migrar datos existentes, crear/renombrar/seleccionar por nombre y conservar clone/restart sin tocar evidencia.
 2. **F14.2 — política de inicio de cola auto/manual**: conservar auto y agregar manual sin confundirlo con pausa ni habilitar doble submit.
 3. **F14.3 — ensamblado como requisito de finalización real**: chunks completos no equivalen a ejecución final; el MP4 ensamblado y validado es requisito, con retry sólo de ensamblado.
