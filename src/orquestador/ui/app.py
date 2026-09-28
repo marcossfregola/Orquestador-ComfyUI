@@ -158,7 +158,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     assembly_real = AssembleExecutionUseCase(
         assembler, cfg.project_root,
         source_roots=assembly_roots)
-    retry_real = RetryExecutionUseCase(repository, resume_real)
+    retry_real = RetryExecutionUseCase(repository, resume_real, materializer_real)
     chain_usecase = chain_real
     resume_usecase = resume_usecase or resume_real
     recover_usecase = recover_usecase or recover_real
@@ -346,8 +346,8 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         op_chain_coordinator = RobustChunkExecutionCoordinator(op_coordinator)
         op_resume = ResumeExecutionUseCase(op_repo, op_backend, op_coordinator, op_boundary, cfg.comfyui_output_root)
         op_recover = RecoverExecutionUseCase(op_repo, op_backend)
-        op_retry = RetryExecutionUseCase(op_repo, op_resume)
         op_materializer = InputMaterializationService(op_client, cfg.project_root)
+        op_retry = RetryExecutionUseCase(op_repo, op_resume, op_materializer)
         orchestrator = F11_1BOrchestrator(materializer=op_materializer, submit_boundary=op_boundary,
             recovery=op_recover, resume=op_resume, retry=op_retry, robust=op_chain_coordinator)
         op_chain = ChainExecutionUseCase(op_repo, op_chain_coordinator, recovery=op_resume, orchestrator=orchestrator)

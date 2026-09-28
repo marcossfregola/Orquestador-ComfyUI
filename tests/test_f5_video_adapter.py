@@ -6,13 +6,26 @@ from unittest.mock import patch
 from orquestador.adapters.video import FFmpegVideoAdapter, VideoExtractionError
 
 class VideoAdapterTests(unittest.TestCase):
+    def test_bare_tool_names_resolve_but_explicit_paths_are_preserved(self):
+        from orquestador.adapters.video import FFmpegVideoAdapter
+        with patch('orquestador.adapters.video.shutil.which', side_effect=lambda name: f'C:/tools/{name}.exe') as which:
+            adapter = FFmpegVideoAdapter('ffprobe', 'ffmpeg')
+        self.assertEqual(adapter.ffprobe, 'C:/tools/ffprobe.exe')
+        self.assertEqual(adapter.ffmpeg, 'C:/tools/ffmpeg.exe')
+        which.assert_has_calls([unittest.mock.call('ffprobe'), unittest.mock.call('ffmpeg')])
+        with patch('orquestador.adapters.video.shutil.which') as which:
+            adapter = FFmpegVideoAdapter(r'C:\custom\ffprobe.exe', r'.\tools\ffmpeg.exe')
+        self.assertEqual(adapter.ffprobe, r'C:\custom\ffprobe.exe')
+        self.assertEqual(adapter.ffmpeg, r'.\tools\ffmpeg.exe')
+        which.assert_not_called()
+
     def test_exact_probe_and_n_minus_one(self):
         with tempfile.TemporaryDirectory() as d:
             dst=Path(d)/'x.png'
             def run(args, **kw):
                 if args[0]=='probe': return type('P',(),{'stdout':json.dumps({'streams':[{'nb_read_frames':'4'}]})})()
                 dst.write_bytes(b'x'); return type('P',(),{})()
-            with patch('subprocess.run', side_effect=run) as call:
+            with patch('orquestador.adapters.video.shutil.which', return_value=None), patch('subprocess.run', side_effect=run) as call:
                 out=FFmpegVideoAdapter('probe','mpeg').extract_last_frame(Path(d)/'a.mp4',dst)
             self.assertEqual((out.frame_index,out.frame_count),(3,4)); self.assertFalse(call.call_args_list[0].kwargs['shell']); self.assertFalse(call.call_args_list[1].kwargs['shell'])
             self.assertEqual(call.call_args_list[1].args[0][call.call_args_list[1].args[0].index('-vf')+1], r'select=eq(n\,3)')

@@ -585,8 +585,8 @@ class RetryExecutionUseCase:
     entered for a durably failed execution/chunk with exactly Attempt 1
     failed; it then delegates orchestration to the existing resume primitive.
     """
-    def __init__(self, repository, resume):
-        self.repository, self.resume_usecase = repository, resume
+    def __init__(self, repository, resume, materializer=None):
+        self.repository, self.resume_usecase, self.materializer = repository, resume, materializer
 
     @staticmethod
     def _staged_stale_retry_shape(execution, chunk):
@@ -708,7 +708,17 @@ class RetryExecutionUseCase:
             values.update(overrides)
             effective = GenerationConfig.from_mapping({**values, 'prompts': prompts}, strict=True)
             first_frame = None
-            references = list(effective.references)
+            if self.materializer is None or not callable(self.materializer):
+                raise ValueError('retry input materializer is unavailable')
+            try:
+                materialized = list(self.materializer([effective.initial_image, *effective.references]))
+            except Exception as exc:
+                raise ValueError(f'retry input materialization failed: {exc}') from exc
+            if len(materialized) != 1 + len(effective.references) or any(
+                not isinstance(value, str) or not value.strip() for value in materialized
+            ):
+                raise ValueError('retry input materialization is incomplete')
+            references = materialized[1:]
             if chunk.order:
                 transitions = tuple(self.repository.load_transitions(execution.id))
                 predecessor = execution.chunks[chunk.order - 1]

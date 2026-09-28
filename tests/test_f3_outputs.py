@@ -72,6 +72,42 @@ class OutputCorrelationTests(unittest.TestCase):
         )
         self.assertEqual(r.status, OutputCorrelationStatus.VALID)
         self.assertEqual(r.descriptors[0].subfolder, "folder\\nested")
+
+    def test_savevideo_wrapper_ignores_temporary_preview(self):
+        ref = BackendJobRef("j")
+        result = correlate_outputs(
+            history(ref, {
+                "92": {
+                    "images": [
+                        {"filename": "preview.png", "subfolder": "", "type": "temp"},
+                        {"filename": "chunk.mp4", "subfolder": "video", "type": "output"},
+                    ],
+                    "animated": [False, True],
+                }
+            }),
+            ref,
+        )
+        self.assertEqual(result.status, OutputCorrelationStatus.VALID)
+        self.assertEqual(tuple(item.filename for item in result.descriptors), ("chunk.mp4",))
+
+    def test_savevideo_wrapper_is_fail_closed_and_temp_only_is_not_durable(self):
+        ref = BackendJobRef("j")
+        malformed = correlate_outputs(
+            history(ref, {"92": {
+                "images": [{"filename": "chunk.mp4", "subfolder": "video", "type": "output"}],
+                "animated": ["true"],
+            }}),
+            ref,
+        )
+        self.assertEqual(malformed.status, OutputCorrelationStatus.MALFORMED)
+        preview_only = correlate_outputs(
+            history(ref, {"92": {
+                "images": [{"filename": "preview.png", "subfolder": "", "type": "temp"}],
+                "animated": [False],
+            }}),
+            ref,
+        )
+        self.assertEqual(preview_only.status, OutputCorrelationStatus.NO_OUTPUTS)
     def test_valid_and_identity(self):
         ref = BackendJobRef("job")
         r = correlate_outputs(history(ref, {"node": {"files": [{"filename": "a.mp4", "subfolder": "x/y", "type": "opaque"}]}}), ref)

@@ -65,7 +65,8 @@ class StaleNotFoundRecoveryTests(unittest.TestCase):
             submitter = SubmitBoundary(transport, repository=repo); backend = Mock()
             backend.observe.return_value = BackendJobObservation(str(lp.id), str(le.id), str(target.id), str(attempt2_id), BackendJobState.RUNNING, BackendJobRef('retry-ref'))
             resume = ResumeExecutionUseCase(repo, backend, Mock(), submitter, output_root=root)
-            retried = RetryExecutionUseCase(repo, resume).retry(lp.id, le.id)
+            materializer = lambda paths: [f'orquestador/static/{Path(path).name}' for path in paths]
+            retried = RetryExecutionUseCase(repo, resume, materializer).retry(lp.id, le.id)
             self.assertEqual((retried.outcome, retried.attempt_id), (RecoveryOutcome.RETRIED_WAIT, str(attempt2_id)))
             submitted_prompt = transport.submit.call_args.args[0]
             self.assertIsInstance(submitted_prompt, dict)
