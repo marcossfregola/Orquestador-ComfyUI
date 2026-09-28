@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — F14.1 implementada técnicamente, pendiente de validación humana Windows.
+**Estado:** EN CURSO — corrección técnica F14.1 implementada, pendiente del smoke humano Windows.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -117,9 +117,9 @@ Smoke Windows corto: crear y renombrar un proyecto; cerrar/reabrir; seleccionar 
 
 ### Estado de implementación F14.1
 
-La migración SQLite 7→8, alta/renombrado y proyecciones por nombre están implementadas. La validación humana aclaró que el flujo existente de clone todavía no satisface el producto: hoy crea primero una copia con nombre automático y luego espera que la persona la renombre. Eso no es el contrato deseado.
+La migración SQLite 7→8, alta/renombrado y proyecciones por nombre están implementadas. La corrección cambia Biblioteca para pedir `Nombre del nuevo proyecto` antes de despachar la creación; el caso de uso F13.2 recibe el nombre explícito y SQLite lo normaliza y persiste junto con los nuevos agregados en una transacción. Cancelar no llega a la frontera de aplicación; el conflicto normalizado falla sin filas parciales. La duplicación de cola conserva su política automática.
 
-F14.1 queda **REQUIERE CORRECCIÓN** hasta que `Crear a partir de esta` pida el nombre **antes** de persistir el nuevo proyecto, cree source y clone como entidades simultáneas e independientes, y una cancelación no deje ningún clone. La suite completa no está globalmente verde; las comparaciones diferenciales anteriores dieron `NEW_REGRESSIONS=0`. F14.2 no se inició.
+Las pruebas focales y la suite diferencial están documentadas en [TESTING.md](TESTING.md). La suite global conserva errores/fallos históricos, pero la comparación por identificador contra el baseline publicado da `NEW_REGRESSIONS=0`. F14.1 sigue **PENDIENTE DE SMOKE HUMANO WINDOWS**; no se declara cerrada hasta comprobar prompt, cancelación, coexistencia, edición/apertura y persistencia tras reinicio. F14.2 no se inició.
 
 ---
 

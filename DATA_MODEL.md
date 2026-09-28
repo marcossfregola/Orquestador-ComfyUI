@@ -177,7 +177,7 @@ Genera nuevos `ProjectId`, `ExecutionId`, `ChunkId` y numeración local. No copi
 - información de recovery;
 - timestamps de ejecución.
 
-La operación es atómica. Si falla materialización o persistencia, no queda una copia parcial.
+La operación es atómica. Si falla materialización o persistencia, no queda una copia parcial. El clone de Biblioteca recibe el nombre explícito antes de invocar el caso de uso; SQLite lo normaliza con NFC/strip y exige que su clave casefold siga libre en el índice único al persistir, dentro de la misma transacción que Project, Execution y Chunks. Un conflicto no deja agregados parciales. Cancelar el diálogo no invoca la aplicación ni crea Project, Execution, Chunk, QueueItem o archivo. El duplicado de cola continúa usando el nombre base automático y el primer sufijo libre dentro de su transacción clone+enqueue.
 
 ## Defaults globales
 

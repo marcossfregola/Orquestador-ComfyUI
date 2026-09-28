@@ -112,16 +112,23 @@ class CloneConfigurationUseCase:
             raise CloneConfigurationError(f"source chunk overrides are invalid: {exc}") from exc
         return target_project, target_execution
 
-    def __call__(self, source_project_id, source_execution_id):
+    def __call__(self, source_project_id, source_execution_id, *, target_name=None):
         target_project, target_execution = self._build_clone(
             source_project_id, source_execution_id
         )
         try:
-            self.repository.save_new_clone(
-                target_project,
-                [target_execution],
-                name_base=target_project.name,
-            )
+            if target_name is None:
+                self.repository.save_new_clone(
+                    target_project,
+                    [target_execution],
+                    name_base=target_project.name,
+                )
+            else:
+                self.repository.save_new_clone(
+                    target_project,
+                    [target_execution],
+                    target_name=target_name,
+                )
         except PersistenceError as exc:
             raise CloneConfigurationError(f"clone persistence failed: {exc}") from exc
         if target_execution.execution_number is None:

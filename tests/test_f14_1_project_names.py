@@ -50,6 +50,28 @@ class F141ProjectNameTests(unittest.TestCase):
             chunks=({"prompt": "one"}, {"prompt": "two"}),
         )
 
+    def cloneable_source(self, project_id="clone-source", execution_id="source-execution"):
+        inputs = self.root / "inputs"
+        inputs.mkdir(exist_ok=True)
+        (inputs / "source.png").write_bytes(b"source image")
+        config = GenerationConfig(
+            initial_image="inputs/source.png",
+            references=(),
+            prompts=("one", "two"),
+            chunk_count=2,
+        )
+        project = Project(ProjectId(project_id), name="Source")
+        execution = Execution(
+            project.id,
+            ExecutionId(execution_id),
+            config.to_mapping(),
+            workflow_profile_ref=WorkflowProfileRef(config.profile_ref),
+        )
+        execution.add_chunk(Chunk(order=0, defaults={"prompt": "one"}))
+        execution.add_chunk(Chunk(order=1, defaults={"prompt": "two"}))
+        self.repository.save(project, [execution])
+        return project, execution
+
     def test_named_creation_is_normalized_unique_and_survives_reopen(self):
         selection = self.library.create_named_draft("  Cafe\u0301  ")
         self.assertEqual(selection.project_name, "Café")
@@ -262,6 +284,68 @@ class F141ProjectNameTests(unittest.TestCase):
         dashboard = QueueDashboardUseCase(self.repository).snapshot()
         cloned_entry = next(entry for entry in dashboard.entries if entry.execution_id == queued_clone.execution_id)
         self.assertEqual(cloned_entry.project_name, "Copia de Playa (4)")
+
+    def test_library_clone_persists_the_explicit_name_and_preserves_source(self):
+        project, source = self.cloneable_source()
+        source_before = self.repository.load(project.id)
+        project_ids_before = {str(item) for item in self.repository.list_project_ids()}
+
+        clone = self.library.clone(
+            str(project.id), str(source.id), target_name="Playa noche"
+        )
+
+        self.assertEqual(self.repository.get_project_name(clone.project_id), "Playa noche")
+        self.assertNotIn(clone.project_id, project_ids_before)
+        self.assertNotEqual(clone.project_id, str(project.id))
+        self.assertNotEqual(clone.execution_id, str(source.id))
+        self.assertEqual(self.repository.load(project.id), source_before)
+        clone_project, clone_executions = self.repository.load(clone.project_id)
+        self.assertEqual(clone_project.name, "Playa noche")
+        self.assertEqual(len(clone_executions), 1)
+        self.assertNotEqual(
+            [str(chunk.id) for chunk in clone_executions[0].chunks],
+            [str(chunk.id) for chunk in source.chunks],
+        )
+        self.repository.close()
+        self.repository = SQLiteProjectRepository(self.root)
+        names = {project.name for project in self.repository.list_projects()}
+        self.assertEqual(names, {"Source", "Playa noche"})
+
+    def test_explicit_clone_name_conflict_is_atomic(self):
+        project, source = self.cloneable_source()
+        occupied = self.library.create_named_draft("Tarde")
+        tables = (
+            "projects",
+            "executions",
+            "chunks",
+            "attempts",
+            "artifacts",
+            "errors",
+            "transitions",
+            "queue_items",
+            "queue_control",
+        )
+        before = {
+            table: self.repository.db.execute(
+                f"SELECT * FROM {table} ORDER BY rowid"
+            ).fetchall()
+            for table in tables
+        }
+
+        with self.assertRaisesRegex(PreparationLibraryError, "project name conflict"):
+            self.library.clone(
+                str(project.id), str(source.id), target_name="  TARDE  "
+            )
+
+        after = {
+            table: self.repository.db.execute(
+                f"SELECT * FROM {table} ORDER BY rowid"
+            ).fetchall()
+            for table in tables
+        }
+        self.assertEqual(after, before)
+        self.assertFalse(self.repository.db.in_transaction)
+        self.assertEqual(self.repository.get_project_name(occupied.project_id), "Tarde")
 
 
 if __name__ == "__main__":

@@ -249,13 +249,13 @@ F14 no agrega una línea nueva de producto: termina tres comportamientos incompl
 
 ### F14.1 — Nombre durable y renombrado de proyectos
 
-**Estado:** REQUIERE CORRECCIÓN DE FLUJO — clone con nombre elegido antes de persistir.
+**Estado:** CORRECCIÓN TÉCNICA IMPLEMENTADA; PENDIENTE SMOKE HUMANO WINDOWS.
 
 Separar `ProjectId` técnico de un nombre humano durable. Crear por nombre con ID interno, renombrar sin alterar identidad/evidencia, seleccionar/reabrir por nombre, dar nombre durable a clones y migrar proyectos existentes sin pérdida.
 
 **Cierre:** pruebas focales + regresión F13 relevante + migración schema 7 + smoke Windows de create/rename/restart/clone + auditoría + aprobación.
 
-La implementación técnica y comparación diferencial están documentadas en [TESTING.md](TESTING.md). No declarar CLOSED antes del smoke; F14.2 continúa sin iniciar.
+Biblioteca pide el nombre antes de crear y guarda el clone con ese nombre dentro de la misma transacción; cancelar no produce filas. La duplicación de cola conserva su autosufijo. Las pruebas y la comparación diferencial están en [TESTING.md](TESTING.md). No declarar CLOSED antes del smoke; F14.2 continúa sin iniciar.
 
 ### F14.2 — Política de inicio de cola auto/manual
 

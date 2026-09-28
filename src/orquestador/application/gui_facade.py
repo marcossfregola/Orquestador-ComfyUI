@@ -220,11 +220,13 @@ class GuiFacade:
             selection=(project_id, execution_id),
             refresh_selection=True,
         )
-    def clone_library_execution(self, project_id, execution_id):
+    def clone_library_execution(self, project_id, execution_id, target_name):
         if self._library is None or not callable(getattr(self._library, "clone", None)):
             return LibraryOperationResult(False, message="preparation library clone unavailable")
         try:
-            selected = self._library.clone(project_id, execution_id)
+            selected = self._library.clone(
+                project_id, execution_id, target_name=target_name
+            )
             library = self._library_snapshot_after()
             snapshot = self.refresh(selected.project_id, selected.execution_id)
             if snapshot.state in {"error", "unavailable"}:

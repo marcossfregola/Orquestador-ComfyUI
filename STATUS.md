@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-28
-**Baseline de implementación:** `f7196ac84f3ae5ed49bb37e7495c78d28b1f9db4` más el fast-forward documental previo a F14.1; Git es la autoridad del SHA publicado vigente.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**. F14.1 **REQUIERE CORRECCIÓN DE FLUJO**: `Crear a partir de esta` debe pedir el nombre del nuevo proyecto antes de crearlo, preservar siempre el source y crear un segundo proyecto independiente. La corrección de foco `54695cd...` no resuelve por sí sola este requisito de producto. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
+**Baseline publicado de producción:** `54695cd0458e1d385aed7995d8d337bfb6447792`; `main` incluye el fast-forward documental `2b4c14236b27e1ea99559aa2ccc769c20fed904c` previo a esta corrección.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**. La corrección técnica F14.1 ahora pide y valida el nombre antes de persistir el clone; crea source y clone como proyectos independientes y cancela sin escrituras. **Pendiente únicamente el smoke humano Windows** antes del cierre formal. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -20,7 +20,7 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - F13.8 agrega `claim_next_queue_item()` y `finish_claimed_queue_item()` atómicos sobre el schema 7 existente. El claim valida `queue_control`, el único `active`, eligibilidad de la `Execution` y el primer `queued` por orden durable antes de promoverlo y registrar `active_queue_item_id`; la finalización exige la misma relación activa y una `Execution` terminal. El runtime inicia automáticamente un scheduler de aplicación con lock local de archivo/OS, fuera de Qt, y llega al mismo `StartGuiChainUseCase → ChainExecutionUseCase → SubmitBoundary` mediante `start_claimed`, sin abrir una ruta de submit paralela. Si falta el output root confiable, la frontera de readiness bloquea antes de reclamar la cola. Invocaciones repetidas con un activo, errores o submit ambiguo conservan el activo y no reenvían; esa reconciliación posterior pertenece exclusivamente a F13.9. Pausar conserva el activo y bloquea el siguiente claim. No se introdujo migración, UI de cola, multi-GPU ni cancelación running.
 - F13.9 reconcilia el `QueueItem active` antes de cualquier claim nuevo. `ActiveQueueRecoveryUseCase` valida la relación activa exacta, carga la `Execution` durable y sus chunks/intentos, verifica outputs importados, artefactos y transiciones de un éxito, y usa el mismo `StartGuiChainUseCase → ChainExecutionUseCase → ResumeExecutionUseCase` para continuar u observar un job con `external_job_ref`. La recuperación de cola no habilita submit/retry automático: un intento durable sin referencia queda en manual review; un job desconocido o desaparecido conserva el activo; un job observable vivo espera; fallo o cancelación observados se persisten terminales y dejan el retry explícito como autoridad separada. Un activo virgen o `RUNNING` sin intento puede continuar porque `SubmitBoundary` persiste Attempt 1 antes del transporte. Un éxito con evidencia completa puede recuperar la transición final perdida. Pausa difiere la reconciliación del activo, conserva la relación durable y no inicia el siguiente. El cierre formal fue aprobado sobre esta implementación y los 82 tests focales registrados, sin repetir tests, auditorías ni smoke. Schema 7, UI de cola, multi-GPU, paralelismo e `/interrupt` siguen fuera de esta etapa.
 - F13.10 expone la cola de producto en una pestaña `Cola` y agrega `Agregar a cola` sólo para un snapshot preparado y durablemente editable. `QueueDashboardUseCase → GuiFacade → worker Qt → QueuePanel` proyecta orden, nombre durable del proyecto, número de ejecución, estado de `QueueItem`, lifecycle de `Execution`, pausa, activo y el último resultado de scheduler sólo para lectura. Sus botones delegan enqueue, selección/consulta, reorder, remove, skip, duplicate y pausa/reanudar a las operaciones F13.7; no reclaman, envían, recuperan ni cancelan por su cuenta. El estado global distingue idle, paused, running, recovery, revisión manual y bloqueo; un activo ambiguo conserva el slot y no habilita el siguiente. El refresco visual periódico sólo relee snapshots durables y el estado runtime, fuera del hilo UI. Multi-GPU, paralelismo, cloud, prioridades inteligentes, auto-skip y `/interrupt` siguen fuera de alcance. La validación humana Windows aprobó la integración Start→Cola, la visibilidad del activo, el recovery tras reinicio y el retry exclusivo del chunk fallido sin doble submit.
-- F13.6 agrega la biblioteca de preparación como una proyección de los casos de uso existentes: lista y ordena por nombre durable de proyecto y `execution_number` local con estado derivado, abre borradores/históricos, crea proyectos por nombre con `ProjectId` generado internamente, renombra sin alterar identidad/evidencia, clona mediante F13.2 y administra Global Defaults, presets técnicos y plantillas de chunks mediante sus autoridades F13.3–F13.5. La UI no solicita IDs técnicos, no accede a SQLite, ComfyUI ni FFmpeg, y ejecuta sus operaciones en el worker GUI. Los clones guardan el nombre `Copia de <origen>` con autosufijo determinista y sin lineage. Crear un borrador captura por copia los Global Defaults vigentes; aplicar preset o plantilla también es por copia. Una fila `queued`, activa, histórica o inconsistente se puede consultar, pero no habilita cambios estructurales. Las acciones de cola pertenecen exclusivamente al panel F13.10 y siguen delegando a sus casos de uso.
+- F13.6 agrega la biblioteca de preparación como una proyección de los casos de uso existentes: lista y ordena por nombre durable de proyecto y `execution_number` local con estado derivado, abre borradores/históricos, crea proyectos por nombre con `ProjectId` generado internamente, renombra sin alterar identidad/evidencia, clona mediante F13.2 y administra Global Defaults, presets técnicos y plantillas de chunks mediante sus autoridades F13.3–F13.5. La UI no solicita IDs técnicos, no accede a SQLite, ComfyUI ni FFmpeg, y ejecuta sus operaciones en el worker GUI. El clone de Biblioteca persiste el nombre elegido antes de la creación, y la duplicación de Cola conserva el autosufijo determinista; no se guarda lineage. Crear un borrador captura por copia los Global Defaults vigentes; aplicar preset o plantilla también es por copia. Una fila `queued`, activa, histórica o inconsistente se puede consultar, pero no habilita cambios estructurales. Las acciones de cola pertenecen exclusivamente al panel F13.10 y siguen delegando a sus casos de uso.
 - Para evitar cambios accidentales al recorrer Biblioteca, sus controles técnicos sensibles a la rueda derivan el wheel al scroll de la página hasta recibir un click explícito. El foco Qt, incluso automático, restaurado o por navegación, no arma la edición por rueda; un click fuera del control vuelve a desarmarla. Con click explícito, se conserva la edición normal por rueda, teclado y controles propios.
 
 ## F12 — first frame como referencia primaria
@@ -47,19 +47,19 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F14 — cierre funcional del producto actual — está **EN CURSO**. F14.1 está implementada técnicamente pero espera el smoke humano Windows antes de cierre; el contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+F14 — cierre funcional del producto actual — está **EN CURSO**. F14.1 está implementada técnicamente pero espera el smoke humano Windows antes del cierre formal; el contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
 
 Orden aprobado:
 
 0. **Gate pre-F14 — CLOSED — APROBADO**: hotfixes runtime reconstruidos limpiamente e integrados en `c14aa524...`; comparación diferencial contra `80943fae...` dio `NEW_REGRESSIONS=0`.
-1. **F14.1 — IMPLEMENTADA, PENDIENTE VALIDACIÓN HUMANA**: en Windows crear un proyecto por nombre, renombrarlo, cerrar y volver a abrir, clonar y volver a seleccionar por nombre. La evidencia automática está en [TESTING.md](TESTING.md).
+1. **F14.1 — IMPLEMENTADA, PENDIENTE VALIDACIÓN HUMANA**: en Windows crear/renombrar un proyecto, cerrar y reabrir, pedir el nombre al clonar antes de persistir, cancelar y confirmar que no hay copia, confirmar con un nombre distinto, abrir source y clone y volver a comprobar los nombres tras reiniciar. La evidencia automática está en [TESTING.md](TESTING.md).
 2. **F14.2 — política de inicio de cola auto/manual**: conservar auto y agregar manual sin confundirlo con pausa ni habilitar doble submit.
 3. **F14.3 — ensamblado como requisito de finalización real**: chunks completos no equivalen a ejecución final; el MP4 ensamblado y validado es requisito, con retry sólo de ensamblado.
 4. **F14.4 — regresión integral y cierre funcional**.
 
 F11.6 permanece **OPEN — NO INICIADA**, expresamente pospuesta por decisión de producto hasta cerrar F14. No se agregan características nuevas ni pulido visual dentro de F14.
 
-F14.2 continúa **PLANNED — NO INICIADA**. Para validar y cerrar F14.1, la persona debe abrir la aplicación Windows, crear un proyecto con nombre, renombrarlo, cerrar y reabrir para comprobar que conserva el nombre, crear un clone y confirmar que el nombre derivado conserva su autosufijo, y volver a seleccionar ambos por nombre visible. No iniciar generación de video.
+F14.2 continúa **PLANNED — NO INICIADA**. El smoke humano pendiente de F14.1 debe comprobar que la UI solicita `Nombre del nuevo proyecto` antes de persistir, que cancelar no crea registros, que un nombre confirmado aparece junto al source, que ambos se pueden abrir y que sobreviven el reinicio. No iniciar generación de video.
 
 ## Alcance y evidencia no ejercitada en el cierre F13.6
 
@@ -72,24 +72,14 @@ F14.2 continúa **PLANNED — NO INICIADA**. Para validar y cerrar F14.1, la per
 - No se ejecutaron UI de operaciones de cola, scheduler, submit de cola ni recovery/reconciliación de cola; pertenecen a F13.7 backend y F13.8/F13.9, no a F13.6.
 
 
-### Incidencia humana F14.1 — clone renombrable
+### Incidencia humana F14.1 — historial del flujo de renombrado
 
-**Estado:** CORRECCIÓN TÉCNICA IMPLEMENTADA; PENDIENTE VALIDACIÓN HUMANA.
-
-Validación humana Windows del 2026-09-28:
-
-- crear un proyecto nombrado y renombrarlo funcionó; el nombre anterior deja de existir porque rename modifica la identidad humana del mismo `ProjectId`, lo cual es el comportamiento esperado;
-- el flujo `Crear a partir de esta` produjo una copia, pero la persona no pudo cambiar el nombre del nuevo proyecto abierto de forma usable/inmediata;
-- por contrato F14.1, el clone debe ser un proyecto independiente y su nombre durable debe poder editarse sin modificar el proyecto fuente.
-
-La reproducción Qt/offscreen localizó el problema en la frontera de foco del panel: al refrescarse la lista después de completar el clone, Qt quitaba el foco del botón que había iniciado la operación. El proyecto clonado sí quedaba seleccionado y con el editor habilitado, pero `QApplication.focusWidget()` era `None`, por lo que la escritura inmediata del usuario no llegaba al campo. La corrección acotada enfoca y selecciona el nombre durable del clone al terminar con éxito la operación del worker; errores o dispatch rechazado limpian esa intención. El rename sigue usando el caso de uso existente y no cambia IDs, persistencia ni evidencia.
-
-La nueva regresión `test_clone_can_be_renamed_immediately_and_survives_refresh_and_reopen` falló antes del cambio en la aserción de foco y pasa después; también comprueba IDs independientes, rename del clone, refresh, reapertura SQLite y nombre original del source. F14.1 no puede declararse CLOSED hasta repetir el smoke humano descrito en `TESTING.md`. F14.2 permanece NO INICIADA.
+La observación humana Windows del 2026-09-28 comprobó que crear y renombrar un proyecto conserva la identidad del `ProjectId`, pero el flujo de clone no permitía elegir el nombre antes de la creación. Una reproducción Qt/offscreen también había localizado pérdida de foco al refrescar Biblioteca. El ajuste de foco publicado en `54695cd...` resolvió sólo la escritura inmediata posterior a una copia automática y no satisfizo el contrato de producto aclarado a continuación; esa complejidad se eliminó al pasar el nombre al prompt previo.
 
 
 ### Aclaración de producto F14.1 — source + proyecto nuevo
 
-**Estado:** REQUIERE CORRECCIÓN.
+**Estado:** CORRECCIÓN TÉCNICA IMPLEMENTADA; PENDIENTE SMOKE HUMANO WINDOWS.
 
 La validación humana aclaró el contrato definitivo de `Crear a partir de esta`:
 
@@ -102,4 +92,4 @@ La validación humana aclaró el contrato definitivo de `Crear a partir de esta`
 7. el nuevo proyecto debe quedar seleccionado/abierto para poder empezar a trabajar inmediatamente sobre él;
 8. `Renombrar proyecto` conserva su función administrativa separada para proyectos ya existentes.
 
-No se acepta como flujo final “crear copia automática → renombrarla después”. La corrección de foco publicada en `54695cd...` queda como mejora válida pero insuficiente para cerrar F14.1.
+La UI ahora solicita el nombre antes del dispatch; la frontera de aplicación lo entrega al clone canónico y SQLite normaliza, verifica unicidad mediante el índice durable y persiste el proyecto con ejecución/chunks en una transacción. Cancelar retorna antes de llamar al caso de uso. La ruta de duplicación de cola mantiene el nombre automático con sufijo. Las pruebas y la comparación diferencial están registradas en [TESTING.md](TESTING.md). No se acepta “crear copia automática → renombrarla después”. F14.1 sigue pendiente del smoke humano indicado allí; F14.2 permanece NO INICIADA.

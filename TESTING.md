@@ -488,4 +488,25 @@ Suite completa diferencial con `python -B -m unittest discover -s tests -v`, sna
 - Árbol corregido: **786 tests en 64.131 s; 8 failures, 5 errors, 2 skipped** (el test adicional es la regresión F14.1).
 - Comparación por identificador exacto `FAIL`/`ERROR`: las **13 incidencias actuales** ya están en el baseline; **`NEW_REGRESSIONS=0`**. La suite global sigue mostrando deuda histórica y no se declara verde ni se corrigió fuera de alcance.
 
-F14.1 continúa **PENDIENTE DE VALIDACIÓN HUMANA** hasta repetir en la aplicación Windows únicamente este flujo: crear o seleccionar un proyecto fuente de prueba y dejarlo con el nombre `Prueba F14.1 Renombrado`, pulsar `Crear a partir de esta`, escribir inmediatamente un nombre único en `Nombre durable seleccionado` sin clickear de nuevo el campo, pulsar `Renombrar proyecto`, refrescar y reiniciar la aplicación; verificar que el clone conserva el nombre nuevo y el source sigue visible con su nombre original. F14.2 no se inició.
+F14.1 continúa **PENDIENTE DE VALIDACIÓN HUMANA** hasta repetir el smoke de nombre previo a persistencia registrado abajo. F14.2 no se inició.
+
+
+## F14.1 — nombre solicitado antes de persistir el clone (2026-09-28)
+
+La causa era que el camino de Biblioteca creaba primero el clone con `Copia de <source>` y dependía de renombrarlo después, en contra del contrato humano. La corrección pide un nombre editable antes de despachar el trabajo. Cancelar/cerrar no llama a la fachada ni crea filas o archivos. Al confirmar, el nombre explícito viaja `PreparationLibraryPanel → GuiFacade → PreparationLibraryUseCase → CloneConfigurationUseCase → SQLiteProjectRepository`; SQLite lo normaliza y persiste con el Project, Execution y Chunks nuevos bajo una transacción. El índice NFC/casefold existente rechaza una colisión y el rollback evita clones parciales. No se accede a SQLite desde Qt. La ruta de duplicación desde Cola sigue usando el nombre sugerido y autosufijo existente, sin diálogo. Se eliminó el workaround de foco que quedó obsoleto al recoger el nombre antes de crear.
+
+Las nuevas pruebas cubren nombre explícito con source sin cambios y reopen; colisión normalizada con snapshots idénticos de `projects`, `executions`, `chunks`, `attempts`, `artifacts`, `errors`, `transitions`, `queue_items` y `queue_control`; cancelación sin cambios durable/archivos/selección; prompt antes de persistir; coexistencia visible; selección, apertura y capacidad de edición del clone; y nombres tras reabrir SQLite. `test_clone_names_are_durable_and_autosuffix_for_both_clone_routes` sigue comprobando que el duplicado de cola conserve los nombres automáticos con sufijo. Antes de implementar, las cinco nuevas pruebas de frontera/UI fallaban por falta del argumento `target_name` y del diálogo previo; después quedaron verdes.
+
+Resultados focales con `PYTHONPATH=src`, Qt offscreen y temporales aislados dentro del checkout:
+
+- `python -B -m unittest -v tests.test_f14_1_project_names tests.test_f13_2_clone_configuration tests.test_f13_6_library_gui tests.test_f13_7_queue_operations tests.test_f13_10_queue_gui tests.test_persistence` — **58 tests, OK; 1 omitido ambiental** por `WinError 1314` al crear el symlink F13.2.
+- `python -B -m compileall -q src tests` — **exit 0**.
+- `git diff --check` — **PASS**.
+
+Suite diferencial completa (`python -B -m unittest discover -s tests -v`), usando `git archive` del baseline de producción `54695cd0458e1d385aed7995d8d337bfb6447792` y carpetas `ORQ_TEST_TMP` separadas:
+
+- Baseline: **786 tests en 69.074 s; 11 failures, 26 errors, 2 skipped**.
+- Árbol corregido: **790 tests en 64.330 s; 8 failures, 5 errors, 2 skipped**.
+- Comparación exacta de IDs `FAIL`/`ERROR`: baseline **37**, árbol corregido **13**, los 13 ya existen en el baseline y **`NEW_REGRESSIONS=0`**. Se resolvieron 24 IDs del baseline. La suite global no queda verde; no se cambiaron sus fallos históricos ajenos al alcance.
+
+El smoke humano Windows sigue pendiente: (1) seleccionar un source; (2) pulsar `Crear a partir de esta` y comprobar que aparece `Nombre del nuevo proyecto` antes de crear; (3) cancelar y confirmar que no aparece ninguna copia; (4) repetir, ingresar un nombre único distinto y confirmar; (5) comprobar que source y clone aparecen simultáneamente y que ambos pueden abrirse; (6) verificar que el clone está seleccionado y se puede editar; (7) cerrar/reabrir la aplicación y comprobar que ambos nombres siguen presentes. No se ejecutó ComfyUI real ni se generó video. F14.1 permanece pendiente de este smoke; F14.2 no se inició.

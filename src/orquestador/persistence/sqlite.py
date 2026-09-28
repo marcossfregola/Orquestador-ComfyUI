@@ -308,10 +308,20 @@ class SQLiteProjectRepository:
    return unique_project_name(base,used)[0]
   except ValueError as exc:
    raise PersistenceDataError(str(exc)) from exc
- def save_new_clone(self,project,executions,*,name_base):
-  """Atomically allocate a clone name and persist its fresh aggregate."""
+ def save_new_clone(self,project,executions,*,name_base=None,target_name=None):
+  """Atomically name and persist a fresh clone aggregate.
+
+  Standalone/library cloning can provide the name explicitly.  Callers without
+  human input retain the deterministic automatic suffix policy.
+  """
+  if (name_base is None) == (target_name is None):
+   raise PersistenceDataError('provide exactly one clone project name')
   def action():
-   project.name=self._unique_project_name_in_transaction(name_base)
+   if target_name is None:
+    project.name=self._unique_project_name_in_transaction(name_base)
+   else:
+    try: project.name=normalize_project_name(target_name)[0]
+    except ValueError as exc: raise PersistenceDataError(str(exc)) from exc
    self.save(project,executions,_in_transaction=True)
   return self._queue_transaction(action)
  def start_execution_if_not_queued(self, project, execution):

@@ -159,7 +159,9 @@ class F136PreparationLibraryTests(unittest.TestCase):
             (opened.snapshot.project_id, opened.snapshot.execution_id),
             ("project", draft.execution_id),
         )
-        cloned = facade.clone_library_execution("project", draft.execution_id)
+        cloned = facade.clone_library_execution(
+            "project", draft.execution_id, "Copia elegida desde fachada"
+        )
         self.assertTrue(cloned.success, cloned.message)
         self.assertNotEqual(cloned.selection.execution_id, draft.execution_id)
 
@@ -221,6 +223,26 @@ class F136QtLibraryTests(unittest.TestCase):
                 return item
         self.fail("execution was not rendered")
 
+    @staticmethod
+    def durable_rows(repository):
+        tables = (
+            "projects",
+            "executions",
+            "chunks",
+            "attempts",
+            "artifacts",
+            "errors",
+            "transitions",
+            "queue_items",
+            "queue_control",
+        )
+        return {
+            table: repository.db.execute(
+                f"SELECT * FROM {table} ORDER BY rowid"
+            ).fetchall()
+            for table in tables
+        }
+
     def test_project_rename_button_preserves_selection_and_ids(self):
         panel = self.window.library_panel
         self.window.show()
@@ -238,9 +260,10 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
         self.assertIn("Proyecto: Playa al atardecer", panel.execution_list.currentItem().text())
 
-    def test_clone_can_be_renamed_immediately_and_survives_refresh_and_reopen(self):
+    def test_clone_name_prompt_cancel_creates_no_durable_or_file_state(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
+        from orquestador.ui import preparation_library as library_ui
 
         panel = self.window.library_panel
         self.window.show()
@@ -249,70 +272,147 @@ class F136QtLibraryTests(unittest.TestCase):
 
         self.select_execution("visible-project", self.draft.execution_id)
         source = panel._current_execution()
-        self.assertEqual(source.project_name, "visible-project")
-        source_project_id = source.project_id
-        source_execution_id = source.execution_id
-        QTest.mouseClick(panel.project_name_edit, Qt.LeftButton)
-        QTest.keyClick(panel.project_name_edit, Qt.Key_A, Qt.ControlModifier)
-        QTest.keyClicks(panel.project_name_edit, "Prueba F14.1 Renombrado")
-        QTest.mouseClick(panel.rename_project_button, Qt.LeftButton)
-        self.wait_for_worker()
-        source_name = "Prueba F14.1 Renombrado"
-        self.assertEqual(panel._current_execution().project_name, source_name)
-        self.assertTrue(panel.clone_button.isEnabled())
+        ids_before = {str(project_id) for project_id in self.resources["repository"].list_project_ids()}
+        rows_before = self.durable_rows(self.resources["repository"])
+        files_before = {
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*")
+            if path.is_file()
+        }
+        with patch.object(
+            library_ui._widgets.QInputDialog,
+            "getText",
+            return_value=(f"Copia de {source.project_name}", False),
+        ) as prompt:
+            QTest.mouseClick(panel.clone_button, Qt.LeftButton)
+            self.wait_for_worker()
 
-        QTest.mouseClick(panel.clone_button, Qt.LeftButton)
-        self.wait_for_worker()
-
-        clone = panel._current_execution()
-        self.assertIsNotNone(clone)
-        self.assertNotEqual(clone.project_id, source_project_id, panel.status.text())
-        self.assertNotEqual(clone.execution_id, source_execution_id)
-        self.assertEqual(clone.project_name, f"Copia de {source_name}")
-        self.assertTrue(
-            self.resources["repository"].get_project_name(source_project_id) == source_name
-        )
-        self.assertEqual(self.resources["repository"].get_project_name(clone.project_id), clone.project_name)
-        self.assertEqual(panel.project_name_edit.text(), clone.project_name)
-        self.assertTrue(panel.project_name_edit.isEnabled())
-        self.assertFalse(panel.project_name_edit.isReadOnly())
-        self.assertIs(
-            self.app.focusWidget(),
-            panel.project_name_edit,
-            "a new clone should leave the durable-name editor ready for immediate keyboard input",
-        )
-
-        QTest.keyClick(panel.project_name_edit, Qt.Key_A, Qt.ControlModifier)
-        QTest.keyClicks(panel.project_name_edit, "Copia renombrada desde Biblioteca")
-        self.app.processEvents()
-        self.assertTrue(panel.rename_project_button.isEnabled())
-        QTest.mouseClick(panel.rename_project_button, Qt.LeftButton)
-        self.wait_for_worker()
-
-        selected = panel._current_execution()
-        self.assertEqual((selected.project_id, selected.execution_id), (clone.project_id, clone.execution_id))
-        self.assertEqual(selected.project_name, "Copia renombrada desde Biblioteca")
-        self.assertEqual(self.resources["repository"].get_project_name(source_project_id), source_name)
+        prompt.assert_called_once()
+        self.assertEqual(prompt.call_args.args[2], "Nombre del nuevo proyecto:")
+        self.assertEqual(prompt.call_args.args[4], f"Copia de {source.project_name}")
         self.assertEqual(
-            self.resources["repository"].get_project_name(clone.project_id),
-            "Copia renombrada desde Biblioteca",
+            {str(project_id) for project_id in self.resources["repository"].list_project_ids()},
+            ids_before,
+        )
+        self.assertEqual(self.durable_rows(self.resources["repository"]), rows_before)
+        self.assertEqual(
+            {
+                path.relative_to(self.root).as_posix()
+                for path in self.root.rglob("*")
+                if path.is_file()
+            },
+            files_before,
+        )
+        self.assertEqual(
+            (panel._current_execution().project_id, panel._current_execution().execution_id),
+            (source.project_id, source.execution_id),
         )
 
-        panel.refresh()
+    def test_clone_prompts_before_creation_and_opens_named_clone(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from orquestador.ui import preparation_library as library_ui
+
+        panel = self.window.library_panel
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
         self.wait_for_worker()
-        selected = panel._current_execution()
-        self.assertEqual((selected.project_id, selected.execution_id), (clone.project_id, clone.execution_id))
-        self.assertEqual(panel.project_name_edit.text(), "Copia renombrada desde Biblioteca")
-        self.select_execution(source_project_id, source_execution_id)
-        self.assertEqual(panel._current_execution().project_name, source_name)
+        self.select_execution("visible-project", self.draft.execution_id)
+        source = panel._current_execution()
+        source_before = self.resources["repository"].load(source.project_id)
+        ids_before = {str(item) for item in self.resources["repository"].list_project_ids()}
+        chosen_name = "Playa nocturna desde diálogo"
+
+        def choose_name(*args):
+            self.assertEqual(
+                {str(item) for item in self.resources["repository"].list_project_ids()},
+                ids_before,
+                "the prompt must run before any clone is persisted",
+            )
+            self.assertEqual(args[2], "Nombre del nuevo proyecto:")
+            self.assertEqual(args[4], f"Copia de {source.project_name}")
+            return chosen_name, True
+
+        with patch.object(
+            library_ui._widgets.QInputDialog, "getText", side_effect=choose_name
+        ) as prompt:
+            QTest.mouseClick(panel.clone_button, Qt.LeftButton)
+            self.wait_for_worker()
+
+        prompt.assert_called_once()
+        clone = panel._current_execution()
+        self.assertNotEqual(clone.project_id, source.project_id)
+        self.assertNotEqual(clone.execution_id, source.execution_id)
+        self.assertEqual(clone.project_name, chosen_name)
+        self.assertEqual(self.resources["repository"].load(source.project_id), source_before)
+        names_by_id = {
+            project.project_id: project.name
+            for project in panel.facade.library_snapshot().library.projects
+        }
+        self.assertEqual(names_by_id[source.project_id], source.project_name)
+        self.assertEqual(names_by_id[clone.project_id], chosen_name)
+        self.assertEqual(panel.project_name_edit.text(), chosen_name)
+        self.assertTrue(clone.can_open)
+        self.assertTrue(clone.can_edit)
+        self.assertTrue(panel.open_button.isEnabled())
+        self.assertEqual(self.window.project.text(), clone.project_id)
+        self.assertEqual(self.window.execution.text(), clone.execution_id)
+        self.assertTrue(self.window.prepare.isEnabled())
+
+        QTest.mouseClick(panel.open_button, Qt.LeftButton)
+        self.wait_for_worker()
+        self.assertEqual(self.window.project.text(), clone.project_id)
+        self.assertEqual(self.window.execution.text(), clone.execution_id)
+        self.assertEqual(panel._current_execution().project_id, clone.project_id)
 
         reopened = SQLiteProjectRepository(self.root)
         try:
             projects = {str(project.id): project for project in reopened.list_projects()}
-            self.assertEqual(projects[source_project_id].name, source_name)
-            self.assertEqual(projects[clone.project_id].name, "Copia renombrada desde Biblioteca")
+            self.assertEqual(projects[source.project_id].name, source.project_name)
+            self.assertEqual(projects[clone.project_id].name, chosen_name)
         finally:
             reopened.close()
+
+    def test_clone_name_conflict_is_clear_and_can_be_corrected(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from orquestador.ui import preparation_library as library_ui
+
+        panel = self.window.library_panel
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+        source = self.select_execution("visible-project", self.draft.execution_id)
+        source_selection = source.data(256)
+        ids_before = {str(item) for item in self.resources["repository"].list_project_ids()}
+
+        with patch.object(
+            library_ui._widgets.QInputDialog,
+            "getText",
+            return_value=(" VISIBLE-PROJECT ", True),
+        ):
+            QTest.mouseClick(panel.clone_button, Qt.LeftButton)
+            self.wait_for_worker()
+
+        self.assertIn("project name conflict", panel.status.text().lower())
+        self.assertEqual(
+            {str(item) for item in self.resources["repository"].list_project_ids()},
+            ids_before,
+        )
+        self.assertEqual(panel._current_execution().project_id, source_selection.project_id)
+        self.assertTrue(panel.clone_button.isEnabled())
+
+        with patch.object(
+            library_ui._widgets.QInputDialog,
+            "getText",
+            return_value=("Proyecto corregido", True),
+        ):
+            QTest.mouseClick(panel.clone_button, Qt.LeftButton)
+            self.wait_for_worker()
+
+        clone = panel._current_execution()
+        self.assertEqual(clone.project_name, "Proyecto corregido")
+        self.assertIn(clone.project_id, {str(item) for item in self.resources["repository"].list_project_ids()})
 
     def test_offscreen_wiring_selection_editability_clone_and_saved_configuration(self):
         panel = self.window.library_panel
@@ -434,7 +534,14 @@ class F136QtLibraryTests(unittest.TestCase):
         )
 
         panel.scroll_area.verticalScrollBar().setValue(panel.scroll_area.verticalScrollBar().maximum())
-        panel.clone_selected()
+        from orquestador.ui import preparation_library as library_ui
+
+        with patch.object(
+            library_ui._widgets.QInputDialog,
+            "getText",
+            return_value=("Copia de visible-project", True),
+        ):
+            panel.clone_selected()
         self.wait_for_worker()
         self.assertNotEqual(self.window.execution.text(), self.draft.execution_id)
         clone_id = self.window.execution.text()

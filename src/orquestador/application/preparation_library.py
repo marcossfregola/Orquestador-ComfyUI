@@ -246,14 +246,14 @@ class PreparationLibraryUseCase:
         except (PersistenceError, OSError, TypeError, ValueError) as exc:
             self._failure("project rename", exc)
 
-    def clone(self, project_id, execution_id):
+    def clone(self, project_id, execution_id, *, target_name=None):
         """Create a fresh configuration-only draft through the canonical F13.2 case."""
         source = self._selected_execution(project_id, execution_id)
         if not source.can_clone:
             raise PreparationLibraryError("selected execution cannot be cloned safely")
         try:
             cloned = CloneConfigurationUseCase(self.repository)(
-                source.project_id, source.execution_id
+                source.project_id, source.execution_id, target_name=target_name
             )
             return self._selected_execution(cloned.project_id, cloned.execution_id)
         except (CloneConfigurationError, DraftError, OSError, TypeError, ValueError) as exc:
