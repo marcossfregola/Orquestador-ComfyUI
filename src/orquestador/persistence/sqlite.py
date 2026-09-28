@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from orquestador.domain import *
-SCHEMA_VERSION=7
+from orquestador.domain.project_names import initial_project_name, normalize_project_name, unique_project_name
+SCHEMA_VERSION=8
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -65,6 +66,30 @@ class SQLiteProjectRepository:
  def _migrate_chunk_templates(db):
   db.execute("CREATE TABLE chunk_templates(id TEXT PRIMARY KEY,name TEXT NOT NULL,name_key TEXT NOT NULL UNIQUE,prompts TEXT NOT NULL,template_version INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,CHECK(length(trim(name)) > 0),CHECK(template_version=1))")
  migrations[7]=_migrate_chunk_templates.__func__
+ @staticmethod
+ def _migrate_project_names(db):
+  columns={row[1] for row in db.execute('PRAGMA table_info(projects)')}
+  if 'name' not in columns: db.execute("ALTER TABLE projects ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+  if 'name_key' not in columns: db.execute("ALTER TABLE projects ADD COLUMN name_key TEXT NOT NULL DEFAULT ''")
+  used=set()
+  for project_id,stored_name,stored_key in db.execute('SELECT id,name,name_key FROM projects ORDER BY id').fetchall():
+   if not isinstance(project_id,str) or not project_id.strip():
+    raise PersistenceDataError('project id cannot be migrated to a human name')
+   try:
+    if stored_name and stored_key:
+     name,key=normalize_project_name(stored_name)
+     if name!=stored_name or key!=stored_key or key in used: raise ValueError
+    else:
+     base=initial_project_name(project_id)
+     name,key=unique_project_name(base,used)
+     db.execute('UPDATE projects SET name=?,name_key=? WHERE id=?',(name,key,project_id))
+   except ValueError:
+    base=initial_project_name(project_id)
+    name,key=unique_project_name(base,used)
+    db.execute('UPDATE projects SET name=?,name_key=? WHERE id=?',(name,key,project_id))
+   used.add(key)
+  db.execute('CREATE UNIQUE INDEX IF NOT EXISTS projects_name_key_unique ON projects(name_key)')
+ migrations[8]=_migrate_project_names.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -265,15 +290,29 @@ class SQLiteProjectRepository:
     raise PersistenceConflictError('queue control changed during orphan adoption')
    return (item,)
   return self._queue_transaction(action)
- def save_new_execution_and_enqueue(self, project, execution, *, queue_item_id=None, expected_source_queue_item_id=None):
+ def save_new_execution_and_enqueue(self, project, execution, *, queue_item_id=None, expected_source_queue_item_id=None, project_name_base=None):
   """Atomically persist a cloned draft and append its first QueueItem."""
   def action():
    if expected_source_queue_item_id is not None:
     source=self.get_queue_item(QueueItemId(str(expected_source_queue_item_id)))
     if source is None or source.state is not QueueItemState.QUEUED: raise PersistenceConflictError('source queue item is no longer queued')
    if self.db.execute('SELECT 1 FROM executions WHERE id=?',(str(execution.id),)).fetchone(): raise PersistenceConflictError('new queued execution already exists')
+   if project_name_base is not None: project.name=self._unique_project_name_in_transaction(project_name_base)
    self.save(project,[execution],_in_transaction=True)
    return self._enqueue_execution_in_transaction(execution.id,queue_item_id)
+  return self._queue_transaction(action)
+ def _unique_project_name_in_transaction(self,base):
+  try:
+   _,key=normalize_project_name(base)
+   used={row[0] for row in self.db.execute('SELECT name_key FROM projects')}
+   return unique_project_name(base,used)[0]
+  except ValueError as exc:
+   raise PersistenceDataError(str(exc)) from exc
+ def save_new_clone(self,project,executions,*,name_base):
+  """Atomically allocate a clone name and persist its fresh aggregate."""
+  def action():
+   project.name=self._unique_project_name_in_transaction(name_base)
+   self.save(project,executions,_in_transaction=True)
   return self._queue_transaction(action)
  def start_execution_if_not_queued(self, project, execution):
   """Persist a pending-to-running transition only when no live item exists.
@@ -485,7 +524,17 @@ class SQLiteProjectRepository:
     old=self.db.execute('SELECT phase,output FROM artifacts WHERE id=?',(str(ar.id),)).fetchone()
     if old and old!=(ar.phase.value,ar.output.uri): raise PersistenceConflictError('immutable artifact conflict')
    if not _in_transaction: self.db.execute('BEGIN')
-   self.db.execute('INSERT INTO projects VALUES(?,?) ON CONFLICT(id) DO UPDATE SET defaults=excluded.defaults',(str(p.id),_json(dict(p.defaults))))
+   project_id=str(p.id)
+   existing_project=self.db.execute('SELECT 1 FROM projects WHERE id=?',(project_id,)).fetchone()
+   if existing_project:
+    # An aggregate loaded before an administrative rename must never restore
+    # its stale display name while saving unrelated execution data.
+    self.db.execute('UPDATE projects SET defaults=? WHERE id=?',(_json(dict(p.defaults)),project_id))
+   else:
+    try: project_name,project_name_key=normalize_project_name(p.name)
+    except ValueError as exc: raise PersistenceDataError(str(exc)) from exc
+    self.db.execute('INSERT INTO projects(id,defaults,name,name_key) VALUES(?,?,?,?)',
+                    (project_id,_json(dict(p.defaults)),project_name,project_name_key))
    for e in es:
     prof=e.workflow_profile_ref.value if e.workflow_profile_ref else None; old=self.db.execute('SELECT state,workflow_profile_ref,execution_number FROM executions WHERE id=?',(str(e.id),)).fetchone()
     if old and (not _legal(Lifecycle(old[0]),e.state,allow_retry_reopen=allow_retry_reopen) or old[1]!=prof):raise PersistenceConflictError('execution lifecycle/profile conflict')
@@ -529,6 +578,10 @@ class SQLiteProjectRepository:
   except PersistenceError:
    if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
    raise
+  except sqlite3.IntegrityError as e:
+   if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
+   if 'projects.name_key' in str(e): raise PersistenceConflictError('project name conflict') from e
+   raise PersistenceError(str(e)) from e
   except Exception as e:
    if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
    raise PersistenceError(str(e))
@@ -557,9 +610,13 @@ class SQLiteProjectRepository:
    if self.db.in_transaction:self.db.execute('ROLLBACK')
    raise
  def load(self,pid):
-  row=self.db.execute('SELECT defaults FROM projects WHERE id=?',(str(pid),)).fetchone()
+  row=self.db.execute('SELECT defaults,name,name_key FROM projects WHERE id=?',(str(pid),)).fetchone()
   if not row:raise PersistenceError('project not found')
-  p=Project(ProjectId(str(pid)),json.loads(row[0])); es=[]; cm={}; am={}
+  try:
+   name,key=normalize_project_name(row[1])
+   if name!=row[1] or key!=row[2]: raise ValueError
+  except (TypeError,ValueError) as exc: raise PersistenceDataError('invalid durable project name') from exc
+  p=Project(ProjectId(str(pid)),json.loads(row[0]),name); es=[]; cm={}; am={}
   for eid,d,s,w,n in self.db.execute('SELECT id,defaults,state,workflow_profile_ref,execution_number FROM executions WHERE project_id=? ORDER BY execution_number',(str(pid),)):
    e=Execution(p.id,ExecutionId(eid),json.loads(d),Lifecycle(s),[],WorkflowProfileRef(w) if w else None,execution_number=n); es.append(e)
    for cid,o,cd,cs in self.db.execute('SELECT id,ord,defaults,state FROM chunks WHERE execution_id=? ORDER BY ord',(eid,)):
@@ -607,6 +664,41 @@ class SQLiteProjectRepository:
  def list_project_ids(self):
   """Return durable project identities only; product classification lives in application."""
   return [ProjectId(row[0]) for row in self.db.execute('SELECT id FROM projects ORDER BY id')]
+ def list_projects(self):
+  """Return projects in durable human-name order, validating comparison keys."""
+  result=[]
+  try:
+   rows=self.db.execute('SELECT id,defaults,name,name_key FROM projects ORDER BY name_key,id').fetchall()
+   for project_id,defaults,name,key in rows:
+    normalized,expected_key=normalize_project_name(name)
+    if normalized!=name or expected_key!=key: raise PersistenceDataError('invalid durable project name')
+    result.append(Project(ProjectId(project_id),json.loads(defaults),name))
+  except sqlite3.DatabaseError as exc:
+   raise PersistenceDataError(str(exc)) from exc
+  except (json.JSONDecodeError,TypeError,ValueError) as exc:
+   if isinstance(exc,PersistenceDataError): raise
+   raise PersistenceDataError('invalid durable project row') from exc
+  return result
+ def get_project_name(self,project_id):
+  try:
+   rows=self.db.execute('SELECT name,name_key FROM projects WHERE id=?',(str(project_id),)).fetchall()
+   if len(rows)!=1: raise PersistenceError('project not found')
+   name,key=rows[0]; normalized,expected_key=normalize_project_name(name)
+   if normalized!=name or expected_key!=key: raise PersistenceDataError('invalid durable project name')
+   return name
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError(str(exc)) from exc
+ def rename_project(self,project_id,name):
+  try: display,key=normalize_project_name(name)
+  except ValueError as exc: raise PersistenceDataError(str(exc)) from exc
+  def action():
+   if self.db.execute('UPDATE projects SET name=?,name_key=? WHERE id=?',(display,key,str(project_id))).rowcount!=1:
+    raise PersistenceError('project not found')
+  try:
+   self._queue_transaction(action)
+  except PersistenceConflictError as exc:
+   if 'projects.name_key' in str(exc): raise PersistenceConflictError('project name conflict') from exc
+   raise
+  return display
  def load_transitions(self, execution_id):
   """Read durable transition frames without exposing storage details to application code."""
   rows=self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions WHERE execution_id=? ORDER BY frame_index',(str(execution_id),)).fetchall()

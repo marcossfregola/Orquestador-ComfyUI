@@ -704,6 +704,8 @@ class MainWindow(QMainWindow):
     def _done(self,r):
         if isinstance(r, QueueOperationResult):
             self.queue_panel.handle_result(r)
+            if r.selection is not None and getattr(r.selection, "project_name", ""):
+                self._project_display_names[r.selection.project_id] = r.selection.project_name
             if r.success and r.snapshot is not None:
                 # A queue selection or mutation can change the durable lock.
                 # Never keep a PreparedIdentity from a prior selection alive.
@@ -717,9 +719,9 @@ class MainWindow(QMainWindow):
         if isinstance(r, LibraryOperationResult):
             self.library_panel.handle_result(r)
             if r.selection is not None:
-                self._project_display_names[r.selection.project_id] = (
-                    self.library_panel.display_project_name(r.selection.project_id)
-                )
+                self._project_display_names[r.selection.project_id] = getattr(
+                    r.selection, "project_name", ""
+                ) or self.library_panel.display_project_name(r.selection.project_id)
             if r.success and r.snapshot is not None:
                 # Opening, cloning and applying configuration select an
                 # authoritative durable execution; they invalidate a prior

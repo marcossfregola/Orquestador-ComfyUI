@@ -199,6 +199,27 @@ class GuiFacade:
             return LibraryOperationResult(True, library, selected, snapshot, detail=selected)
         except Exception as exc:
             return LibraryOperationResult(False, message=str(exc), detail=exc)
+    def create_named_library_draft(self, name):
+        if self._library is None or not callable(getattr(self._library, "create_named_draft", None)):
+            return LibraryOperationResult(False, message="preparation library named draft creation unavailable")
+        try:
+            selected = self._library.create_named_draft(name)
+            library = self._library_snapshot_after()
+            snapshot = self.refresh(selected.project_id, selected.execution_id)
+            if snapshot.state in {"error", "unavailable"}:
+                return LibraryOperationResult(False, library, selected, snapshot,
+                                              "; ".join(snapshot.errors) or "new draft could not be opened")
+            return LibraryOperationResult(True, library, selected, snapshot, detail=selected)
+        except Exception as exc:
+            return LibraryOperationResult(False, message=str(exc), detail=exc)
+    def rename_library_project(self, project_id, name, execution_id):
+        return self._library_call(
+            "rename_project",
+            project_id,
+            name,
+            selection=(project_id, execution_id),
+            refresh_selection=True,
+        )
     def clone_library_execution(self, project_id, execution_id):
         if self._library is None or not callable(getattr(self._library, "clone", None)):
             return LibraryOperationResult(False, message="preparation library clone unavailable")

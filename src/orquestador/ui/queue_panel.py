@@ -143,7 +143,9 @@ class QueuePanel(QWidget):
             return False
 
     @classmethod
-    def _project_label(cls, project_id):
+    def _project_label(cls, project_id, project_name=None):
+        if isinstance(project_name, str) and project_name.strip():
+            return project_name
         return "Proyecto generado" if cls._is_technical_uuid(project_id) else str(project_id)
 
     @staticmethod
@@ -245,7 +247,7 @@ class QueuePanel(QWidget):
                 item = QTreeWidgetItem(
                     (
                         str(entry.position + 1),
-                        self._project_label(entry.project_id),
+                        self._project_label(entry.project_id, getattr(entry, "project_name", None)),
                         number,
                         self._entry_label(entry),
                     )
@@ -255,7 +257,7 @@ class QueuePanel(QWidget):
                 if entry.terminal_reason:
                     detail = (detail + " " if detail else "") + entry.terminal_reason
                 item.setToolTip(3, detail)
-                item.setToolTip(1, entry.project_id)
+                item.setToolTip(1, getattr(entry, "project_name", ""))
                 if entry.is_active:
                     font = QFont(item.font(0))
                     font.setBold(True)

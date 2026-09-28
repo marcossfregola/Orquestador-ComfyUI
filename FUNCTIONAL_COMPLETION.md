@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** DECIDIDO — implementación no iniciada.  
+**Estado:** EN CURSO — F14.1 implementada técnicamente, pendiente de validación humana Windows.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -107,6 +107,10 @@ La implementación concreta de schema se decide tras inspección, pero un campo 
 ### Validación humana
 
 Smoke Windows corto: crear, renombrar, cerrar/reabrir, clonar y volver a seleccionar por nombre. No requiere generación real de video.
+
+### Estado de implementación F14.1
+
+La migración SQLite 7→8, los casos de uso de alta/renombrado, la asignación durable de nombre a clones y las proyecciones de Biblioteca/Cola están implementados y cubiertos por pruebas automáticas. La suite completa no está globalmente verde; la comparación reproducible contra el snapshot del baseline `c14aa524c770b994330a04c55e615bc110313fda` dio `NEW_REGRESSIONS=0`. El cierre de F14.1 queda pendiente hasta completar el smoke Windows indicado arriba. F14.2 no se inició.
 
 ---
 

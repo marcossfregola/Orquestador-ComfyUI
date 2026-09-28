@@ -223,6 +223,7 @@ class QueueOperationsUseCase:
                 target_execution,
                 queue_item_id=item_key,
                 expected_source_queue_item_id=source.id,
+                project_name_base=target_project.name,
             )
         except (CloneConfigurationError, PersistenceError, OSError, ValueError, TypeError, AttributeError) as exc:
             self._failure("duplicate", exc)

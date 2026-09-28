@@ -92,7 +92,10 @@ class CloneConfigurationUseCase:
         values = generation.to_mapping()
         values["initial_image"], values["references"] = inputs[0], inputs[1:]
 
-        target_project = Project(ProjectId(str(uuid4())))
+        target_project = Project(
+            ProjectId(str(uuid4())),
+            name=f"Copia de {project.name}",
+        )
         target_execution = Execution(
             target_project.id,
             ExecutionId(str(uuid4())),
@@ -114,7 +117,11 @@ class CloneConfigurationUseCase:
             source_project_id, source_execution_id
         )
         try:
-            self.repository.save(target_project, [target_execution])
+            self.repository.save_new_clone(
+                target_project,
+                [target_execution],
+                name_base=target_project.name,
+            )
         except PersistenceError as exc:
             raise CloneConfigurationError(f"clone persistence failed: {exc}") from exc
         if target_execution.execution_number is None:

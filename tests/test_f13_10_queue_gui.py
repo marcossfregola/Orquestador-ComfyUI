@@ -229,6 +229,24 @@ class F1310QtQueueTests(unittest.TestCase):
                 return item
         self.fail("queue item was not rendered")
 
+    def test_queue_row_uses_durable_project_name(self):
+        created = self.drafts.create_named(
+            "Archipiélago",
+            defaults={},
+            chunks=[{"prompt": "one"}, {"prompt": "two"}],
+        )
+        project_id = created.project_id
+        item = QueueOperationsUseCase(self.resources["repository"]).enqueue(
+            project_id, created.execution_id
+        )
+        panel = self.window.queue_panel
+        panel.refresh()
+        self.wait_for_worker()
+        rendered = self.select_queue_item(item.id)
+        self.assertEqual(rendered.text(1), "Archipiélago")
+        self.assertEqual(rendered.toolTip(1), "Archipiélago")
+        self.assertNotIn(project_id, rendered.text(1))
+
     def test_offscreen_enqueue_reorder_pause_and_open(self):
         self.window.show()
         self.app.processEvents()

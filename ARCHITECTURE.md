@@ -24,7 +24,7 @@ Define identidades, invariantes, estados y transiciones de `Project`, `Execution
 
 ### Persistencia
 
-SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 7; F13.0 añadió `QueueItem` y el control singleton de cola mediante migración incremental, F13.3 añadió defaults globales, F13.4 presets técnicos y F13.5 plantillas de chunks. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 8: F13.0 añadió `QueueItem` y el control singleton de cola, F13.3 defaults globales, F13.4 presets técnicos, F13.5 plantillas de chunks y F14.1 agregó el nombre humano durable de proyectos con migración incremental desde schema 7. La migración preserva IDs y evidencia existentes; el nombre y su clave NFC/casefold son únicos. Los renombres y la asignación transaccional de nombres de clone no cambian ejecuciones ni archivos. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
 
 ### ComfyUI y perfiles
 
@@ -106,7 +106,7 @@ Un item activo no se devuelve automáticamente a pendiente por timeout o reinici
 
 ### Clonación
 
-`Crear a partir de este` es un caso de uso, no una copia de filas. Lee configuración reutilizable de una ejecución fuente y crea `ProjectId`, `ExecutionId`, `ChunkId` y `execution_number` nuevos.
+`Crear a partir de este` es un caso de uso, no una copia de filas. Lee configuración reutilizable de una ejecución fuente y crea `ProjectId`, `ExecutionId`, `ChunkId` y `execution_number` nuevos. F14.1 asigna al proyecto el nombre durable `Copia de <nombre fuente>` y el primer sufijo disponible `(2)`, `(3)`, etc.; no persiste lineage.
 
 Copia por valor: profile, imagen inicial materializada, referencias, prompts, orden/cantidad de chunks, parámetros globales y overrides públicos. Puede reutilizar paths de inputs inmutables ya contenidos bajo la raíz; cualquier materialización nueva debe ser create-if-absent y transaccional.
 
@@ -140,7 +140,7 @@ El preset se materializa al aplicarse; no agrega un scope runtime permanente ent
 
 La biblioteca es una proyección de lectura y un conjunto de casos de uso. No accede a SQLite desde widgets. Lista proyectos/ejecuciones y deriva la presentación `draft`, `queued`, `running`, `succeeded`, `failed` o `cancelled` desde lifecycle + QueueItem, sin inventar un segundo estado persistido de ejecución.
 
-F13.6 expone esa proyección por `PreparationLibraryUseCase` → `GuiFacade` → worker Qt → panel Biblioteca. El panel presenta un identificador de proyecto legible y `execution_number` local; conserva las identidades técnicas internamente para la llamada de aplicación y no pide que la persona las escriba. F13.2 genera deliberadamente un `ProjectId` nuevo sin campo durable de nombre ni lineage: la sesión que crea el clone lo presenta como `Copia de <origen>` y una sesión posterior usa el fallback honesto `Proyecto generado`, sin convertir el UUID en identidad normal de usuario ni inventar persistencia. Crear borrador delega en `DraftUseCase` —por eso captura los Global Defaults vigentes sólo en el nuevo snapshot—, clonar delega en F13.2 y los controles de defaults, presets y plantillas delegan respectivamente en F13.3, F13.4 y F13.5. Cada operación abre su repositorio local al worker y lo cierra allí; no cruza una conexión SQLite ligada a la UI.
+F13.6 expone esa proyección por `PreparationLibraryUseCase` → `GuiFacade` → worker Qt → panel Biblioteca. Desde F14.1 cada `Project` tiene un nombre durable normalizado, único y separado del `ProjectId`; la Biblioteca lista y ordena por nombre, crea por nombre y ofrece renombrado administrativo. Las identidades técnicas permanecen internas para las llamadas de aplicación. Los clones conservan su nombre derivado `Copia de <origen>` tras reiniciar y usan sufijos deterministas si hace falta; no guardan lineage. Crear borrador delega en `DraftUseCase` —por eso captura los Global Defaults vigentes sólo en el nuevo snapshot—, clonar delega en F13.2 y los controles de defaults, presets y plantillas delegan respectivamente en F13.3, F13.4 y F13.5. Cada operación abre su repositorio local al worker y lo cierra allí; no cruza una conexión SQLite ligada a la UI.
 
 Una selección no editable sigue siendo consultable, pero el panel y el formulario principal reflejan el gate durable para impedir cambios estructurales si hay cola viva, runtime o evidencia. El gate definitivo continúa en los casos de uso y la persistencia; la Biblioteca no implementa operaciones manuales de cola, scheduler ni recovery, que se exponen exclusivamente en el panel `Cola` de F13.10 mediante la fachada.
 
@@ -150,7 +150,7 @@ La primera versión no incluye etiquetas, carpetas sofisticadas, búsqueda avanz
 
 F13.10 expone la cola durable como una proyección de aplicación: `QueueDashboardUseCase → GuiFacade → worker Qt → QueuePanel`. `QueuePanel` no accede a SQLite, ComfyUI ni al scheduler; el worker abre y cierra el repositorio por operación y la fachada devuelve snapshots/capabilities autoritativos. `Agregar a cola` acepta únicamente la identidad preparada e inmutable que ya pasó por el flujo normal de Prepare, por lo que no crea una segunda ruta de submit.
 
-Las operaciones de ordenar, quitar, saltar, duplicar, pausar y reanudar delegan en F13.7. El scheduler F13.8/F13.9 permanece fuera del hilo UI y sólo publica `SchedulerRuntimeStatus` de lectura; un `QTimer` refresca la proyección sin bloquear. Los estados globales y por fila se derivan de QueueItem, Execution, recovery y capabilities reales; no se inventan progreso, ETA ni éxito.
+Las operaciones de ordenar, quitar, saltar, duplicar, pausar y reanudar delegan en F13.7. Las filas consumen el nombre durable del proyecto y mantienen `ProjectId` como dato técnico interno. El scheduler F13.8/F13.9 permanece fuera del hilo UI y sólo publica `SchedulerRuntimeStatus` de lectura; un `QTimer` refresca la proyección sin bloquear. Los estados globales y por fila se derivan de QueueItem, Execution, recovery y capabilities reales; no se inventan progreso, ETA ni éxito.
 
 ## Propiedad de los datos
 

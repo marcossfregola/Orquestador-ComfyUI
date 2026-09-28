@@ -4,6 +4,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any,Mapping
 from uuid import uuid4
+from .project_names import initial_project_name
 import re, os
 class DomainError(ValueError): pass
 @dataclass(frozen=True)
@@ -68,8 +69,10 @@ def _map(v): return MappingProxyType(dict(v))
 def _uid(c): return field(default_factory=lambda:c(str(uuid4())))
 @dataclass
 class Project:
- id:ProjectId=_uid(ProjectId); defaults:Mapping[str,Any]=field(default_factory=dict)
- def __post_init__(self): self.defaults=_map(self.defaults)
+ id:ProjectId=_uid(ProjectId); defaults:Mapping[str,Any]=field(default_factory=dict); name:str|None=None
+ def __post_init__(self):
+  self.defaults=_map(self.defaults)
+  if self.name is None: self.name=initial_project_name(self.id)
 @dataclass
 class Attempt:
  id:AttemptId=_uid(AttemptId); number:int=1; state:Lifecycle=Lifecycle.PENDING; output:OutputRef|None=None; evidence:Evidence|None=None; error:ErrorRecord|None=None; external_job_ref:BackendJobRef|None=None

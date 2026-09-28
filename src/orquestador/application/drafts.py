@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from ..domain.core import Chunk, Execution, ExecutionId, Lifecycle, Project, ProjectId, WorkflowProfileRef, editable_virgin
 from ..domain.config import DEFAULT_PROFILE_REF, GenerationConfig, GenerationConfigError, GLOBAL_DEFAULT_KEYS, GlobalDefaults, SUPPORTED_PROFILE_REFS, merge_generation_mappings
+from ..domain.project_names import normalize_project_name
 from ..persistence.sqlite import PersistenceError
 
 
@@ -107,12 +108,21 @@ class DraftUseCase:
             dict(execution.defaults), tuple(dict(chunk.defaults) for chunk in execution.chunks),
         )
 
-    def create(self, project_id, *, defaults, chunks, execution_id=None):
+    def create(self, project_id, *, defaults, chunks, execution_id=None, project_name=None):
         project_key = self._id(project_id, "project")
         requested = None if execution_id is None else ExecutionId(self._id(execution_id, "execution"))
+        if project_name is None:
+            normalized_project_name = None
+        else:
+            try:
+                normalized_project_name, _ = normalize_project_name(project_name)
+            except ValueError as exc:
+                raise DraftError(str(exc)) from exc
         project, executions = self._load(project_key)
         if project is None:
-            project = Project(ProjectId(project_key))
+            project = Project(ProjectId(project_key), name=normalized_project_name)
+        elif normalized_project_name is not None:
+            raise DraftError("project name can only be assigned when creating a new project")
         if requested is not None and any(str(item.id) == str(requested) for item in executions):
             raise DraftError("execution id already belongs to this project")
         execution = Execution(project.id, requested or ExecutionId(str(uuid4())))
@@ -168,6 +178,20 @@ class DraftUseCase:
         except PersistenceError as exc:
             raise DraftError(f"draft create failed: {exc}") from exc
         return self._record(execution)
+
+    def create_named(self, project_name, *, defaults, chunks):
+        """Create a project under a fresh opaque id and its first draft."""
+        try:
+            display, _ = normalize_project_name(project_name)
+        except ValueError as exc:
+            raise DraftError(str(exc)) from exc
+        project_id = str(uuid4())
+        return self.create(
+            project_id,
+            defaults=defaults,
+            chunks=chunks,
+            project_name=display,
+        )
 
     def save(self, project_id, execution_id, *, defaults, chunks):
         project_key = self._id(project_id, "project")

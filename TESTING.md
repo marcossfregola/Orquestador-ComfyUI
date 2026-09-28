@@ -439,3 +439,30 @@ La suite completa se ejecutó diferencialmente con directorios temporales fresco
 Por lo tanto, la suite completa no está globalmente verde y esa deuda histórica no se oculta ni se declara resuelta; sí quedó demostrado que el gate no añadió failures/errors nuevos. Los dos skips corresponden a creación de symlink no disponible bajo privilegios Windows.
 
 No se ejecutaron en este cierre una cadena contra ComfyUI real, FFmpeg/FFprobe con binarios reales ni validación visual humana. Esas categorías permanecen separadas de la evidencia automática anterior.
+
+
+## F14.1 — nombre durable y renombrado de proyectos (2026-09-27)
+
+Migración implementada: schema 7→8 agrega `projects.name` y `projects.name_key` más índice único normalizado. La prueba de migración parte de una base schema 7 con IDs legibles, UUID y nombres que colisionan normalizados; confirma que mantiene los IDs/evidencia y asigna nombres iniciales deterministas con sufijos. Pruebas adicionales verifican creación con ID generado, normalización/conflicto, rename atómico con proyectos draft/queued/active/terminal sin cambio de ejecución/cola/attempts/artifacts/transitions/paths, reopen, clone durable y autosufijo, Biblioteca y Cola mostrando el nombre.
+
+Resultados focales:
+
+- `python -B -m unittest -v tests.test_f14_1_project_names` — **5 tests, OK**.
+- Regresión combinada — **147 tests, OK; 1 skip** (Windows no permitió crear el symlink de ese caso; su validación léxica sigue cubierta):
+
+```powershell
+$env:ORQ_TEST_TMP='C:\Codex\Orquestador-Test-Temp'; $env:PYTHONPATH='src'
+python -B -m unittest -v tests.test_f13_0_queue_contracts tests.test_f13_1_drafts tests.test_f13_2_clone_configuration tests.test_f13_3_global_defaults tests.test_f13_4_technical_presets tests.test_f13_5_chunk_templates tests.test_f13_6_library_gui tests.test_f13_7_queue_operations tests.test_f13_8_scheduler tests.test_f13_9_queue_recovery tests.test_f13_10_queue_gui tests.test_f13_10_retry_hotfix tests.test_f13_10_runtime_regression tests.test_persistence tests.test_f14_1_project_names
+```
+- `python -B -m compileall -q src tests` — **exit 0**.
+- `git diff --check` — **PASS**, sin errores de whitespace. Git mostró avisos informativos de conversión LF→CRLF configurada para Windows.
+
+Suite completa diferencial, ejecutada con `ORQ_TEST_TMP` fresco y `PYTHONPATH=src` mediante `python -B -m unittest discover -s tests -v`:
+
+- Reproducción desde snapshot limpio creado con `git archive` de `c14aa524c770b994330a04c55e615bc110313fda`, `ORQ_TEST_TMP=C:\Codex\Orquestador-Test-Temp\f14-baseline-20260927`: **778 tests en 63.722 s, 12 failures, 26 errors, 2 skipped**.
+- Implementación F14.1, `ORQ_TEST_TMP=C:\Codex\Orquestador-Test-Temp\f14-current-20260927`: **785 tests en 62.421 s, 8 failures, 5 errors, 2 skipped**.
+- Comparación de los identificadores exactos `FAIL`/`ERROR` del output verbose: **`NEW_REGRESSIONS=0`**; las 13 incidencias actuales ya aparecen en la reproducción del baseline.
+
+El agregado de la reproducción limpia del commit `c14aa...` no coincide con el agregado histórico publicado unas líneas arriba para el hotfix (**778 tests, 9 failures, 5 errors, 2 skipped**). Se conserva esa discrepancia explícita; para esta decisión se usó la repetición controlada del snapshot exacto y la comparación por identificador, sin declarar globalmente verde la suite ni resolver deuda histórica fuera de alcance.
+
+No hubo validación humana interactiva Windows, ejecución real de ComfyUI ni generación de video. Para cerrar F14.1, probar en Windows: crear un proyecto por nombre, renombrarlo, cerrar y reabrir la aplicación y confirmar persistencia, clonar y confirmar el nombre `Copia de <origen>`/autosufijo, y seleccionar ambos proyectos desde la Biblioteca por nombre visible. F14.1 queda pendiente de ese smoke; F14.2 no se inició.

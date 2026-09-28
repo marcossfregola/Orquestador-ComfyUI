@@ -331,7 +331,7 @@ class F137QueueOperationsTests(unittest.TestCase):
 
         self.repo = SQLiteProjectRepository(self.root)
         self.queue = QueueOperationsUseCase(self.repo)
-        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 7)
+        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 8)
         self.assertEqual(self.queue.read(item.id).execution_id, created.execution_id)
         self.assertTrue(self.queue.control().paused)
         self.assertFalse(self.queue.resume().paused)

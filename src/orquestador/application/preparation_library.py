@@ -13,6 +13,7 @@ from .clone_configuration import CloneConfigurationError, CloneConfigurationUseC
 from .drafts import DraftError, DraftUseCase
 from .global_defaults import GlobalDefaultsError, GlobalDefaultsUseCase
 from .technical_presets import TechnicalPresetError, TechnicalPresetsUseCase
+from ..persistence.sqlite import PersistenceError
 
 
 class PreparationLibraryError(ValueError):
@@ -30,12 +31,14 @@ class LibraryExecution:
     can_open: bool
     can_edit: bool
     can_clone: bool
+    project_name: str = ""
 
 
 @dataclass(frozen=True)
 class LibraryProject:
     project_id: str
     executions: tuple[LibraryExecution, ...]
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class LibrarySelection:
     can_open: bool
     can_edit: bool
     can_clone: bool
+    project_name: str = ""
 
 
 class PreparationLibraryUseCase:
@@ -92,7 +96,7 @@ class PreparationLibraryUseCase:
         return value.strip()
 
     @staticmethod
-    def _execution(item):
+    def _execution(item, project_name=""):
         classification = str(item.classification)
         # Opening is a read operation for every correctly projected row.
         # Editing remains exclusive to the existing, derived draft state.
@@ -106,6 +110,7 @@ class PreparationLibraryUseCase:
             True,
             classification == "draft",
             classification != "attention_required",
+            project_name,
         )
 
     @staticmethod
@@ -132,12 +137,17 @@ class PreparationLibraryUseCase:
         try:
             drafts = DraftUseCase(self.repository)
             by_project = drafts.list_projects()
+            project_records = self.repository.list_projects()
             projects = tuple(
                 LibraryProject(
-                    project_id,
-                    tuple(self._execution(item) for item in items),
+                    str(project.id),
+                    tuple(
+                        self._execution(item, project.name)
+                        for item in by_project.get(str(project.id), ())
+                    ),
+                    project.name,
                 )
-                for project_id, items in sorted(by_project.items())
+                for project in project_records
             )
             defaults = GlobalDefaultsUseCase(self.repository).read().to_mapping()
             presets = tuple(
@@ -156,6 +166,7 @@ class PreparationLibraryUseCase:
             )
         except (
             DraftError,
+            PersistenceError,
             GlobalDefaultsError,
             TechnicalPresetError,
             ChunkTemplateError,
@@ -171,12 +182,13 @@ class PreparationLibraryUseCase:
         execution_key = self._id(execution_id, "execution")
         try:
             rows = DraftUseCase(self.repository).list_project_executions(project_key)
+            project_name = self.repository.get_project_name(project_key)
             matches = [
-                self._execution(item)
+                self._execution(item, project_name)
                 for item in rows
                 if item.execution_id == execution_key
             ]
-        except (DraftError, OSError, TypeError, ValueError, AttributeError) as exc:
+        except (DraftError, PersistenceError, OSError, TypeError, ValueError, AttributeError) as exc:
             self._failure("selection", exc)
         if len(matches) != 1:
             raise PreparationLibraryError("library execution selection is missing or ambiguous")
@@ -189,6 +201,7 @@ class PreparationLibraryUseCase:
             item.can_open,
             item.can_edit,
             item.can_clone,
+            item.project_name,
         )
 
     def select(self, project_id, execution_id):
@@ -213,6 +226,25 @@ class PreparationLibraryUseCase:
             return self._selected_execution(created.project_id, created.execution_id)
         except (DraftError, OSError, TypeError, ValueError) as exc:
             self._failure("draft create", exc)
+
+    def create_named_draft(self, name):
+        """Create a named project with a generated opaque ProjectId."""
+        try:
+            created = DraftUseCase(self.repository).create_named(
+                name,
+                defaults={},
+                chunks=({"prompt": ""}, {"prompt": ""}),
+            )
+            return self._selected_execution(created.project_id, created.execution_id)
+        except (DraftError, OSError, TypeError, ValueError) as exc:
+            self._failure("named draft create", exc)
+
+    def rename_project(self, project_id, name):
+        project_key = self._id(project_id, "project")
+        try:
+            return self.repository.rename_project(project_key, name)
+        except (PersistenceError, OSError, TypeError, ValueError) as exc:
+            self._failure("project rename", exc)
 
     def clone(self, project_id, execution_id):
         """Create a fresh configuration-only draft through the canonical F13.2 case."""

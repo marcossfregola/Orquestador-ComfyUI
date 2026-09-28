@@ -52,6 +52,7 @@ class QueueDashboardEntry:
     can_remove: bool = False
     can_skip: bool = False
     can_duplicate: bool = False
+    project_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -159,7 +160,7 @@ class QueueDashboardUseCase:
             number = getattr(execution, "execution_number", None)
             if number is not None and type(number) is not int:
                 raise QueueDashboardError("queue execution number is invalid")
-            return project_id, execution_state, number
+            return project_id, project.name, execution_state, number
         except (
             PersistenceError,
             OSError,
@@ -196,7 +197,7 @@ class QueueDashboardUseCase:
                     runtime.reason
                     or "El item activo se está reconciliando antes de continuar.",
                 )
-            execution_state = contexts[active.id][1]
+            execution_state = contexts[active.id][2]
             if execution_state == "running":
                 return "running", "Hay una ejecución activa; no se iniciará otra."
             if execution_state in {"succeeded", "failed", "cancelled"}:
@@ -256,7 +257,7 @@ class QueueDashboardUseCase:
             queued_ids = tuple(record.id for record in queued)
             entries = []
             for record in records:
-                project_id, execution_state, execution_number = contexts[record.id]
+                project_id, project_name, execution_state, execution_number = contexts[record.id]
                 is_active = record.id == control.active_queue_item_id
                 presentation_state, detail = self._entry_presentation(
                     record, execution_state, dashboard_state, is_active
@@ -282,6 +283,7 @@ class QueueDashboardUseCase:
                         mutable,
                         mutable,
                         mutable,
+                        project_name,
                     )
                 )
             return QueueDashboardSnapshot(

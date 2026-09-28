@@ -243,17 +243,19 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ## F14 — Cierre funcional del producto actual
 
-**DECIDIDA — NO INICIADA.** Contrato detallado: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+**EN CURSO — F14.1 IMPLEMENTADA, PENDIENTE VALIDACIÓN HUMANA.** Contrato detallado: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
 
 F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
 
 ### F14.1 — Nombre durable y renombrado de proyectos
 
-**Estado:** NEXT — NO INICIADA.
+**Estado:** IMPLEMENTADA — PENDIENTE SMOKE HUMANO WINDOWS.
 
 Separar `ProjectId` técnico de un nombre humano durable. Crear por nombre con ID interno, renombrar sin alterar identidad/evidencia, seleccionar/reabrir por nombre, dar nombre durable a clones y migrar proyectos existentes sin pérdida.
 
 **Cierre:** pruebas focales + regresión F13 relevante + migración schema 7 + smoke Windows de create/rename/restart/clone + auditoría + aprobación.
+
+La implementación técnica y comparación diferencial están documentadas en [TESTING.md](TESTING.md). No declarar CLOSED antes del smoke; F14.2 continúa sin iniciar.
 
 ### F14.2 — Política de inicio de cola auto/manual
 

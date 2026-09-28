@@ -148,12 +148,7 @@ class PreparationLibraryPanel(QWidget):
         self._form_mode = "globals"
         self._busy = False
         self._rendering = False
-        # ProjectId is a technical key.  A normal user-facing row must not
-        # turn a clone's generated UUID into its apparent name.  The canonical
-        # F13.2 aggregate intentionally has no durable project-name field, so
-        # the source label is retained only for the current UI session.
-        self._project_labels = {}
-        self._pending_clone_source_label = None
+        self._project_names = {}
         self._pending_success_message = None
         self._focus_new_entry = False
         self._available = callable(getattr(facade, "library_snapshot", None))
@@ -183,15 +178,28 @@ class PreparationLibraryPanel(QWidget):
         self.selection_context.setWordWrap(True)
         work_form.addWidget(self.selection_context)
         create_row = QHBoxLayout()
-        create_row.addWidget(QLabel("Nuevo proyecto:"))
-        self.new_project_id = QLineEdit()
-        self.new_project_id.setObjectName("libraryNewProjectId")
-        self.new_project_id.setPlaceholderText("Nombre o identificador del nuevo proyecto")
+        create_row.addWidget(QLabel("Nombre del proyecto:"))
+        self.new_project_name = QLineEdit()
+        self.new_project_name.setObjectName("libraryNewProjectName")
+        self.new_project_name.setPlaceholderText("Nombre del proyecto")
+        # Kept as an attribute alias for older panel integrations; the field
+        # now accepts only a human name and never supplies a ProjectId.
+        self.new_project_id = self.new_project_name
         self.create_draft_button = QPushButton("Crear borrador")
         self.create_draft_button.setObjectName("libraryCreateDraftButton")
-        create_row.addWidget(self.new_project_id)
+        create_row.addWidget(self.new_project_name)
         create_row.addWidget(self.create_draft_button)
         work_form.addLayout(create_row)
+        rename_row = QHBoxLayout()
+        rename_row.addWidget(QLabel("Nombre durable seleccionado:"))
+        self.project_name_edit = QLineEdit()
+        self.project_name_edit.setObjectName("libraryProjectName")
+        self.project_name_edit.setPlaceholderText("Nombre del proyecto seleccionado")
+        self.rename_project_button = QPushButton("Renombrar proyecto")
+        self.rename_project_button.setObjectName("libraryRenameProjectButton")
+        rename_row.addWidget(self.project_name_edit)
+        rename_row.addWidget(self.rename_project_button)
+        work_form.addLayout(rename_row)
         self.execution_list = QListWidget()
         self.execution_list.setObjectName("libraryExecutionList")
         self.execution_list.setMinimumHeight(150)
@@ -340,11 +348,13 @@ class PreparationLibraryPanel(QWidget):
 
         self.execution_list.itemSelectionChanged.connect(self._execution_changed)
         self.execution_list.itemDoubleClicked.connect(lambda _item: self.open_selected())
-        self.new_project_id.textChanged.connect(lambda _text: self._update_controls())
+        self.new_project_name.textChanged.connect(lambda _text: self._update_controls())
+        self.project_name_edit.textChanged.connect(lambda _text: self._update_controls())
         self.preset_list.itemSelectionChanged.connect(self._preset_changed)
         self.template_list.itemSelectionChanged.connect(self._template_changed)
         self.refresh_button.clicked.connect(self.refresh)
         self.create_draft_button.clicked.connect(self.create_draft)
+        self.rename_project_button.clicked.connect(self.rename_project)
         self.open_button.clicked.connect(self.open_selected)
         self.clone_button.clicked.connect(self.clone_selected)
         self.save_globals_button.clicked.connect(self.save_global_defaults)
@@ -395,10 +405,12 @@ class PreparationLibraryPanel(QWidget):
             "attention_required": "Requiere revisión",
         }.get(str(classification), "Estado no disponible")
 
-    def display_project_name(self, project_id):
-        """Return presentation identity without leaking a generated UUID."""
-        if project_id in self._project_labels:
-            return self._project_labels[project_id]
+    def display_project_name(self, project_id, project_name=None):
+        """Return the durable display name without exposing its technical key."""
+        if isinstance(project_name, str) and project_name.strip():
+            return project_name
+        if project_id in self._project_names:
+            return self._project_names[project_id]
         if self._is_technical_uuid(project_id):
             return "Proyecto generado"
         return str(project_id).strip() or "Proyecto sin nombre"
@@ -407,7 +419,7 @@ class PreparationLibraryPanel(QWidget):
         if selection is None:
             return "ninguna"
         return (
-            f"Proyecto: {self.display_project_name(selection.project_id)} · "
+            f"Proyecto: {self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))} · "
             f"Ejecución {selection.execution_number} · "
             f"{self._state_label(selection.classification)}"
         )
@@ -604,6 +616,9 @@ class PreparationLibraryPanel(QWidget):
         if self._rendering:
             return
         self._selection = self._current_execution()
+        self.project_name_edit.setText(
+            "" if self._selection is None else getattr(self._selection, "project_name", "")
+        )
         self._update_selection_context()
         self._update_controls()
 
@@ -676,21 +691,25 @@ class PreparationLibraryPanel(QWidget):
         try:
             self.execution_list.clear()
             projects = list(snapshot.projects)
+            self._project_names = {
+                project.project_id: getattr(project, "name", "")
+                for project in projects
+            }
             if focus_new_entry and selected_execution is not None:
                 projects.sort(
                     key=lambda project: (
                         project.project_id != selected_execution.project_id,
-                        self.display_project_name(project.project_id).casefold(),
+                        self.display_project_name(project.project_id, getattr(project, "name", None)).casefold(),
                     )
                 )
             for project in projects:
                 if not project.executions:
                     self.execution_list.addItem(
-                        f"Proyecto: {self.display_project_name(project.project_id)} · sin ejecuciones"
+                        f"Proyecto: {self.display_project_name(project.project_id, getattr(project, 'name', None))} · sin ejecuciones"
                     )
                 for execution in project.executions:
                     text = (
-                        f"Proyecto: {self.display_project_name(project.project_id)} · "
+                        f"Proyecto: {self.display_project_name(project.project_id, getattr(project, 'name', None))} · "
                         f"Ejecución {execution.execution_number} · "
                         f"{self._state_label(execution.classification)}"
                     )
@@ -705,6 +724,7 @@ class PreparationLibraryPanel(QWidget):
                             execution.can_open,
                             execution.can_edit,
                             execution.can_clone,
+                            getattr(execution, "project_name", getattr(project, "name", "")),
                         ),
                     )
                     self.execution_list.addItem(item)
@@ -726,6 +746,8 @@ class PreparationLibraryPanel(QWidget):
                 self._selection = execution_item.data(Qt.UserRole)
             else:
                 self._selection = None
+            if self._selection is not None:
+                self.project_name_edit.setText(getattr(self._selection, "project_name", ""))
             preset_item = self._find_data_item(self.preset_list, selected_preset)
             if preset_item is not None:
                 self.preset_list.setCurrentItem(preset_item)
@@ -763,12 +785,8 @@ class PreparationLibraryPanel(QWidget):
         if not isinstance(result, LibraryOperationResult):
             self.show_error("resultado inesperado de la Biblioteca")
             return
-        if result.success and result.selection is not None and self._pending_clone_source_label:
-            self._project_labels[result.selection.project_id] = (
-                f"Copia de {self._pending_clone_source_label}"
-            )
+        if result.success and result.selection is not None:
             self._focus_new_entry = True
-        self._pending_clone_source_label = None
         if result.selection is not None:
             self._selection = result.selection
         if result.library is not None:
@@ -784,7 +802,6 @@ class PreparationLibraryPanel(QWidget):
 
     def show_error(self, message):
         self._pending_success_message = None
-        self._pending_clone_source_label = None
         self._focus_new_entry = False
         detail = str(message).strip()
         self.status.setText("Error en Biblioteca" + (f": {detail}" if detail else ""))
@@ -802,22 +819,37 @@ class PreparationLibraryPanel(QWidget):
         )
 
     def create_draft(self):
-        project_id = self.new_project_id.text().strip()
-        if not project_id:
-            self.show_error("indicá un nombre o identificador para el nuevo proyecto")
+        name = self.new_project_name.text().strip()
+        if not name:
+            self.show_error("indicá un nombre para el nuevo proyecto")
             return
         self._focus_new_entry = True
         self._dispatch(
-            lambda: self.facade.create_library_draft(project_id),
+            lambda: self.facade.create_named_library_draft(name),
             "library_create_draft",
             "Borrador creado",
+        )
+
+    def rename_project(self):
+        selection = self._current_execution()
+        if selection is None:
+            return
+        name = self.project_name_edit.text().strip()
+        if not name:
+            self.show_error("indicá un nombre para el proyecto")
+            return
+        self._dispatch(
+            lambda: self.facade.rename_library_project(
+                selection.project_id, name, selection.execution_id
+            ),
+            "library_project_rename",
+            "Proyecto renombrado",
         )
 
     def clone_selected(self):
         selection = self._current_execution()
         if selection is None or not selection.can_clone:
             return
-        self._pending_clone_source_label = self.display_project_name(selection.project_id)
         self._focus_new_entry = True
         self._dispatch(
             lambda: self.facade.clone_library_execution(
@@ -994,9 +1026,17 @@ class PreparationLibraryPanel(QWidget):
         preset_id = self._current_preset_id()
         template_id = self._current_template_id()
         self.refresh_button.setEnabled(self._available and not self._busy)
-        self.new_project_id.setEnabled(self._available and not self._busy)
+        self.new_project_name.setEnabled(self._available and not self._busy)
         self.create_draft_button.setEnabled(
-            self._available and not self._busy and bool(self.new_project_id.text().strip())
+            self._available and not self._busy and bool(self.new_project_name.text().strip())
+        )
+        self.project_name_edit.setEnabled(ready and selection is not None)
+        self.rename_project_button.setEnabled(
+            ready
+            and selection is not None
+            and bool(self.project_name_edit.text().strip())
+            and self.project_name_edit.text().strip()
+            != getattr(selection, "project_name", "")
         )
         self.execution_list.setEnabled(loaded and not self._busy)
         self.open_button.setEnabled(ready and selection is not None and selection.can_open)

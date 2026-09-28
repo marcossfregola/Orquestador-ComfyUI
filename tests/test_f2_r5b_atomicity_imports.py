@@ -32,7 +32,7 @@ class MigrationAtomicityTests(unittest.TestCase):
             repo.db.execute("DROP TABLE transitions_v2")
             repo.db.execute("UPDATE schema_version SET version=1")
             repo.db.commit()
-            repo.db.execute("INSERT INTO projects VALUES ('sentinel','{}')")
+            repo.db.execute("INSERT INTO projects(id,defaults,name,name_key) VALUES ('sentinel','{}','sentinel','sentinel')")
             repo.db.commit()
 
             def failing(conn):
@@ -51,7 +51,7 @@ class MigrationAtomicityTests(unittest.TestCase):
             repo.close()
             repo = None
             reopened = SQLiteProjectRepository(d)
-            self.assertEqual(reopened.db.execute("SELECT version FROM schema_version").fetchone()[0], 2)
+            self.assertEqual(reopened.db.execute("SELECT version FROM schema_version").fetchone()[0], 8)
             self.assertEqual(reopened.db.execute("SELECT defaults FROM projects WHERE id='sentinel'").fetchone()[0], "{}")
             reopened.close()
 

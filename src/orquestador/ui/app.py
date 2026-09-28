@@ -271,7 +271,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         """
 
         _operations = frozenset({
-            "snapshot", "select", "create_draft", "clone", "update_global_defaults",
+            "snapshot", "select", "create_draft", "create_named_draft", "rename_project", "clone", "update_global_defaults",
             "create_preset", "update_preset", "rename_preset", "delete_preset",
             "set_default_preset", "clear_default_preset", "apply_preset",
             "create_template", "update_template", "rename_template",

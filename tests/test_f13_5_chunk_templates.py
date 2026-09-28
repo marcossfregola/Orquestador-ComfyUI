@@ -236,7 +236,7 @@ class F135ChunkTemplateTests(unittest.TestCase):
         self.repo = SQLiteProjectRepository(self.root)
         self.templates = ChunkTemplatesUseCase(self.repo)
         self.drafts = DraftUseCase(self.repo)
-        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 7)
+        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 8)
         self.assertEqual(
             [row[1] for row in self.repo.db.execute("PRAGMA table_info(chunk_templates)")],
             ["id", "name", "name_key", "prompts", "template_version", "created_at", "updated_at"],

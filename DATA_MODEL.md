@@ -1,12 +1,12 @@
 # Modelo de dominio
 
-Este documento es la autoridad de semántica, relaciones, estados e invariantes. Distingue explícitamente lo implementado de lo decidido para F13.
+Este documento es la autoridad de semántica, relaciones, estados e invariantes. Distingue explícitamente lo implementado de lo decidido para F14.
 
 ## Modelo implementado en HEAD auditado
 
 ### Project
 
-Implementado como `ProjectId` global + mapping `defaults`. El código actual no posee nombre, timestamps, carpeta por proyecto ni lifecycle propio. Un proyecto agrupa una o más ejecuciones.
+Implementado como `ProjectId` global e inmutable, mapping `defaults` y nombre humano durable `name`. `name_key` guarda la forma NFC + `casefold()` usada para unicidad; el nombre mostrado conserva NFC luego de quitar espacios externos. Un proyecto no tiene timestamps, carpeta ni lifecycle propio y agrupa una o más ejecuciones. Renombrar sólo actualiza `name`/`name_key`: no modifica IDs, ejecuciones, numeración, cola ni evidencia.
 
 ### Execution
 
@@ -230,7 +230,7 @@ La UI no agrega una tabla ni un lifecycle paralelo: `QueueDashboardUseCase` lee 
 
 ## Persistencia y compatibilidad
 
-SQLite está en schema 7. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets` y F13.5 añadió en schema 7 `chunk_templates`; ninguna de esas migraciones reescribe Project, Execution, Chunk, Attempt ni evidencia histórica. F13.7 y F13.8 no requieren una nueva migración: las columnas, índices y control de schema 4 contienen los datos necesarios para operaciones manuales, claim y finalización. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
+SQLite está en schema 8. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets`, F13.5 añadió en schema 7 `chunk_templates` y F14.1 añadió `projects.name`, `projects.name_key` y su índice único normalizado mediante migración 7→8. Para proyectos preexistentes conserva `ProjectId`: IDs legibles pasan a ser nombre inicial; UUIDs reciben `Proyecto generado <primeros 8 caracteres hexadecimales>`. Si nombres colisionan tras normalizar, asigna `(2)`, `(3)`, etc. de forma determinista. La migración sólo completa los campos nuevos y no reescribe Execution, Chunk, Attempt ni evidencia histórica. F13.7 y F13.8 no requirieron migración: las columnas, índices y control existentes contienen los datos para operaciones manuales, claim y finalización. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 

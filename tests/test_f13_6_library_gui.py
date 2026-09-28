@@ -221,6 +221,23 @@ class F136QtLibraryTests(unittest.TestCase):
                 return item
         self.fail("execution was not rendered")
 
+    def test_project_rename_button_preserves_selection_and_ids(self):
+        panel = self.window.library_panel
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+        self.select_execution("visible-project", self.draft.execution_id)
+        project_id = panel._current_execution().project_id
+        panel.project_name_edit.setText("Playa al atardecer")
+        self.assertTrue(panel.rename_project_button.isEnabled())
+        panel.rename_project_button.click()
+        self.wait_for_worker()
+        self.assertEqual(self.resources["repository"].get_project_name(project_id), "Playa al atardecer")
+        self.assertEqual(panel._current_execution().project_id, project_id)
+        self.assertEqual(panel._current_execution().execution_id, self.draft.execution_id)
+        self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
+        self.assertIn("Proyecto: Playa al atardecer", panel.execution_list.currentItem().text())
+
     def test_offscreen_wiring_selection_editability_clone_and_saved_configuration(self):
         panel = self.window.library_panel
         self.window.resize(1280, 900)
@@ -261,9 +278,12 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertTrue(panel.create_draft_button.isEnabled())
         panel.create_draft_button.click()
         self.wait_for_worker()
+        new_project_id = self.window.project.text()
         new_draft_id = self.window.execution.text()
+        self.assertNotEqual(new_project_id, "new-visible-project")
         self.assertTrue(new_draft_id)
-        created = self.drafts.reopen("new-visible-project", new_draft_id)
+        created = self.drafts.reopen(new_project_id, new_draft_id)
+        self.assertEqual(self.resources["repository"].get_project_name(new_project_id), "new-visible-project")
         self.assertEqual(created.defaults["steps"], before_globals["steps"])
         self.assertEqual(self.window.initial.text(), "")
         self.select_execution("visible-project", self.draft.execution_id)
@@ -353,17 +373,18 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertTrue(self.window.project.isHidden())
         self.app.processEvents()
         self.assertEqual(panel.scroll_area.verticalScrollBar().value(), 0)
-        # Clone lineage is intentionally not a new durable Project field.  A
-        # fresh presentation still hides the generated ProjectId rather than
-        # making it the normal identity.
-        panel._project_labels.clear()
+        # The clone name is durable, while lineage remains intentionally
+        # absent. A fresh presentation hides the generated ProjectId.
+        panel._project_names.clear()
         panel.render(PreparationLibraryUseCase(self.resources["repository"]).snapshot())
         self.assertNotIn(clone_project_id, panel.execution_list.currentItem().text())
-        self.assertIn("Proyecto generado", panel.execution_list.currentItem().text())
+        self.assertIn("Copia de visible-project", panel.execution_list.currentItem().text())
         self.window._project_display_names.clear()
+        selected_clone = panel._current_execution()
+        self.window._project_display_names[selected_clone.project_id] = selected_clone.project_name
         self.window.render(self.facade.refresh(clone_project_id, clone_id))
         self.assertNotIn(clone_project_id, self.window.current_context.text())
-        self.assertIn("Proyecto generado", self.window.current_context.text())
+        self.assertIn("Copia de visible-project", self.window.current_context.text())
 
         QueueOperationsUseCase(self.resources["repository"]).enqueue(
             "visible-project", self.draft.execution_id
