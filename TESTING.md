@@ -510,3 +510,21 @@ Suite diferencial completa (`python -B -m unittest discover -s tests -v`), usand
 - Comparación exacta de IDs `FAIL`/`ERROR`: baseline **37**, árbol corregido **13**, los 13 ya existen en el baseline y **`NEW_REGRESSIONS=0`**. Se resolvieron 24 IDs del baseline. La suite global no queda verde; no se cambiaron sus fallos históricos ajenos al alcance.
 
 El smoke humano Windows sigue pendiente: (1) seleccionar un source; (2) pulsar `Crear a partir de esta` y comprobar que aparece `Nombre del nuevo proyecto` antes de crear; (3) cancelar y confirmar que no aparece ninguna copia; (4) repetir, ingresar un nombre único distinto y confirmar; (5) comprobar que source y clone aparecen simultáneamente y que ambos pueden abrirse; (6) verificar que el clone está seleccionado y se puede editar; (7) cerrar/reabrir la aplicación y comprobar que ambos nombres siguen presentes. No se ejecutó ComfyUI real ni se generó video. F14.1 permanece pendiente de este smoke; F14.2 no se inició.
+
+
+## F14.1 — validación humana Windows y cierre (2026-09-28)
+
+Validación humana final **APROBADA** sobre `origin/main` con la implementación publicada en `796d9afba88a1685b163c6bd85064c08de10420c`.
+
+Se comprobó en la aplicación real:
+
+- creación/renombrado de proyecto y persistencia del nombre;
+- `Crear a partir de esta` solicita `Nombre del nuevo proyecto` antes de crear;
+- cancelar el diálogo no crea una copia;
+- confirmar con un nombre distinto crea un Project/Execution independiente;
+- source y clone coexisten en Biblioteca y pueden abrirse por separado;
+- tras cerrar y reabrir la aplicación persisten ambos nombres y el source original permanece intacto.
+
+Esta evidencia humana complementa, pero no reemplaza, las pruebas automáticas ya registradas. La suite completa conserva failures/errors históricos y no se declara globalmente verde; la comparación diferencial de F14.1 dio `NEW_REGRESSIONS=0`.
+
+**Decisión:** F14.1 CLOSED — APROBADA. F14.2 no había sido iniciada al momento de este cierre.

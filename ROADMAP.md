@@ -243,23 +243,23 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ## F14 — Cierre funcional del producto actual
 
-**EN CURSO — F14.1 IMPLEMENTADA, PENDIENTE VALIDACIÓN HUMANA.** Contrato detallado: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+**EN CURSO — F14.1 CLOSED; F14.2 NEXT.** Contrato detallado: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
 
 F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
 
 ### F14.1 — Nombre durable y renombrado de proyectos
 
-**Estado:** CORRECCIÓN TÉCNICA IMPLEMENTADA; PENDIENTE SMOKE HUMANO WINDOWS.
+**Estado:** CLOSED — APROBADA.
 
 Separar `ProjectId` técnico de un nombre humano durable. Crear por nombre con ID interno, renombrar sin alterar identidad/evidencia, seleccionar/reabrir por nombre, dar nombre durable a clones y migrar proyectos existentes sin pérdida.
 
 **Cierre:** pruebas focales + regresión F13 relevante + migración schema 7 + smoke Windows de create/rename/restart/clone + auditoría + aprobación.
 
-Biblioteca pide el nombre antes de crear y guarda el clone con ese nombre dentro de la misma transacción; cancelar no produce filas. La duplicación de cola conserva su autosufijo. Las pruebas y la comparación diferencial están en [TESTING.md](TESTING.md). No declarar CLOSED antes del smoke; F14.2 continúa sin iniciar.
+Biblioteca pide el nombre antes de crear y guarda el clone con ese nombre dentro de la misma transacción; cancelar no produce filas. La duplicación de cola conserva su autosufijo. La implementación, pruebas, auditoría y validación humana Windows quedaron aprobadas. F14.2 pasa a ser la próxima slice.
 
 ### F14.2 — Política de inicio de cola auto/manual
 
-**Estado:** PLANNED — NO INICIADA.
+**Estado:** NEXT — NO INICIADA.
 
 Conservar el autoarranque existente y agregar modo manual por sesión: abrir la aplicación no reclama ni envía trabajo nuevo hasta `Iniciar/Reanudar cola`. La política no sustituye la pausa durable y no cancela active/running.
 

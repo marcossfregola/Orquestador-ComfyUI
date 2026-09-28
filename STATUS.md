@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-28
-**Baseline publicado de producción:** `54695cd0458e1d385aed7995d8d337bfb6447792`; `main` incluye el fast-forward documental `2b4c14236b27e1ea99559aa2ccc769c20fed904c` previo a esta corrección.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**. La corrección técnica F14.1 ahora pide y valida el nombre antes de persistir el clone; crea source y clone como proyectos independientes y cancela sin escrituras. **Pendiente únicamente el smoke humano Windows** antes del cierre formal. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
+**Baseline publicado vigente:** `origin/main` en `796d9afba88a1685b163c6bd85064c08de10420c`; Git es la autoridad del SHA vigente.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 está **CLOSED — APROBADO**. **F14.1 queda CLOSED — APROBADA**, incluida validación humana Windows del flujo create/rename/restart y `Crear a partir de esta` con nombre previo, cancelación sin escrituras, coexistencia source+clone y persistencia tras reinicio. **F14.2 es la próxima slice, todavía NO INICIADA.** F11.6 (pulido visual/UX) sigue pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -59,7 +59,7 @@ Orden aprobado:
 
 F11.6 permanece **OPEN — NO INICIADA**, expresamente pospuesta por decisión de producto hasta cerrar F14. No se agregan características nuevas ni pulido visual dentro de F14.
 
-F14.2 continúa **PLANNED — NO INICIADA**. El smoke humano pendiente de F14.1 debe comprobar que la UI solicita `Nombre del nuevo proyecto` antes de persistir, que cancelar no crea registros, que un nombre confirmado aparece junto al source, que ambos se pueden abrir y que sobreviven el reinicio. No iniciar generación de video.
+F14.2 continúa **NEXT — NO INICIADA**. Su contrato está definido en `FUNCTIONAL_COMPLETION.md`; no existe todavía implementación de política auto/manual.
 
 ## Alcance y evidencia no ejercitada en el cierre F13.6
 
@@ -93,3 +93,21 @@ La validación humana aclaró el contrato definitivo de `Crear a partir de esta`
 8. `Renombrar proyecto` conserva su función administrativa separada para proyectos ya existentes.
 
 La UI ahora solicita el nombre antes del dispatch; la frontera de aplicación lo entrega al clone canónico y SQLite normaliza, verifica unicidad mediante el índice durable y persiste el proyecto con ejecución/chunks en una transacción. Cancelar retorna antes de llamar al caso de uso. La ruta de duplicación de cola mantiene el nombre automático con sufijo. Las pruebas y la comparación diferencial están registradas en [TESTING.md](TESTING.md). No se acepta “crear copia automática → renombrarla después”. F14.1 sigue pendiente del smoke humano indicado allí; F14.2 permanece NO INICIADA.
+
+
+### Cierre F14.1 — validación humana aprobada
+
+**Estado:** CLOSED — APROBADA.
+
+Validación humana Windows completada el 2026-09-28 sobre el commit de implementación `796d9afba88a1685b163c6bd85064c08de10420c`:
+
+- el proyecto existente conserva su nombre al renombrar y tras reiniciar;
+- `Crear a partir de esta` solicita `Nombre del nuevo proyecto` **antes** de persistir;
+- cancelar no crea ninguna copia;
+- confirmar un nombre nuevo crea un segundo proyecto independiente;
+- source y clone quedan simultáneamente visibles y seleccionables;
+- ambos pueden abrirse por separado;
+- cerrar y reabrir la aplicación conserva ambos nombres;
+- el source permanece intacto y el clone es un proyecto independiente.
+
+Con la evidencia automática previa (`NEW_REGRESSIONS=0`) y esta validación humana, F14.1 queda cerrada. F14.2 pasa a ser la próxima slice, todavía no iniciada.

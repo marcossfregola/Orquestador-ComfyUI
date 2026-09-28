@@ -4,115 +4,124 @@ Este archivo es un handoff operativo. Si hay conflicto, prevalecen `RULES.md`, `
 
 ## Próxima tarea
 
-**F14.1 — corregir definitivamente `Crear a partir de esta`: preservar source y crear un proyecto nuevo con nombre elegido antes de persistir.**
+**F14.2 — Política durable de inicio de cola automática/manual.**
 
-Baseline publicado de producción: `54695cd0458e1d385aed7995d8d337bfb6447792`, más el commit documental posterior si `main` avanzó sólo en docs.
+F14.1 está **CLOSED — APROBADA** y no debe reabrirse salvo regresión demostrada.
 
-F14.2 NO está autorizada.
+Baseline de partida: `origin/main` en `796d9afba88a1685b163c6bd85064c08de10420c` o un commit documental posterior que no cambie producción.
 
-## Aclaración de producto vinculante
+## Objetivo
 
-El comportamiento deseado NO es:
-
-```
-source → crear copia automática → seleccionar copia → renombrarla
-```
-
-El comportamiento correcto es:
-
-```
-source
-→ Crear a partir de esta
-→ pedir "Nombre del nuevo proyecto"
-→ la persona escribe/confirma el nombre
-→ recién entonces crear un segundo Project independiente
-→ source y nuevo proyecto quedan ambos en Biblioteca
-→ seleccionar/abrir el nuevo proyecto para empezar a trabajar
-```
-
-Ejemplo:
-
-```
-Martina - Playa
-   ↓ Crear a partir de esta
-Nombre del nuevo proyecto: [ Martina - Playa noche ]
-   ↓ Confirmar
-
-Biblioteca:
-- Martina - Playa
-- Martina - Playa noche
-```
-
-El source no se renombra, no se reemplaza y no desaparece.
+Conservar el comportamiento actual `auto` y agregar una política durable `manual` para que la aplicación pueda abrirse, inspeccionar Biblioteca/Cola y no reclamar ni enviar nuevos trabajos hasta una acción explícita de la persona.
 
 ## Contrato obligatorio
 
-- Source: mismo `ProjectId`, nombre, ejecuciones, runtime, cola y evidencia antes/después.
-- Clone: `ProjectId`, `ExecutionId` y `ChunkId` nuevos según F13.2.
-- La UI solicita el nombre **antes de crear/persistir** el clone.
-- Puede aparecer una sugerencia editable `Copia de <source>` o el siguiente nombre disponible.
-- Confirmar un nombre válido y único crea el clone atómicamente con ese nombre.
-- Cancelar/cerrar el prompt no crea ningún Project/Execution/chunk/archivo/QueueItem.
-- Un conflicto normalizado de nombre falla claramente sin clone parcial.
-- Tras éxito, source y clone deben coexistir en Biblioteca y el clone nuevo debe quedar seleccionado/abierto para continuar trabajando.
-- `Renombrar proyecto` sigue siendo una operación separada para cambiar el nombre de un proyecto ya existente.
-- No convertir el flujo en create-then-rename internamente: el nombre pedido debe formar parte de la operación atómica de creación.
-- Queue duplicate puede conservar su política automática existente salvo que compartir la firma del caso de uso exija un cambio interno compatible; no agregar diálogos a Cola en esta corrección.
-- No mover archivos, tocar outputs, runtime, attempts, artifacts, transitions ni recovery.
-- No rediseñar Biblioteca fuera de lo mínimo necesario.
+- Política durable: `auto | manual`.
+- Default: `auto` para preservar comportamiento existente.
+- `auto`: scheduler conserva la conducta actual.
+- `manual`: cada arranque de la app inicia con permiso de despacho **cerrado**.
+- En manual, abrir la app no puede reclamar un nuevo `QueueItem` ni producir un submit nuevo.
+- Acción explícita `Iniciar/Reanudar cola` abre el permiso de despacho de **esa sesión**.
+- El permiso de sesión manual NO sobrevive al reinicio.
+- La política durable sí sobrevive al reinicio.
+- Política manual y `queue_control.paused` son conceptos distintos. No reutilizar `paused`.
+- Cambiar a manual nunca cancela un item active/running.
+- Recovery puede inspeccionar/reconciliar evidencia existente de forma segura, pero manual no autoriza nuevos claims/submits hasta permiso explícito.
+- Un active sobreviviente no puede duplicarse.
+- No agregar `/interrupt`.
+- No crear una segunda ruta de submit; el scheduler debe seguir entrando por las fronteras existentes.
+- UI mínima funcional; F11.6 sigue fuera de alcance.
+
+## Antes de editar
+
+1. Trabajar sólo en `C:\Codex\Orquestador-ComfyUI`.
+2. `git fetch origin` + `git pull --ff-only`.
+3. Verificar rama, HEAD/origin, status limpio, staging/untracked y `git diff --check`.
+4. Leer autoridades completas y luego inspeccionar:
+   - scheduler F13.8/F13.9;
+   - `queue_control` y persistencia schema 8;
+   - composition/runtime startup;
+   - `QueueDashboardUseCase` / `QueuePanel`;
+   - app startup/shutdown;
+   - tests F13.7–F13.10.
+5. Diagnosticar dónde debe vivir:
+   - política durable;
+   - gate de sesión manual;
+   - acción UI que abre el gate;
+   - comportamiento recovery vs claim nuevo.
+6. Documentar qué cambia y qué NO cambia antes de implementar.
 
 ## Diseño esperado
 
-Inspeccionar antes de decidir, pero preferir:
+Elegir el mínimo modelo correcto tras inspección. Preferencias:
 
-1. una frontera de aplicación de clone que pueda recibir un `target_name` explícito;
-2. persistencia atómica del nuevo Project + Execution con ese nombre;
-3. ruta automática existente para duplicación de cola preservada mediante nombre sugerido/autogenerado cuando no hay interacción humana;
-4. en Biblioteca, un diálogo/modal pequeño o mecanismo equivalente claro de `Nombre del nuevo proyecto`, con sugerencia editable;
-5. ningún registro durable antes de aceptar el nombre.
+- persistir la política en una autoridad durable explícita y versionada;
+- si requiere schema nuevo, migración incremental desde schema 8;
+- mantener el permiso de despacho manual como estado **de proceso/sesión**, no durable;
+- el scheduler consulta ambas autoridades antes de un claim nuevo;
+- recovery de active existente se mantiene separado del permiso para nuevo dispatch;
+- UI expone política `Automático / Manual` y una acción clara `Iniciar/Reanudar cola` cuando corresponde.
 
-No acceder a SQLite desde el widget.
+No almacenar la política en widgets ni acceder SQLite directamente desde UI.
 
-## Trabajo requerido
+## Pruebas obligatorias
 
-1. `git fetch origin`, `git pull --ff-only`, baseline limpio y `git diff --check`.
-2. Leer autoridades y revisar flujo F13.2/F14.1 actual.
-3. Agregar primero pruebas que demuestren:
-   - source permanece intacto;
-   - cancelación crea cero proyectos nuevos;
-   - nombre explícito se usa al crear el clone;
-   - conflicto no deja clone parcial;
-   - source + clone quedan ambos listados;
-   - clone queda seleccionado/abrible/editable después de confirmar;
-   - restart conserva ambos nombres;
-   - cola duplicate sigue funcionando.
-4. Implementar la corrección mínima y atómica.
-5. Eliminar o simplificar la solución específica de foco sólo si queda obsoleta; no conservar complejidad sin necesidad. Si sigue siendo útil tras confirmar el nombre, justificarla con test.
-6. Ejecutar focales F14.1, F13.2, F13.6, F13.7/F13.10 afectados, persistencia, `compileall`, `git diff --check` y suite completa diferencial.
-7. `NEW_REGRESSIONS` debe ser 0.
-8. Actualizar docs según implementación real, dejando F14.1 pendiente de smoke humano final.
-9. Si todo queda correcto, queda autorizado un único commit lógico y push normal a `origin/main`; sin force/tag/release.
-10. Detenerse. No iniciar F14.2.
+Cubrir como mínimo:
 
-## Smoke humano posterior esperado
+1. migración/persistencia de `auto | manual`;
+2. default `auto` conserva F13.10;
+3. manual cold start con cola vacía;
+4. manual cold start con items queued: cero claim y cero submit;
+5. acción explícita en manual habilita scheduler normal;
+6. reinicio vuelve a cerrar el permiso de sesión manual;
+7. política manual durable persiste;
+8. active sobreviviente se reconcilia sin doble submit;
+9. cambiar auto→manual con active no cancela ni interrumpe;
+10. pausa durable y política manual no se confunden;
+11. pause/resume conserva semántica;
+12. no doble claim/submit;
+13. Qt offscreen de controles mínimos;
+14. regresión F13.7/F13.8/F13.9/F13.10;
+15. `python -B -m compileall -q src tests`;
+16. `git diff --check`;
+17. suite completa diferencial contra baseline. Cualquier failure/error nuevo bloquea.
 
-Sólo después de la implementación:
+No arreglar deuda histórica fuera de alcance.
 
-1. seleccionar un source;
-2. pulsar `Crear a partir de esta`;
-3. comprobar que se pide `Nombre del nuevo proyecto` antes de crear nada;
-4. cancelar una vez y verificar que no apareció copia;
-5. repetir, escribir un nombre distinto y confirmar;
-6. comprobar que source y nuevo proyecto aparecen simultáneamente;
-7. abrir ambos;
-8. cerrar/reabrir app y confirmar persistencia de ambos nombres.
+## Documentación
 
-## Evidencia requerida
+Actualizar según implementación real:
 
-- causa/diseño elegido;
+- `ARCHITECTURE.md`;
+- `DATA_MODEL.md`;
+- `FUNCTIONAL_COMPLETION.md`;
+- `ROADMAP.md`;
+- `STATUS.md`;
+- `TESTING.md`;
+- `CODEX_TASK.md` sólo al finalizar si corresponde.
+
+## Commit/push
+
+Si la implementación y pruebas quedan correctas con `NEW_REGRESSIONS=0`, queda autorizado:
+
+- un único commit lógico de F14.2;
+- push normal a `origin/main`;
+- sin force, tag ni release.
+
+Detenerse después del push. **No iniciar F14.3.**
+
+Si requiere validación humana Windows, dejar F14.2 pendiente y entregar instrucciones exactas; no declararla CLOSED.
+
+## Evidencia final requerida
+
+- baseline y SHA final;
+- diagnóstico y modelo durable elegido;
 - archivos modificados;
-- pruebas de atomicidad/cancelación/source intacto;
-- resultados focales;
-- diferencial completo con `NEW_REGRESSIONS=0`;
-- SHA commit/push;
-- confirmación F14.2 no iniciada.
+- migración si corresponde;
+- evidencia exacta de auto/manual, restart, active/recovery y pause interaction;
+- comandos/resultados de pruebas;
+- comparación completa `NEW_REGRESSIONS=0` o detalle;
+- aspectos no verificados;
+- commit/push;
+- smoke humano requerido;
+- confirmación F14.3 no iniciada.

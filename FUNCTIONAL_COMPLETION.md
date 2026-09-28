@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — corrección técnica F14.1 implementada, pendiente del smoke humano Windows.
+**Estado:** EN CURSO — F14.1 CLOSED; F14.2 NEXT — NO INICIADA.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -117,9 +117,21 @@ Smoke Windows corto: crear y renombrar un proyecto; cerrar/reabrir; seleccionar 
 
 ### Estado de implementación F14.1
 
-La migración SQLite 7→8, alta/renombrado y proyecciones por nombre están implementadas. La corrección cambia Biblioteca para pedir `Nombre del nuevo proyecto` antes de despachar la creación; el caso de uso F13.2 recibe el nombre explícito y SQLite lo normaliza y persiste junto con los nuevos agregados en una transacción. Cancelar no llega a la frontera de aplicación; el conflicto normalizado falla sin filas parciales. La duplicación de cola conserva su política automática.
+**CLOSED — APROBADA.**
 
-Las pruebas focales y la suite diferencial están documentadas en [TESTING.md](TESTING.md). La suite global conserva errores/fallos históricos, pero la comparación por identificador contra el baseline publicado da `NEW_REGRESSIONS=0`. F14.1 sigue **PENDIENTE DE SMOKE HUMANO WINDOWS**; no se declara cerrada hasta comprobar prompt, cancelación, coexistencia, edición/apertura y persistencia tras reinicio. F14.2 no se inició.
+Implementado en schema 8 y en la Biblioteca real:
+
+- nombre durable separado de `ProjectId`;
+- create por nombre con ID técnico opaco;
+- rename administrativo sin tocar evidencia ni IDs;
+- migración 7→8 compatible;
+- Biblioteca y Cola proyectando nombre humano;
+- `Crear a partir de esta` pide el nombre antes de persistir, cancelar no crea nada y confirmar crea un segundo proyecto independiente;
+- duplicación de Cola conserva su política automática.
+
+Las pruebas focales y diferenciales registradas dieron `NEW_REGRESSIONS=0`. La validación humana Windows del 2026-09-28 confirmó create/rename/restart y el flujo source → nombre nuevo → clone independiente, incluida cancelación sin copia y persistencia de source+clone tras reinicio.
+
+F14.2 queda como próxima slice y todavía no fue iniciada.
 
 ---
 
