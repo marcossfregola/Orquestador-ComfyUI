@@ -66,7 +66,12 @@ Proyecto: Martina - Playa
 - Crear un proyecto desde la UI recibe un nombre humano y genera internamente un ID opaco nuevo.
 - La Biblioteca lista, ordena y selecciona por nombre visible, conservando el ID técnico sólo como identidad interna.
 - Renombrar es una operación administrativa atómica y debe poder hacerse aunque existan ejecuciones históricas, queued o running: no cambia configuración, lifecycle, cola, archivos, outputs, artifacts ni recovery.
-- `Crear a partir de este` genera un proyecto independiente con ID nuevo y nombre durable derivado `Copia de <nombre>`; si ya existe, asigna un sufijo determinista `(2)`, `(3)`, etc.
+- `Crear a partir de esta` **no modifica, reemplaza ni renombra el proyecto fuente**. Inicia la creación de un segundo proyecto independiente con IDs nuevos y configuración copiada por valor.
+- Antes de persistir la copia, la UI debe pedir `Nombre del nuevo proyecto`. Puede precargar una sugerencia `Copia de <nombre fuente>` (o un sufijo disponible), pero la persona puede reemplazarla por cualquier nombre válido.
+- El proyecto nuevo se crea recién al confirmar ese nombre. Cancelar el diálogo/acción no crea Project, Execution, chunks, archivos ni QueueItem.
+- El nombre elegido se persiste en la misma operación de creación del clone; no se implementa como “crear con nombre automático y luego renombrar”.
+- El proyecto fuente queda visible y reutilizable exactamente como estaba. Source y clone pueden abrirse, editarse y ejecutarse de manera independiente dentro de sus capabilities.
+- Si el nombre elegido entra en conflicto por normalización, la creación falla claramente y no deja un clone parcial. La UI debe permitir corregir el nombre e intentar nuevamente.
 - Cola y demás proyecciones que muestran identidad de proyecto deben consumir el nombre durable; nunca deben exigir que la persona copie/escriba UUIDs.
 - No persistir lineage ficticio de clones en esta slice. El nombre de copia no implica una relación dinámica con el origen.
 
@@ -88,7 +93,9 @@ La implementación concreta de schema se decide tras inspección, pero un campo 
 - Renombrar → cerrar → abrir conserva nombre nuevo.
 - Rename no cambia `ProjectId`, `ExecutionId`, `execution_number`, QueueItem, attempts, artifacts, transitions ni paths.
 - Proyectos históricos siguen abriendo.
-- Clone conserva toda la semántica F13.2 y recibe nombre durable independiente.
+- Clone conserva toda la semántica F13.2, recibe un nombre durable elegido antes de crearse y deja intacto al proyecto fuente.
+- Flujo humano esperado: seleccionar source → `Crear a partir de esta` → introducir/confirmar nombre del nuevo proyecto → aparecen source y clone como dos proyectos distintos → abrir el clone y empezar a trabajar sobre él.
+- Cancelar la elección del nombre deja exactamente el estado previo, sin clone persistido.
 - Colisiones de nombres fallan claramente o se resuelven sólo donde este contrato define autosufijo.
 - La UI normal no solicita ni muestra UUID como identidad primaria.
 
@@ -106,11 +113,13 @@ La implementación concreta de schema se decide tras inspección, pero un campo 
 
 ### Validación humana
 
-Smoke Windows corto: crear, renombrar, cerrar/reabrir, clonar y volver a seleccionar por nombre. No requiere generación real de video.
+Smoke Windows corto: crear y renombrar un proyecto; cerrar/reabrir; seleccionar un source y pulsar `Crear a partir de esta`; verificar que **antes de crear** se pide el nombre del proyecto nuevo; confirmar un nombre distinto; comprobar que source y clone quedan simultáneamente en Biblioteca, que abrir el clone permite empezar a editarlo independientemente y que ambos nombres sobreviven reinicio. También cancelar una creación y confirmar que no aparece ningún proyecto nuevo. No requiere generación real de video.
 
 ### Estado de implementación F14.1
 
-La migración SQLite 7→8, los casos de uso de alta/renombrado, la asignación durable de nombre a clones y las proyecciones de Biblioteca/Cola están implementados y cubiertos por pruebas automáticas. La suite completa no está globalmente verde; la comparación reproducible contra el snapshot del baseline `c14aa524c770b994330a04c55e615bc110313fda` dio `NEW_REGRESSIONS=0`. El cierre de F14.1 queda pendiente hasta completar el smoke Windows indicado arriba. F14.2 no se inició.
+La migración SQLite 7→8, alta/renombrado y proyecciones por nombre están implementadas. La validación humana aclaró que el flujo existente de clone todavía no satisface el producto: hoy crea primero una copia con nombre automático y luego espera que la persona la renombre. Eso no es el contrato deseado.
+
+F14.1 queda **REQUIERE CORRECCIÓN** hasta que `Crear a partir de esta` pida el nombre **antes** de persistir el nuevo proyecto, cree source y clone como entidades simultáneas e independientes, y una cancelación no deje ningún clone. La suite completa no está globalmente verde; las comparaciones diferenciales anteriores dieron `NEW_REGRESSIONS=0`. F14.2 no se inició.
 
 ---
 

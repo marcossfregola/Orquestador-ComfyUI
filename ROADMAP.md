@@ -249,7 +249,7 @@ F14 no agrega una línea nueva de producto: termina tres comportamientos incompl
 
 ### F14.1 — Nombre durable y renombrado de proyectos
 
-**Estado:** IMPLEMENTADA — PENDIENTE SMOKE HUMANO WINDOWS.
+**Estado:** REQUIERE CORRECCIÓN DE FLUJO — clone con nombre elegido antes de persistir.
 
 Separar `ProjectId` técnico de un nombre humano durable. Crear por nombre con ID interno, renombrar sin alterar identidad/evidencia, seleccionar/reabrir por nombre, dar nombre durable a clones y migrar proyectos existentes sin pérdida.
 

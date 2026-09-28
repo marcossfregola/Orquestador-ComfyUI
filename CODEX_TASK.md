@@ -4,76 +4,115 @@ Este archivo es un handoff operativo. Si hay conflicto, prevalecen `RULES.md`, `
 
 ## Próxima tarea
 
-**F14.1 — corrección de validación humana: clone inmediatamente renombrable.**
+**F14.1 — corregir definitivamente `Crear a partir de esta`: preservar source y crear un proyecto nuevo con nombre elegido antes de persistir.**
 
-Baseline publicado: `f7196ac84f3ae5ed49bb37e7495c78d28b1f9db4` más este commit documental si `main` avanzó sólo en docs.
+Baseline publicado de producción: `54695cd0458e1d385aed7995d8d337bfb6447792`, más el commit documental posterior si `main` avanzó sólo en docs.
 
-## Hallazgo humano
+F14.2 NO está autorizada.
 
-En Windows se verificó:
+## Aclaración de producto vinculante
 
-1. crear `Prueba F14.1` funciona;
-2. renombrarlo a `Prueba F14.1 Renombrado` funciona y el nombre anterior desaparece. **Esto es correcto**: rename cambia el nombre del mismo proyecto y no debe conservar una segunda copia;
-3. al usar `Crear a partir de esta`, la copia nueva debe ser independiente, pero la persona no pudo cambiar de forma usable el nombre del nuevo proyecto abierto.
+El comportamiento deseado NO es:
 
-F14.1 queda REQUIERE CORRECCIÓN. F14.2 no está autorizada.
+```
+source → crear copia automática → seleccionar copia → renombrarla
+```
 
-## Objetivo
+El comportamiento correcto es:
 
-Reproducir el flujo humano real y corregir el mínimo necesario para que una copia creada con `Crear a partir de esta` pueda renombrarse inmediatamente y persistir el nuevo nombre, sin alterar el proyecto fuente ni ninguna evidencia/runtime.
+```
+source
+→ Crear a partir de esta
+→ pedir "Nombre del nuevo proyecto"
+→ la persona escribe/confirma el nombre
+→ recién entonces crear un segundo Project independiente
+→ source y nuevo proyecto quedan ambos en Biblioteca
+→ seleccionar/abrir el nuevo proyecto para empezar a trabajar
+```
+
+Ejemplo:
+
+```
+Martina - Playa
+   ↓ Crear a partir de esta
+Nombre del nuevo proyecto: [ Martina - Playa noche ]
+   ↓ Confirmar
+
+Biblioteca:
+- Martina - Playa
+- Martina - Playa noche
+```
+
+El source no se renombra, no se reemplaza y no desaparece.
 
 ## Contrato obligatorio
 
-- El proyecto fuente permanece con su `ProjectId`, nombre, ejecuciones y evidencia.
-- El clone conserva `ProjectId` y `ExecutionId` nuevos.
-- El clone recibe inicialmente el nombre durable automático `Copia de <origen>` / sufijo disponible.
-- Después de crear el clone, éste debe quedar inequívocamente seleccionado en Biblioteca.
-- El control `Nombre durable seleccionado` debe quedar habilitado para ese clone.
-- Editar ese campo a un nombre único debe habilitar `Renombrar proyecto`.
-- Renombrar debe actuar sobre el clone, no sobre el source.
-- El nombre nuevo debe sobrevivir refresh y reinicio de la aplicación.
-- El source debe seguir visible y abrirse con su nombre original.
-- No convertir rename en clone: renombrar un proyecto existente sigue reemplazando sólo su nombre.
-- No mover archivos, no cambiar IDs, no tocar cola/runtime/attempts/artifacts/transitions.
-- No rediseñar Biblioteca ni agregar funciones ajenas. Si el problema es de selección/foco/estado del panel, corregir sólo esa frontera.
+- Source: mismo `ProjectId`, nombre, ejecuciones, runtime, cola y evidencia antes/después.
+- Clone: `ProjectId`, `ExecutionId` y `ChunkId` nuevos según F13.2.
+- La UI solicita el nombre **antes de crear/persistir** el clone.
+- Puede aparecer una sugerencia editable `Copia de <source>` o el siguiente nombre disponible.
+- Confirmar un nombre válido y único crea el clone atómicamente con ese nombre.
+- Cancelar/cerrar el prompt no crea ningún Project/Execution/chunk/archivo/QueueItem.
+- Un conflicto normalizado de nombre falla claramente sin clone parcial.
+- Tras éxito, source y clone deben coexistir en Biblioteca y el clone nuevo debe quedar seleccionado/abierto para continuar trabajando.
+- `Renombrar proyecto` sigue siendo una operación separada para cambiar el nombre de un proyecto ya existente.
+- No convertir el flujo en create-then-rename internamente: el nombre pedido debe formar parte de la operación atómica de creación.
+- Queue duplicate puede conservar su política automática existente salvo que compartir la firma del caso de uso exija un cambio interno compatible; no agregar diálogos a Cola en esta corrección.
+- No mover archivos, tocar outputs, runtime, attempts, artifacts, transitions ni recovery.
+- No rediseñar Biblioteca fuera de lo mínimo necesario.
+
+## Diseño esperado
+
+Inspeccionar antes de decidir, pero preferir:
+
+1. una frontera de aplicación de clone que pueda recibir un `target_name` explícito;
+2. persistencia atómica del nuevo Project + Execution con ese nombre;
+3. ruta automática existente para duplicación de cola preservada mediante nombre sugerido/autogenerado cuando no hay interacción humana;
+4. en Biblioteca, un diálogo/modal pequeño o mecanismo equivalente claro de `Nombre del nuevo proyecto`, con sugerencia editable;
+5. ningún registro durable antes de aceptar el nombre.
+
+No acceder a SQLite desde el widget.
 
 ## Trabajo requerido
 
-1. `git fetch origin` y `git pull --ff-only`; confirmar árbol limpio.
-2. Leer las autoridades y revisar el flujo exacto:
-   `clone_selected → GuiFacade.clone_library_execution → PreparationLibraryUseCase.clone → handle_result/render/_current_execution/_update_controls → rename_project`.
-3. Reproducir primero con un test Qt/offscreen que modele exactamente:
-   - crear/seleccionar source;
-   - `Crear a partir de esta`;
-   - verificar que source y clone existen;
-   - verificar selección del clone;
-   - editar `libraryProjectName`;
-   - verificar botón de rename habilitado;
-   - renombrar;
-   - refresh/reopen;
-   - verificar source intacto y clone con nombre nuevo.
-4. Diagnosticar la causa real antes de editar. No asumir que el problema está en persistencia si la reproducción muestra que es UI/selección.
-5. Implementar la corrección mínima.
-6. Agregar/ajustar test de regresión específico del hallazgo humano.
-7. Ejecutar:
-   - `tests.test_f14_1_project_names`;
-   - `tests.test_f13_6_library_gui`;
-   - regresiones F13.2 clone + F13.10 GUI relevantes;
-   - `python -B -m compileall -q src tests`;
-   - `git diff --check`;
-   - suite completa diferencial contra el baseline publicado, bloqueando cualquier regresión nueva.
-8. No corregir deuda histórica fuera de alcance.
-9. Actualizar `STATUS.md` y `TESTING.md` con el diagnóstico y la evidencia técnica, pero dejar F14.1 pendiente hasta repetir el smoke humano.
-10. Si todo queda correcto, queda autorizado un único commit lógico de corrección F14.1 y push normal a `origin/main`, sin force/tag/release.
-11. Detenerse. No iniciar F14.2.
+1. `git fetch origin`, `git pull --ff-only`, baseline limpio y `git diff --check`.
+2. Leer autoridades y revisar flujo F13.2/F14.1 actual.
+3. Agregar primero pruebas que demuestren:
+   - source permanece intacto;
+   - cancelación crea cero proyectos nuevos;
+   - nombre explícito se usa al crear el clone;
+   - conflicto no deja clone parcial;
+   - source + clone quedan ambos listados;
+   - clone queda seleccionado/abrible/editable después de confirmar;
+   - restart conserva ambos nombres;
+   - cola duplicate sigue funcionando.
+4. Implementar la corrección mínima y atómica.
+5. Eliminar o simplificar la solución específica de foco sólo si queda obsoleta; no conservar complejidad sin necesidad. Si sigue siendo útil tras confirmar el nombre, justificarla con test.
+6. Ejecutar focales F14.1, F13.2, F13.6, F13.7/F13.10 afectados, persistencia, `compileall`, `git diff --check` y suite completa diferencial.
+7. `NEW_REGRESSIONS` debe ser 0.
+8. Actualizar docs según implementación real, dejando F14.1 pendiente de smoke humano final.
+9. Si todo queda correcto, queda autorizado un único commit lógico y push normal a `origin/main`; sin force/tag/release.
+10. Detenerse. No iniciar F14.2.
 
-## Evidencia final requerida
+## Smoke humano posterior esperado
 
-- causa raíz concreta;
+Sólo después de la implementación:
+
+1. seleccionar un source;
+2. pulsar `Crear a partir de esta`;
+3. comprobar que se pide `Nombre del nuevo proyecto` antes de crear nada;
+4. cancelar una vez y verificar que no apareció copia;
+5. repetir, escribir un nombre distinto y confirmar;
+6. comprobar que source y nuevo proyecto aparecen simultáneamente;
+7. abrir ambos;
+8. cerrar/reabrir app y confirmar persistencia de ambos nombres.
+
+## Evidencia requerida
+
+- causa/diseño elegido;
 - archivos modificados;
-- test que reproduce el fallo previo y pasa después;
-- resultados exactos de focales y regresión;
-- `NEW_REGRESSIONS=0` o detalle;
-- SHA del commit/push;
-- instrucciones humanas mínimas para repetir únicamente el caso source→clone→rename→restart;
-- confirmación de que F14.2 no se inició.
+- pruebas de atomicidad/cancelación/source intacto;
+- resultados focales;
+- diferencial completo con `NEW_REGRESSIONS=0`;
+- SHA commit/push;
+- confirmación F14.2 no iniciada.

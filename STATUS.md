@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-09-28
 **Baseline de implementación:** `f7196ac84f3ae5ed49bb37e7495c78d28b1f9db4` más el fast-forward documental previo a F14.1; Git es la autoridad del SHA publicado vigente.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**; su evidencia histórica está en `TESTING.md`. La corrección técnica F14.1 para renombrar inmediatamente un clone quedó implementada y pasó las pruebas Qt/diferenciales; F14.1 sigue pendiente de repetir el smoke humano Windows. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**. F14.1 **REQUIERE CORRECCIÓN DE FLUJO**: `Crear a partir de esta` debe pedir el nombre del nuevo proyecto antes de crearlo, preservar siempre el source y crear un segundo proyecto independiente. La corrección de foco `54695cd...` no resuelve por sí sola este requisito de producto. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -85,3 +85,21 @@ Validación humana Windows del 2026-09-28:
 La reproducción Qt/offscreen localizó el problema en la frontera de foco del panel: al refrescarse la lista después de completar el clone, Qt quitaba el foco del botón que había iniciado la operación. El proyecto clonado sí quedaba seleccionado y con el editor habilitado, pero `QApplication.focusWidget()` era `None`, por lo que la escritura inmediata del usuario no llegaba al campo. La corrección acotada enfoca y selecciona el nombre durable del clone al terminar con éxito la operación del worker; errores o dispatch rechazado limpian esa intención. El rename sigue usando el caso de uso existente y no cambia IDs, persistencia ni evidencia.
 
 La nueva regresión `test_clone_can_be_renamed_immediately_and_survives_refresh_and_reopen` falló antes del cambio en la aserción de foco y pasa después; también comprueba IDs independientes, rename del clone, refresh, reapertura SQLite y nombre original del source. F14.1 no puede declararse CLOSED hasta repetir el smoke humano descrito en `TESTING.md`. F14.2 permanece NO INICIADA.
+
+
+### Aclaración de producto F14.1 — source + proyecto nuevo
+
+**Estado:** REQUIERE CORRECCIÓN.
+
+La validación humana aclaró el contrato definitivo de `Crear a partir de esta`:
+
+1. el proyecto source debe mantenerse intacto y seguir existiendo;
+2. al pulsar `Crear a partir de esta`, antes de persistir nada se solicita `Nombre del nuevo proyecto`;
+3. la UI puede sugerir `Copia de <source>`, pero la persona puede escribir cualquier nombre válido;
+4. sólo al confirmar se crea un Project nuevo con ProjectId/ExecutionId nuevos y configuración copiada por valor;
+5. al finalizar deben coexistir source y clone como dos proyectos independientes;
+6. cancelar no crea ninguna copia;
+7. el nuevo proyecto debe quedar seleccionado/abierto para poder empezar a trabajar inmediatamente sobre él;
+8. `Renombrar proyecto` conserva su función administrativa separada para proyectos ya existentes.
+
+No se acepta como flujo final “crear copia automática → renombrarla después”. La corrección de foco publicada en `54695cd...` queda como mejora válida pero insuficiente para cerrar F14.1.
