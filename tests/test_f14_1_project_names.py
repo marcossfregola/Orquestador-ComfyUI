@@ -219,12 +219,13 @@ class F141ProjectNameTests(unittest.TestCase):
         db.execute("DROP INDEX projects_name_key_unique")
         db.execute("ALTER TABLE projects DROP COLUMN name_key")
         db.execute("ALTER TABLE projects DROP COLUMN name")
+        db.execute("DROP TABLE queue_start_policy")
         db.execute("UPDATE schema_version SET version=7")
         db.commit()
         db.close()
 
         self.repository = SQLiteProjectRepository(self.root)
-        self.assertEqual(self.repository.db.execute("SELECT version FROM schema_version").fetchone()[0], 8)
+        self.assertEqual(self.repository.db.execute("SELECT version FROM schema_version").fetchone()[0], 9)
         ids = {str(project_id) for project_id in self.repository.list_project_ids()}
         self.assertEqual(ids, {"legacy-visible", generated_uuid, "Proyecto generado 12345678", "CASE", "case"})
         names = {project.id.value: project.name for project in self.repository.list_projects()}

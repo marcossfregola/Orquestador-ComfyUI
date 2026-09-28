@@ -252,8 +252,13 @@ class ActiveQueueRecoveryUseCase:
             )
         return self._result(QueueRecoveryOutcome.TERMINAL, execution.id, queue_item_id)
 
-    def reconcile(self, project_id, execution_id, queue_item_id):
+    def reconcile(self, project_id, execution_id, queue_item_id, *, allow_new_dispatch=True):
         """Return a durable decision for exactly one active QueueItem."""
+        if type(allow_new_dispatch) is not bool:
+            return self._result(
+                QueueRecoveryOutcome.BLOCKED, execution_id, queue_item_id,
+                "active queue dispatch permission must be bool",
+            )
         try:
             project, execution = self._load_exact(project_id, execution_id, queue_item_id)
         except Exception as exc:
@@ -278,6 +283,11 @@ class ActiveQueueRecoveryUseCase:
                 return self._result(
                     QueueRecoveryOutcome.MANUAL_REVIEW, execution.id, queue_item_id,
                     "active pending execution contains runtime evidence",
+                )
+            if not allow_new_dispatch:
+                return self._result(
+                    QueueRecoveryOutcome.WAIT, execution.id, queue_item_id,
+                    "manual queue dispatch is closed; active virgin execution waits for explicit session start",
                 )
             # Claim persisted but no runtime transition existed: no submission
             # could have started through the product boundary.

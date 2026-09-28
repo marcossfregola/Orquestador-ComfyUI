@@ -128,6 +128,16 @@ Registro singleton durable con:
 
 Pausar impide iniciar el siguiente item. No cancela ni interrumpe el activo.
 
+### Política de inicio F14.2 implementada
+
+`QueueStartMode` es configuración durable global del producto (`auto | manual`), independiente de `QueueControl.paused`, guardada en un singleton `queue_start_policy`. La migración schema 8→9 crea la fila como `auto`, por lo que una base existente mantiene su comportamiento. Una fila ausente, duplicada, inválida o con modo desconocido es corrupción y falla cerradamente.
+
+El permiso de despacho manual es una autorización de proceso/sesión, no un atributo durable ni parte de `QueueItem` o `QueueControl`. Cada runtime lo crea cerrado. `Iniciar/Reanudar cola` lo abre sólo para esa sesión; reiniciar lo vuelve a cerrar aunque `manual` permanezca guardado. Cambiar el modo a `manual` cierra el permiso bajo el mismo coordinador que serializa claims y no altera el activo.
+
+El claim lee `QueueStartMode`, `QueueControl` y el único activo dentro de una transacción. En modo `manual` sin permiso retorna un resultado transitorio de despacho cerrado sin promover filas; `auto` sigue con las reglas F13.8. La pausa sigue bloqueando claims bajo su semántica existente en ambos modos.
+
+Con permiso cerrado, recovery puede completar evidencia terminal y observar referencias backend ya enlazadas por la ruta no-submit existente. No puede llamar a `start_claimed` para una ejecución pending virgen, porque eso generaría un submit nuevo; ese activo permanece exclusivo y espera permiso. El recovery de una ejecución running sin intento conserva el flag no-submit de F13.9 y sólo inspecciona/reconcilia evidencia.
+
 ## Claim y finalización F13.8
 
 `claim_next_queue_item()` es una transacción SQLite única. Lee y valida `queue_control` y el único `active`; si existe activo devuelve un resultado transitorio de bloqueo/recovery, si está pausada devuelve pausa, y si no hay `queued` devuelve vacío. Sólo entonces selecciona el primer `queued` por `position,id`, revalida su `Execution` virgen/pending y su propiedad viva única, y persiste juntos `queued → active`, `active_queue_item_id` y una revisión incrementada.

@@ -26,6 +26,7 @@ from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
 from ..application.preparation_library import PreparationLibraryUseCase
 from ..application.queue_dashboard import QueueDashboardUseCase
+from ..application.queue_dispatch import QueueDispatchSession
 from ..application.scheduler import SchedulerBackgroundRunner, SchedulerExecutionBoundary, SchedulerInstanceLock, SingleExecutionScheduler
 from ..application.queue_recovery import ActiveQueueRecoveryUseCase
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
@@ -122,6 +123,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     injected_recover = recover_usecase is not None
     injected_retry = retry_usecase is not None
     repository = repository_factory(cfg.project_root)
+    dispatch_session = QueueDispatchSession()
     client = client_factory(cfg.comfyui_endpoint)
     cancellation = cancellation_factory(client)
     assembler = assembler_factory(cfg.ffprobe, cfg.ffmpeg) if assembler_factory is FFmpegAssemblyAdapter else assembler_factory()
@@ -303,7 +305,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
 
         _operations = frozenset({
             "snapshot", "select", "enqueue", "reorder", "remove", "skip",
-            "pause", "resume", "duplicate",
+            "pause", "resume", "duplicate", "set_start_mode", "start_manual_session",
         })
 
         def _call(self, name, *args, **kwargs):
@@ -312,6 +314,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 usecase = QueueDashboardUseCase(
                     op_repo,
                     scheduler_status=scheduler.status,
+                    dispatch_session=dispatch_session,
                 )
                 return getattr(usecase, name)(*args, **kwargs)
             finally:
@@ -478,6 +481,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 op_repo,
                 boundary,
                 SchedulerInstanceLock(cfg.project_root),
+                dispatch_session=dispatch_session,
             )
         except Exception:
             op_repo.close()
@@ -550,7 +554,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,
                     "retry": retry_usecase,
                     "assemble": assembly_usecase, "library": library, "queue": queue,
-                    "scheduler": scheduler}
+                    "scheduler": scheduler, "dispatch_session": dispatch_session}
 
 def launch(config: AppConfig) -> int:
     from importlib import import_module

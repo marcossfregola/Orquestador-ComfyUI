@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 from orquestador.domain import *
 from orquestador.domain.project_names import initial_project_name, normalize_project_name, unique_project_name
-SCHEMA_VERSION=8
+SCHEMA_VERSION=9
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -90,6 +90,11 @@ class SQLiteProjectRepository:
    used.add(key)
   db.execute('CREATE UNIQUE INDEX IF NOT EXISTS projects_name_key_unique ON projects(name_key)')
  migrations[8]=_migrate_project_names.__func__
+ @staticmethod
+ def _migrate_queue_start_policy(db):
+  db.execute("CREATE TABLE queue_start_policy(singleton INTEGER PRIMARY KEY CHECK(singleton=1),mode TEXT NOT NULL CHECK(mode IN ('auto','manual')))" )
+  db.execute("INSERT INTO queue_start_policy(singleton,mode) VALUES(1,'auto')")
+ migrations[9]=_migrate_queue_start_policy.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -336,13 +341,17 @@ class SQLiteProjectRepository:
    if self.db.execute("SELECT 1 FROM queue_items WHERE execution_id=? AND state IN ('queued','active')",(str(execution.id),)).fetchone(): raise PersistenceConflictError('execution has a live durable queue item')
    self.save(project,[execution],_in_transaction=True)
   self._queue_transaction(action)
- def claim_next_queue_item(self):
+ def claim_next_queue_item(self, *, manual_dispatch_open=False):
   """Atomically claim the first durable queued item, if it is safe to do so."""
+  if type(manual_dispatch_open) is not bool: raise PersistenceDataError('manual dispatch permission must be bool')
   def action():
+   mode=self._queue_start_mode_from_row(self.db.execute('SELECT mode FROM queue_start_policy WHERE singleton=1').fetchone())
    control,active=self._queue_control_and_active()
    if active is not None:
     return QueueClaimResult(QueueClaimStatus.ACTIVE_PRESENT,active_queue_item_id=active.id)
    if control.paused: return QueueClaimResult(QueueClaimStatus.PAUSED)
+   if mode is QueueStartMode.MANUAL and not manual_dispatch_open:
+    return QueueClaimResult(QueueClaimStatus.DISPATCH_CLOSED)
    row=self.db.execute("SELECT id,execution_id,position,state,created_at,updated_at,terminal_reason FROM queue_items WHERE state='queued' ORDER BY position,id LIMIT 1").fetchone()
    if row is None: return QueueClaimResult(QueueClaimStatus.EMPTY)
    item=self._queue_item_from_row(row)
@@ -517,6 +526,24 @@ class SQLiteProjectRepository:
  def get_queue_control(self):
   control,_=self._queue_control_and_active()
   return control
+ @staticmethod
+ def _queue_start_mode_from_row(row):
+  try:
+   if row is None: raise ValueError
+   return QueueStartMode(row[0])
+  except (IndexError,TypeError,ValueError) as exc: raise PersistenceDataError('invalid queue start policy') from exc
+ def get_queue_start_mode(self):
+  try: row=self.db.execute('SELECT mode FROM queue_start_policy WHERE singleton=1').fetchone()
+  except sqlite3.DatabaseError as exc: raise PersistenceDataError('queue start policy read failed') from exc
+  return self._queue_start_mode_from_row(row)
+ def set_queue_start_mode(self,mode):
+  try: mode=QueueStartMode(mode)
+  except (TypeError,ValueError) as exc: raise PersistenceDataError('invalid queue start mode') from exc
+  def action():
+   changed=self.db.execute('UPDATE queue_start_policy SET mode=? WHERE singleton=1',(mode.value,)).rowcount
+   if changed != 1: raise PersistenceDataError('missing queue start policy')
+   return mode
+  return self._queue_transaction(action)
  def save_queue_control(self,control):
   if not isinstance(control,QueueControl): raise PersistenceDataError('invalid queue control')
   if control.active_queue_item_id is not None:

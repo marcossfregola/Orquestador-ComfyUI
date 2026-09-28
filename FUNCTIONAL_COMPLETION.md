@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — F14.1 CLOSED; F14.2 NEXT — NO INICIADA.
+**Estado:** EN CURSO — F14.1 CLOSED; F14.2 IMPLEMENTADA TÉCNICAMENTE, PENDIENTE DE SMOKE HUMANO WINDOWS.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -154,6 +154,16 @@ El scheduler F13.8/F13.10 inicia automáticamente con el runtime. Esto debe segu
 - No se agrega `/interrupt` running.
 - El setting debe sobrevivir reinicio; el permiso manual de la sesión no debe sobrevivirlo.
 
+### Implementación F14.2
+
+La política se guarda en un singleton SQLite propio (`queue_start_policy`), agregado por migración incremental schema 8→9 y con `auto` como valor inicial. No se reutiliza `queue_control.paused`: pausa durable y política de inicio mantienen autoridades separadas.
+
+El permiso manual vive en un coordinador de aplicación creado nuevo para cada runtime; nace cerrado y no se escribe en SQLite. Ese coordinador serializa la lectura del gate con el claim y con los cambios de política. El claim transaccional vuelve a leer la política durable: en `manual` sólo promueve si el permiso de esta sesión ya fue abierto; en `auto` conserva el flujo actual.
+
+La pestaña Cola expondrá `Automático / Manual` y `Iniciar/Reanudar cola`, delegados por `QueuePanel → GuiFacade → QueueDashboardUseCase`; la UI no recibe repositorios ni autoridad del scheduler. Al cambiar a manual se cierra primero el gate de sesión, sin cambiar ni cancelar el item activo. F13.9 puede observar/reconciliar evidencia existente sin submit; si el activo es una Execution virgen que requeriría `start_claimed`, queda esperando hasta el permiso explícito. Al abrir el gate, el scheduler continúa por las fronteras F13.8/F13.9 existentes.
+
+No cambian la forma/orden/contenido de QueueItems, la semántica de pausa, el motor `StartGuiChainUseCase → ChainExecutionUseCase → SubmitBoundary`, los controles de cancelación ni el alcance visual F11.6.
+
 ### Aceptación
 
 - Auto conserva la conducta F13.10.
@@ -179,7 +189,15 @@ El scheduler F13.8/F13.10 inicia automáticamente con el runtime. Esto debe segu
 
 ### Validación humana
 
-Windows: abrir en manual con trabajo en cola y comprobar que nada inicia hasta pulsar Iniciar/Reanudar; luego comprobar auto.
+Windows:
+
+1. Dejar la cola vacía y cambiar el modo a `Manual`.
+2. Agregar un único snapshot preparado de prueba seguro para ejecutar.
+3. Cerrar y volver a abrir la aplicación; confirmar que `Manual` persiste, el item sigue `En espera`, no hay QueueItem activo y no se produjo un submit a ComfyUI.
+4. Pulsar `Iniciar/Reanudar cola`; confirmar que el scheduler existente activa ese único item y comienza su cadena una sola vez.
+5. Dejar que el item termine; cambiar a `Automático`, agregar otro snapshot de prueba seguro y confirmar que se activa sin pulsar `Iniciar/Reanudar cola`.
+
+La implementación técnica F14.2 y su comparación diferencial quedan registradas en [TESTING.md](TESTING.md). La slice permanece pendiente de la comprobación humana anterior; no se declara cerrada hasta que se aporte esa evidencia.
 
 ---
 

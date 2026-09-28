@@ -31,5 +31,7 @@ from .queue_recovery import ActiveQueueRecoveryUseCase, QueueRecoveryOutcome, Qu
 __all__ += ["ActiveQueueRecoveryUseCase", "QueueRecoveryOutcome", "QueueRecoveryResult"]
 from .queue_dashboard import QueueDashboardAction, QueueDashboardEntry, QueueDashboardError, QueueDashboardSnapshot, QueueDashboardUseCase, QueueRuntimeSnapshot
 __all__ += ["QueueDashboardAction", "QueueDashboardEntry", "QueueDashboardError", "QueueDashboardSnapshot", "QueueDashboardUseCase", "QueueRuntimeSnapshot"]
+from .queue_dispatch import QueueDispatchError, QueueDispatchSession
+__all__ += ["QueueDispatchError", "QueueDispatchSession"]
 from .preparation_library import LibraryChunkTemplate, LibraryExecution, LibraryProject, LibrarySelection, LibraryTechnicalPreset, PreparationLibraryError, PreparationLibrarySnapshot, PreparationLibraryUseCase
 __all__ += ["LibraryChunkTemplate", "LibraryExecution", "LibraryProject", "LibrarySelection", "LibraryTechnicalPreset", "PreparationLibraryError", "PreparationLibrarySnapshot", "PreparationLibraryUseCase"]

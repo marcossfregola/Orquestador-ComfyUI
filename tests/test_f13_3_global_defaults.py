@@ -60,6 +60,7 @@ class F133GlobalDefaultsTests(unittest.TestCase):
         db.execute("DROP TABLE global_defaults")
         db.execute("DROP TABLE technical_presets")
         db.execute("DROP TABLE chunk_templates")
+        db.execute("DROP TABLE queue_start_policy")
         db.execute("UPDATE schema_version SET version=4")
         db.commit(); db.close()
         self.repository = SQLiteProjectRepository(self.root)

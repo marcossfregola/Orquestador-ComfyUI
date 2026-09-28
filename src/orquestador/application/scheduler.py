@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import inspect
 import os
 from pathlib import Path
 import threading
 
 from ..domain.core import Lifecycle, QueueClaimStatus
+from .queue_dispatch import QueueDispatchSession
 from .queue_recovery import QueueRecoveryOutcome
 
 
@@ -119,6 +121,7 @@ class SchedulerTickOutcome(str, Enum):
     RECOVERY_REQUIRED = "recovery_required"
     FINISHED = "finished"
     BLOCKED = "blocked"
+    DISPATCH_CLOSED = "dispatch_closed"
 
 
 @dataclass(frozen=True)
@@ -154,6 +157,15 @@ class SchedulerExecutionBoundary:
         self._start_claimed = start_claimed
         self._reconcile_active = reconcile_active
         self._readiness = readiness
+        try:
+            parameters = inspect.signature(reconcile_active).parameters.values() if reconcile_active is not None else ()
+            self._reconcile_accepts_dispatch_flag = any(
+                parameter.name == "allow_new_dispatch"
+                or parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters
+            )
+        except (TypeError, ValueError):
+            self._reconcile_accepts_dispatch_flag = False
 
     def ensure_ready(self):
         if self._readiness is not None:
@@ -166,16 +178,22 @@ class SchedulerExecutionBoundary:
     def supports_active_reconciliation(self):
         return self._reconcile_active is not None
 
-    def reconcile_active(self, project_id, execution_id, queue_item_id):
+    def reconcile_active(self, project_id, execution_id, queue_item_id, *, allow_new_dispatch=True):
         if self._reconcile_active is None:
             raise SchedulerError("scheduler active-recovery boundary is unavailable")
+        if not allow_new_dispatch:
+            if not self._reconcile_accepts_dispatch_flag:
+                raise SchedulerError("active-recovery boundary cannot enforce the manual dispatch gate")
+            return self._reconcile_active(
+                project_id, execution_id, queue_item_id, allow_new_dispatch=False
+            )
         return self._reconcile_active(project_id, execution_id, queue_item_id)
 
 
 class SingleExecutionScheduler:
     """Deterministic application scheduler; callers choose its worker thread."""
 
-    def __init__(self, repository, execution_boundary, instance_lock):
+    def __init__(self, repository, execution_boundary, instance_lock, *, dispatch_session=None):
         if repository is None:
             raise SchedulerError("scheduler repository is required")
         if not callable(getattr(execution_boundary, "start_claimed", None)):
@@ -187,6 +205,9 @@ class SingleExecutionScheduler:
         self.repository = repository
         self.execution_boundary = execution_boundary
         self.instance_lock = instance_lock
+        self.dispatch_session = (
+            QueueDispatchSession() if dispatch_session is None else dispatch_session
+        )
         self._started = False
         self._drive_lock = threading.Lock()
 
@@ -271,8 +292,10 @@ class SingleExecutionScheduler:
                 reason=f"active queue execution load failed: {exc}",
             )
         try:
+            allow_new_dispatch = self.dispatch_session.permits_new_dispatch(self.repository)
             recovery = self.execution_boundary.reconcile_active(
-                str(project.id), str(execution.id), str(item.id)
+                str(project.id), str(execution.id), str(item.id),
+                allow_new_dispatch=allow_new_dispatch,
             )
         except Exception as exc:
             return self._result(
@@ -361,13 +384,18 @@ class SingleExecutionScheduler:
             except Exception as exc:
                 return self._result(SchedulerTickOutcome.BLOCKED, reason=f"scheduler readiness failed: {exc}")
             try:
-                claim = self.repository.claim_next_queue_item()
+                claim = self.dispatch_session.claim_next(self.repository)
             except Exception as exc:
                 return self._result(SchedulerTickOutcome.BLOCKED, reason=f"queue claim failed: {exc}")
             if claim.status is QueueClaimStatus.EMPTY:
                 return self._result(SchedulerTickOutcome.IDLE)
             if claim.status is QueueClaimStatus.PAUSED:
                 return self._result(SchedulerTickOutcome.PAUSED)
+            if claim.status is QueueClaimStatus.DISPATCH_CLOSED:
+                return self._result(
+                    SchedulerTickOutcome.DISPATCH_CLOSED,
+                    reason="manual queue dispatch awaits explicit session start",
+                )
             if claim.status is QueueClaimStatus.ACTIVE_PRESENT:
                 return self._reconcile_active(claim.active_queue_item_id)
             if claim.status is not QueueClaimStatus.CLAIMED or claim.item is None:

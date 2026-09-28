@@ -24,7 +24,7 @@ Define identidades, invariantes, estados y transiciones de `Project`, `Execution
 
 ### Persistencia
 
-SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 8: F13.0 añadió `QueueItem` y el control singleton de cola, F13.3 defaults globales, F13.4 presets técnicos, F13.5 plantillas de chunks y F14.1 agregó el nombre humano durable de proyectos con migración incremental desde schema 7. La migración preserva IDs y evidencia existentes; el nombre y su clave NFC/casefold son únicos. Los renombres y la asignación transaccional de nombres de clone no cambian ejecuciones ni archivos. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 9: F13.0 añadió `QueueItem` y el control singleton de cola, F13.3 defaults globales, F13.4 presets técnicos, F13.5 plantillas de chunks, F14.1 el nombre humano durable de proyectos y F14.2 el singleton de política de inicio `queue_start_policy`. La migración 8→9 establece `auto` y preserva el control, items y evidencia existentes. El nombre y su clave NFC/casefold son únicos. Los renombres y la asignación transaccional de nombres de clone no cambian ejecuciones ni archivos. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
 
 ### ComfyUI y perfiles
 
@@ -151,6 +151,14 @@ La primera versión no incluye etiquetas, carpetas sofisticadas, búsqueda avanz
 F13.10 expone la cola durable como una proyección de aplicación: `QueueDashboardUseCase → GuiFacade → worker Qt → QueuePanel`. `QueuePanel` no accede a SQLite, ComfyUI ni al scheduler; el worker abre y cierra el repositorio por operación y la fachada devuelve snapshots/capabilities autoritativos. `Agregar a cola` acepta únicamente la identidad preparada e inmutable que ya pasó por el flujo normal de Prepare, por lo que no crea una segunda ruta de submit.
 
 Las operaciones de ordenar, quitar, saltar, duplicar, pausar y reanudar delegan en F13.7. Las filas consumen el nombre durable del proyecto y mantienen `ProjectId` como dato técnico interno. El scheduler F13.8/F13.9 permanece fuera del hilo UI y sólo publica `SchedulerRuntimeStatus` de lectura; un `QTimer` refresca la proyección sin bloquear. Los estados globales y por fila se derivan de QueueItem, Execution, recovery y capabilities reales; no se inventan progreso, ETA ni éxito.
+
+#### Política F14.2 implementada
+
+La política durable `auto | manual` está en un singleton SQLite versionado independiente de `queue_control.paused`, con default `auto` en la migración 8→9. El runtime crea un gate de despacho manual en memoria, inicialmente cerrado en cada launch; sólo `Iniciar/Reanudar cola` lo abre durante esa sesión. El coordinador de aplicación comparte un lock entre el cambio de política, el permiso y el claim, mientras SQLite valida de nuevo la política dentro de la transacción de claim.
+
+En `manual` cerrado no hay nuevos claims. La reconciliación F13.9 puede seguir observando jobs y completando evidencia durable, pero posterga un activo virgen que necesitaría `start_claimed`; al abrir el gate continúa por la frontera existente. La proyección Qt recibe modo y gate en snapshots mediante la fachada y no accede a SQLite ni controla el scheduler.
+
+F14.2 no cambia el shape/orden de QueueItem, el singleton de pausa, la política de cancelación, el motor de submit ni los contratos de recovery de jobs enlazados; tampoco agrega `/interrupt` o alcance de F11.6.
 
 ## Propiedad de los datos
 

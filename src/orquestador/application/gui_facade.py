@@ -325,6 +325,10 @@ class GuiFacade:
             expected_revision=expected_revision,
             selection_id=selection_queue_item_id,
         )
+    def set_queue_start_mode(self, mode):
+        return self._queue_call("set_start_mode", mode, message="Política de inicio actualizada")
+    def start_manual_queue_session(self):
+        return self._queue_call("start_manual_session", message="Cola habilitada para esta sesión")
     def duplicate_queue_item(self, queue_item_id):
         return self._queue_call("duplicate", queue_item_id)
     def _to_snapshot(self,v):

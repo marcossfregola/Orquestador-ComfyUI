@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from ..domain.core import QueueStartMode
 from ..persistence.sqlite import PersistenceError
+from .queue_dispatch import QueueDispatchError, QueueDispatchSession
 from .queue_operations import QueueOperationError, QueueOperationsUseCase
 
 
@@ -66,6 +68,8 @@ class QueueDashboardSnapshot:
     state: str
     detail: str
     scheduler_running: bool
+    start_mode: str = QueueStartMode.AUTO.value
+    manual_dispatch_open: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,7 +90,8 @@ class QueueDashboardUseCase:
     driving the scheduler thread.
     """
 
-    def __init__(self, repository, *, scheduler_status: Callable[[], Any] | None = None):
+    def __init__(self, repository, *, scheduler_status: Callable[[], Any] | None = None,
+                 dispatch_session: QueueDispatchSession | None = None):
         if repository is None:
             raise QueueDashboardError("queue dashboard repository is required")
         if scheduler_status is not None and not callable(scheduler_status):
@@ -94,6 +99,7 @@ class QueueDashboardUseCase:
         self.repository = repository
         self.operations = QueueOperationsUseCase(repository)
         self.scheduler_status = scheduler_status
+        self.dispatch_session = dispatch_session or QueueDispatchSession()
 
     @staticmethod
     def _value(value):
@@ -171,7 +177,7 @@ class QueueDashboardUseCase:
             self._failure("execution projection", exc)
 
     @staticmethod
-    def _dashboard_state(records, control, runtime, contexts):
+    def _dashboard_state(records, control, runtime, contexts, start_mode, manual_dispatch_open):
         active_id = control.active_queue_item_id
         active = next((record for record in records if record.id == active_id), None)
         if control.paused:
@@ -208,6 +214,16 @@ class QueueDashboardUseCase:
         if runtime.outcome == "blocked":
             return "blocked", runtime.reason or "El scheduler no puede procesar la cola."
         queued_count = sum(record.state == "queued" for record in records)
+        if start_mode is QueueStartMode.MANUAL and not manual_dispatch_open:
+            if queued_count:
+                return (
+                    "dispatch_closed",
+                    f"Modo manual: {queued_count} item(s) esperan Iniciar/Reanudar cola en esta sesión.",
+                )
+            return (
+                "dispatch_closed",
+                "Modo manual: el despacho permanece cerrado hasta Iniciar/Reanudar cola en esta sesión.",
+            )
         if queued_count:
             return "idle", f"Sin ejecución activa; {queued_count} item(s) esperan el scheduler."
         return "idle", "Sin ejecución activa ni items en espera."
@@ -250,8 +266,9 @@ class QueueDashboardUseCase:
                 raise QueueDashboardError("queue active control is inconsistent")
             contexts = {record.id: self._execution_context(record) for record in records}
             runtime = self._runtime()
+            start_mode, manual_dispatch_open = self.dispatch_session.snapshot(self.repository)
             dashboard_state, dashboard_detail = self._dashboard_state(
-                records, control, runtime, contexts
+                records, control, runtime, contexts, start_mode, manual_dispatch_open
             )
             queued = [record for record in records if record.state == "queued"]
             queued_ids = tuple(record.id for record in queued)
@@ -294,6 +311,8 @@ class QueueDashboardUseCase:
                 dashboard_state,
                 dashboard_detail,
                 runtime.running,
+                start_mode.value,
+                manual_dispatch_open,
             )
         except QueueOperationError as exc:
             self._failure("snapshot", exc)
@@ -366,6 +385,20 @@ class QueueDashboardUseCase:
             return self._action(detail, selection_id=selection_id)
         except QueueOperationError as exc:
             self._failure("resume", exc)
+
+    def set_start_mode(self, mode):
+        try:
+            selected = self.dispatch_session.set_mode(self.repository, mode)
+            return self._action(f"Política de inicio: {selected.value}")
+        except (QueueDispatchError, PersistenceError, OSError, TypeError, ValueError) as exc:
+            self._failure("start policy update", exc)
+
+    def start_manual_session(self):
+        try:
+            self.dispatch_session.start_manual_session(self.repository)
+            return self._action("Permiso manual abierto para esta sesión")
+        except (QueueDispatchError, PersistenceError, OSError, TypeError, ValueError) as exc:
+            self._failure("manual session start", exc)
 
     def duplicate(self, queue_item_id):
         ident = self._id(queue_item_id, "queue item")

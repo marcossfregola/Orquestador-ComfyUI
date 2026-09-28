@@ -413,6 +413,7 @@ La prueba histórica `tests.test_f11_4_mainwindow_acceptance.MainWindowF114Accep
 | F13.8 | claim/finalización atómicos, activo único, dos conexiones SQLite, lock local, pausa, no doble submit, runtime no-Qt y smoke compuesto simulado | CLOSED — APROBADA sobre evidencia técnica registrada; sin smoke adicional |
 | F13.9 | restart, activo terminal, outputs durable, job vivo/ausente, no-ref ambiguo, pre-submit, no doble submit y active-first recovery | CLOSED — APROBADA sobre implementación y 82 tests focales registrados; sin validación adicional |
 | F13.10 | proyección/acciones Qt, persistencia y restart focal, pausa/reanudación, activo único y no doble submit | CLOSED — APROBADA; validación humana Windows completada |
+| F14.2 | schema 8→9, auto/manual, gate por sesión, active recovery/no-submit, pause separado, no doble claim/submit y Qt offscreen | implementación técnica verificada; smoke Windows pendiente |
 
 En toda slice, tests automáticos, ejecución real y validación humana se informan por separado. Ninguna prueba con fake acredita una generación real ni una observación visual.
 
@@ -528,3 +529,30 @@ Se comprobó en la aplicación real:
 Esta evidencia humana complementa, pero no reemplaza, las pruebas automáticas ya registradas. La suite completa conserva failures/errors históricos y no se declara globalmente verde; la comparación diferencial de F14.1 dio `NEW_REGRESSIONS=0`.
 
 **Decisión:** F14.1 CLOSED — APROBADA. F14.2 no había sido iniciada al momento de este cierre.
+
+
+## F14.2 — política durable auto/manual (2026-09-28)
+
+Se agregó schema 9 con el singleton `queue_start_policy`; la migración 8→9 crea `auto`, conservando el comportamiento publicado. Un `QueueDispatchSession` nuevo por runtime inicia el permiso manual cerrado. Su lock serializa claims, apertura de sesión y cambios de política; el claim SQLite vuelve a leer modo y pausa en `BEGIN IMMEDIATE`. `QueuePanel` expone `Automático / Manual` y `Iniciar/Reanudar cola` por fachada/caso de uso, separados del botón durable de pausa.
+
+En manual cerrado, el scheduler no reclama items nuevos. F13.9 todavía reconcilia jobs ya enlazados por su ruta no-submit, pero espera para llamar a `start_claimed` sobre un activo virgen hasta que la persona abra el permiso de esta sesión. Cambiar a manual no toca QueueItems, el control activo, lifecycle, attempts ni referencias backend. El submit sigue por `StartGuiChainUseCase → ChainExecutionUseCase → SubmitBoundary`; no se agregó `/interrupt` ni una segunda ruta.
+
+Las pruebas F14.2 cubren migración/default/reapertura/corrupción de política, manual cold start con cola vacía y queued, permiso explícito, cierre al crear otra sesión, auto regression, activo bound observado sin submit, activo pending diferido, cambio auto→manual sin cancelación, separación con pausa, Qt offscreen de selector/botón y el fail-closed de un scheduler creado sin sesión inyectada. Resultado focal: **13 tests, OK**. Comandos focal e integrado:
+
+```powershell
+$env:PYTHONPATH='src'; $env:QT_QPA_PLATFORM='offscreen'
+python -B -m unittest -v tests.test_f14_2_queue_start_policy
+python -B -m unittest -v tests.test_f13_3_global_defaults tests.test_f13_4_technical_presets tests.test_f13_5_chunk_templates tests.test_f13_7_queue_operations tests.test_f13_8_scheduler tests.test_f13_9_queue_recovery tests.test_f13_10_queue_gui tests.test_f13_10_retry_hotfix tests.test_f13_10_runtime_regression tests.test_f14_1_project_names tests.test_persistence tests.test_f14_2_queue_start_policy
+python -B -m compileall -q src tests
+git diff --check
+```
+
+La regresión integrada de F13.7–F14.2 ejecutó **122 tests, OK**. `python -B -m compileall -q src tests` y `git diff --check` finalizaron con código **0**.
+
+Suite completa diferencial con temporales separados, `PYTHONPATH=src`, `QT_QPA_PLATFORM=offscreen` y `python -B -m unittest discover -s tests -v`:
+
+- Baseline limpio `a3a9be122a1ce4f41de18725867e0453e95dc471`: **790 tests en 67.647 s, 11 failures, 26 errors, 2 skipped**.
+- F14.2 (repetición diferencial final): **803 tests en 69.893 s, 8 failures, 5 errors, 2 skipped**.
+- Comparación por identificador exacto `FAIL`/`ERROR`: baseline **37**, actual **13**; todas las incidencias actuales ya estaban en baseline; **`NEW_REGRESSIONS=0`**. Una primera pasada del árbol actual reportó un error adicional transitorio `WinError 10053` en `test_real_http_transport_and_materialization_cardinality`; la prueba pasó aislada y la repetición de la suite completa quedó sin IDs nuevos.
+
+La suite completa conserva fallos históricos y no se declara globalmente verde. No se ejecutó ComfyUI real ni se produjo video. La UI tuvo prueba automatizada Qt offscreen, pero falta el smoke humano interactivo Windows indicado en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); F14.2 permanece abierta hasta esa validación. F14.3 no se inició.

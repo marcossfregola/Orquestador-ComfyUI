@@ -219,8 +219,11 @@ class QueueControl:
   if self.active_queue_item_id is not None and not isinstance(self.active_queue_item_id,QueueItemId): raise DomainError('invalid active queue item id')
   if type(self.revision) is not int or self.revision<0: raise DomainError('queue revision must be non-negative integer')
 
+class QueueStartMode(str,Enum):
+ AUTO='auto'; MANUAL='manual'
+
 class QueueClaimStatus(str,Enum):
- CLAIMED='claimed'; EMPTY='empty'; PAUSED='paused'; ACTIVE_PRESENT='active_present'
+ CLAIMED='claimed'; EMPTY='empty'; PAUSED='paused'; ACTIVE_PRESENT='active_present'; DISPATCH_CLOSED='dispatch_closed'
 
 @dataclass(frozen=True)
 class QueueClaimResult:

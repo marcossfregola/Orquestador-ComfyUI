@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGroupBox,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -57,9 +58,9 @@ class QueuePanel(QWidget):
         work_layout = QVBoxLayout(work)
         work_layout.addWidget(
             QLabel(
-                "El scheduler toma automáticamente el próximo item cuando la cola "
-                "no está pausada. Un activo con recuperación o revisión pendiente "
-                "bloquea el siguiente trabajo."
+                "En modo automático, el scheduler toma el próximo item cuando la cola "
+                "no está pausada. En modo manual espera Iniciar/Reanudar cola. Un activo "
+                "con recuperación o revisión pendiente bloquea el siguiente trabajo."
             )
         )
         self.items = QTreeWidget()
@@ -88,6 +89,22 @@ class QueuePanel(QWidget):
             first_actions.addWidget(button)
         first_actions.addStretch(1)
         work_layout.addLayout(first_actions)
+
+        policy_actions = QHBoxLayout()
+        policy_actions.addWidget(QLabel("Inicio de cola:"))
+        self.start_mode = QComboBox()
+        self.start_mode.setObjectName("queueStartMode")
+        self.start_mode.addItem("Automático", "auto")
+        self.start_mode.addItem("Manual", "manual")
+        policy_actions.addWidget(self.start_mode)
+        self.start_manual_button = QPushButton("Iniciar/Reanudar cola")
+        self.start_manual_button.setObjectName("queueManualStartButton")
+        self.start_manual_button.setToolTip(
+            "Abre el permiso de despacho manual sólo durante esta sesión."
+        )
+        policy_actions.addWidget(self.start_manual_button)
+        policy_actions.addStretch(1)
+        work_layout.addLayout(policy_actions)
 
         second_actions = QHBoxLayout()
         self.move_up_button = QPushButton("Mover arriba")
@@ -121,6 +138,8 @@ class QueuePanel(QWidget):
         self.items.itemDoubleClicked.connect(lambda _item, _column: self.open_selected())
         self.refresh_button.clicked.connect(self.refresh)
         self.pause_resume_button.clicked.connect(self.pause_or_resume)
+        self.start_mode.currentIndexChanged.connect(self.set_start_mode)
+        self.start_manual_button.clicked.connect(self.start_manual_session)
         self.open_button.clicked.connect(self.open_selected)
         self.move_up_button.clicked.connect(lambda: self.move_selected(-1))
         self.move_down_button.clicked.connect(lambda: self.move_selected(1))
@@ -153,6 +172,7 @@ class QueuePanel(QWidget):
         return {
             "idle": "Idle",
             "paused": "Paused",
+            "dispatch_closed": "Modo manual — despacho cerrado",
             "running": "Running",
             "starting": "Iniciando",
             "finishing": "Finalizando item",
@@ -276,6 +296,11 @@ class QueuePanel(QWidget):
             "Estado global: " + self._global_label(snapshot.state)
         )
         self.global_detail.setText(snapshot.detail)
+        mode_index = self.start_mode.findData(snapshot.start_mode)
+        if mode_index >= 0:
+            self.start_mode.blockSignals(True)
+            self.start_mode.setCurrentIndex(mode_index)
+            self.start_mode.blockSignals(False)
         self.status.setText("Cola cargada")
         self._update_controls()
 
@@ -292,6 +317,12 @@ class QueuePanel(QWidget):
             if message:
                 self.status.setText(message)
         else:
+            if self._snapshot is not None:
+                mode_index = self.start_mode.findData(self._snapshot.start_mode)
+                if mode_index >= 0:
+                    self.start_mode.blockSignals(True)
+                    self.start_mode.setCurrentIndex(mode_index)
+                    self.start_mode.blockSignals(False)
             self.show_error(result.message or "la operación de cola falló")
         self._pending_success_message = None
         self._update_controls()
@@ -353,6 +384,25 @@ class QueuePanel(QWidget):
             message = "Cola pausada"
         self._dispatch(operation, "queue_pause_resume", message)
 
+    def set_start_mode(self, _index):
+        if self._snapshot is None:
+            return
+        mode = self.start_mode.currentData()
+        if mode not in {"auto", "manual"} or mode == self._snapshot.start_mode:
+            return
+        self._dispatch(
+            lambda: self.facade.set_queue_start_mode(mode),
+            "queue_policy",
+            "Política de inicio actualizada",
+        )
+
+    def start_manual_session(self):
+        self._dispatch(
+            lambda: self.facade.start_manual_queue_session(),
+            "queue_policy",
+            "Permiso manual abierto para esta sesión",
+        )
+
     def duplicate_selected(self):
         entry = self._current_entry()
         if entry is None:
@@ -396,7 +446,15 @@ class QueuePanel(QWidget):
         if self._snapshot is None:
             self.pause_resume_button.setEnabled(False)
             self.pause_resume_button.setText("Pausar cola")
+            self.start_mode.setEnabled(False)
+            self.start_manual_button.setEnabled(False)
         else:
+            self.start_mode.setEnabled(available)
+            self.start_manual_button.setEnabled(
+                available
+                and self._snapshot.start_mode == "manual"
+                and not self._snapshot.manual_dispatch_open
+            )
             self.pause_resume_button.setEnabled(available)
             self.pause_resume_button.setText(
                 "Reanudar cola" if self._snapshot.paused else "Pausar cola"
