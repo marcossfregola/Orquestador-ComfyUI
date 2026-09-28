@@ -116,12 +116,14 @@ Con la evidencia automática previa (`NEW_REGRESSIONS=0`) y esta validación hum
 
 ### Incidente de smoke F14.2 — Prepare deja la GUI sin responder
 
-**Estado:** REQUIERE DIAGNÓSTICO/CORRECCIÓN.
+**Estado:** NO REPRODUCIDO EN HARNESS; INCIDENTE HUMANO AÚN ABIERTO.
 
-Durante la validación humana Windows del 2026-09-28, con F14.2 publicada en `8b7258304eca384d20d4721f35639268a6036e01`, se intentó preparar un borrador de dos chunks para luego agregarlo a la Cola. Al pulsar `Prepare`, la ventana pasó a mostrar `Orquestador (No responde)` y permaneció así más de 30 segundos. No se llegó a `Agregar a cola` ni a generar/submitear un video como parte de esa acción.
+El diagnóstico controlado sobre `main=0f6dd576980f23a7b5750503e0f56cc77377bd5c` no reprodujo el freeze de >30 s. F14.1 y F14.2 mostraron tiempos de Prepare del orden de decenas de milisegundos con imágenes sintéticas de 7 MB y 50 MB; la mayor pausa del event loop medida fue ~124 ms.
 
-El código vigente ejecuta `Prepare` mediante `OperationWorker` en un `QThread`, por lo que una operación de preparación lenta o bloqueada no debería congelar el event loop de Qt. El incidente debe reproducirse con instrumentación antes de inferir la causa.
+Prepare y GUI se observaron en hilos distintos. SQLite quedó íntegro, sin transacciones largas ni rollback; Manual cerrado devolvió `DISPATCH_CLOSED`. No hubo llamadas a ComfyUI. La hipótesis de contención introducida por F14.2 no quedó demostrada.
 
-Hipótesis a verificar, no conclusión: desde F14.2 el scheduler hace polling cada 0,25 s y `QueueDispatchSession.claim_next()` llega a `SQLiteProjectRepository.claim_next_queue_item()`; esa función abre `BEGIN IMMEDIATE` antes de comprobar `manual + permiso cerrado`. Puede introducir contención de escritura con operaciones como Prepare. Debe medirse y no asumirse como causa hasta obtener stacks/timings/evidencia.
+Se observó que el render de preview carga QPixmap sincrónicamente y puede causar pausas breves con imágenes grandes, comportamiento ya presente en F14.1; no explica por sí solo el freeze humano de >30 s.
 
-F14.2 permanece abierta. F14.3 NO INICIADA.
+Siguiente evidencia requerida: repetir con el mismo borrador e imagen real del incidente y, si vuelve a superar 5 s sin responder, capturar stack/dump del proceso durante el bloqueo antes de tocar producción.
+
+F14.2 permanece abierta por smoke humano incompleto. F14.3 NO INICIADA.
