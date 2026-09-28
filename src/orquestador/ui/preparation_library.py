@@ -151,6 +151,7 @@ class PreparationLibraryPanel(QWidget):
         self._project_names = {}
         self._pending_success_message = None
         self._focus_new_entry = False
+        self._focus_project_name_after_clone = False
         self._available = callable(getattr(facade, "library_snapshot", None))
         self.setObjectName("preparationLibraryPanel")
 
@@ -505,12 +506,18 @@ class PreparationLibraryPanel(QWidget):
     def set_busy(self, value):
         self._busy = bool(value)
         self._update_controls()
+        if not self._busy and self._focus_project_name_after_clone:
+            self._focus_project_name_after_clone = False
+            if self._current_execution() is not None and self.project_name_edit.isVisible():
+                self.project_name_edit.setFocus(Qt.OtherFocusReason)
+                self.project_name_edit.selectAll()
 
     def _dispatch(self, operation, kind, success_message=None):
         if self._busy or not self._available:
-            return
+            return False
         self._pending_success_message = success_message
         self._run(operation, kind)
+        return True
 
     def refresh(self):
         self._dispatch(
@@ -787,6 +794,8 @@ class PreparationLibraryPanel(QWidget):
             return
         if result.success and result.selection is not None:
             self._focus_new_entry = True
+        else:
+            self._focus_project_name_after_clone = False
         if result.selection is not None:
             self._selection = result.selection
         if result.library is not None:
@@ -803,6 +812,7 @@ class PreparationLibraryPanel(QWidget):
     def show_error(self, message):
         self._pending_success_message = None
         self._focus_new_entry = False
+        self._focus_project_name_after_clone = False
         detail = str(message).strip()
         self.status.setText("Error en Biblioteca" + (f": {detail}" if detail else ""))
 
@@ -851,13 +861,16 @@ class PreparationLibraryPanel(QWidget):
         if selection is None or not selection.can_clone:
             return
         self._focus_new_entry = True
-        self._dispatch(
+        self._focus_project_name_after_clone = True
+        started = self._dispatch(
             lambda: self.facade.clone_library_execution(
                 selection.project_id, selection.execution_id
             ),
             "library_clone",
             "Copia creada como borrador independiente",
         )
+        if not started:
+            self._focus_project_name_after_clone = False
 
     def save_global_defaults(self):
         self._form_mode = "globals"

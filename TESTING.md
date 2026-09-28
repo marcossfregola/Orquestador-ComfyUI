@@ -466,3 +466,26 @@ Suite completa diferencial, ejecutada con `ORQ_TEST_TMP` fresco y `PYTHONPATH=sr
 El agregado de la reproducción limpia del commit `c14aa...` no coincide con el agregado histórico publicado unas líneas arriba para el hotfix (**778 tests, 9 failures, 5 errors, 2 skipped**). Se conserva esa discrepancia explícita; para esta decisión se usó la repetición controlada del snapshot exacto y la comparación por identificador, sin declarar globalmente verde la suite ni resolver deuda histórica fuera de alcance.
 
 No hubo validación humana interactiva Windows, ejecución real de ComfyUI ni generación de video. Para cerrar F14.1, probar en Windows: crear un proyecto por nombre, renombrarlo, cerrar y reabrir la aplicación y confirmar persistencia, clonar y confirmar el nombre `Copia de <origen>`/autosufijo, y seleccionar ambos proyectos desde la Biblioteca por nombre visible. F14.1 queda pendiente de ese smoke; F14.2 no se inició.
+
+
+## F14.1 — corrección técnica: clone inmediatamente renombrable (2026-09-28)
+
+La reproducción Qt/offscreen del reporte humano verificó que el clone ya tenía `ProjectId` y `ExecutionId` nuevos, quedaba seleccionado y recibía el nombre durable `Copia de <origen>`. La persistencia no era la causa: al completar la operación, `render()` reconstruía la lista y Qt dejaba `QApplication.focusWidget()` en `None`. El editor `libraryProjectName` estaba habilitado pero no recibía el teclado, así que para una persona la copia no era renombrable de inmediato sin volver a hacer click en el campo.
+
+La corrección mínima en `PreparationLibraryPanel` conserva una intención de foco sólo durante `Crear a partir de esta`. Cuando el worker termina con éxito y ya se renderizó la selección del clone, la transición a idle enfoca el campo de nombre y selecciona su contenido. Si falla la operación o el dispatch no se inicia, se descarta la intención. El rename continúa por el caso de uso durable existente; no se tocan IDs, ejecuciones, queue, runtime, attempts, artifacts, transitions, archivos ni evidencia.
+
+La regresión `tests.test_f13_6_library_gui.F136QtLibraryTests.test_clone_can_be_renamed_immediately_and_survives_refresh_and_reopen` reproduce el flujo Qt: renombra el source, crea el clone, verifica su selección e IDs/nombre independientes, comprueba el foco del editor sin volver a clickearlo, introduce un nombre, lo renombra, refresca Biblioteca y abre una nueva instancia de `SQLiteProjectRepository`. El source conserva su nombre e identidad y el nombre del clone persiste. Antes del fix fallaba en la aserción de foco (`focusWidget()` era `None`); después pasó **1/1**.
+
+Resultados focales posteriores al fix:
+
+- `python -B -m unittest tests.test_f14_1_project_names tests.test_f13_6_library_gui tests.test_f13_2_clone_configuration tests.test_f13_10_queue_gui tests.test_f13_10_retry_hotfix tests.test_f13_10_runtime_regression -v` — **35 tests, OK; 1 skip**. El único skip es el caso de symlink F13.2: Windows devolvió `WinError 1314` porque este usuario no tiene privilegio para crear symlinks.
+- `python -B -m compileall -q src tests` — **exit 0**.
+- `git diff --check` — **PASS**, sin errores de whitespace; Git sólo informó la conversión configurada LF→CRLF.
+
+Suite completa diferencial con `python -B -m unittest discover -s tests -v`, snapshot limpio generado desde el baseline publicado `f7196ac84f3ae5ed49bb37e7495c78d28b1f9db4` y directorios `ORQ_TEST_TMP` separados y frescos para baseline y árbol corregido:
+
+- Baseline: **785 tests en 67.394 s; 11 failures, 26 errors, 2 skipped**.
+- Árbol corregido: **786 tests en 64.131 s; 8 failures, 5 errors, 2 skipped** (el test adicional es la regresión F14.1).
+- Comparación por identificador exacto `FAIL`/`ERROR`: las **13 incidencias actuales** ya están en el baseline; **`NEW_REGRESSIONS=0`**. La suite global sigue mostrando deuda histórica y no se declara verde ni se corrigió fuera de alcance.
+
+F14.1 continúa **PENDIENTE DE VALIDACIÓN HUMANA** hasta repetir en la aplicación Windows únicamente este flujo: crear o seleccionar un proyecto fuente de prueba y dejarlo con el nombre `Prueba F14.1 Renombrado`, pulsar `Crear a partir de esta`, escribir inmediatamente un nombre único en `Nombre durable seleccionado` sin clickear de nuevo el campo, pulsar `Renombrar proyecto`, refrescar y reiniciar la aplicación; verificar que el clone conserva el nombre nuevo y el source sigue visible con su nombre original. F14.2 no se inició.

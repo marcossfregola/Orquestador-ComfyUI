@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-09-27
-**Baseline de implementación:** `c14aa524c770b994330a04c55e615bc110313fda` más el fast-forward documental previo a F14.1; Git es la autoridad del SHA publicado vigente.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**; su evidencia histórica está en `TESTING.md`. F14.1 está implementada técnicamente pero el smoke humano Windows detectó una corrección pendiente: una copia creada mediante `Crear a partir de esta` debe poder renombrarse inmediatamente como proyecto independiente y conservar ese nombre. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
+**Última actualización:** 2026-09-28
+**Baseline de implementación:** `f7196ac84f3ae5ed49bb37e7495c78d28b1f9db4` más el fast-forward documental previo a F14.1; Git es la autoridad del SHA publicado vigente.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**; su evidencia histórica está en `TESTING.md`. La corrección técnica F14.1 para renombrar inmediatamente un clone quedó implementada y pasó las pruebas Qt/diferenciales; F14.1 sigue pendiente de repetir el smoke humano Windows. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -74,7 +74,7 @@ F14.2 continúa **PLANNED — NO INICIADA**. Para validar y cerrar F14.1, la per
 
 ### Incidencia humana F14.1 — clone renombrable
 
-**Estado:** REQUIERE CORRECCIÓN.
+**Estado:** CORRECCIÓN TÉCNICA IMPLEMENTADA; PENDIENTE VALIDACIÓN HUMANA.
 
 Validación humana Windows del 2026-09-28:
 
@@ -82,4 +82,6 @@ Validación humana Windows del 2026-09-28:
 - el flujo `Crear a partir de esta` produjo una copia, pero la persona no pudo cambiar el nombre del nuevo proyecto abierto de forma usable/inmediata;
 - por contrato F14.1, el clone debe ser un proyecto independiente y su nombre durable debe poder editarse sin modificar el proyecto fuente.
 
-F14.1 no puede declararse CLOSED hasta reproducir, corregir y revalidar este caso. F14.2 permanece NO INICIADA.
+La reproducción Qt/offscreen localizó el problema en la frontera de foco del panel: al refrescarse la lista después de completar el clone, Qt quitaba el foco del botón que había iniciado la operación. El proyecto clonado sí quedaba seleccionado y con el editor habilitado, pero `QApplication.focusWidget()` era `None`, por lo que la escritura inmediata del usuario no llegaba al campo. La corrección acotada enfoca y selecciona el nombre durable del clone al terminar con éxito la operación del worker; errores o dispatch rechazado limpian esa intención. El rename sigue usando el caso de uso existente y no cambia IDs, persistencia ni evidencia.
+
+La nueva regresión `test_clone_can_be_renamed_immediately_and_survives_refresh_and_reopen` falló antes del cambio en la aserción de foco y pasa después; también comprueba IDs independientes, rename del clone, refresh, reapertura SQLite y nombre original del source. F14.1 no puede declararse CLOSED hasta repetir el smoke humano descrito en `TESTING.md`. F14.2 permanece NO INICIADA.

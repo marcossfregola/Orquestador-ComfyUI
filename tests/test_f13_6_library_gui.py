@@ -238,6 +238,82 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
         self.assertIn("Proyecto: Playa al atardecer", panel.execution_list.currentItem().text())
 
+    def test_clone_can_be_renamed_immediately_and_survives_refresh_and_reopen(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+
+        panel = self.window.library_panel
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+
+        self.select_execution("visible-project", self.draft.execution_id)
+        source = panel._current_execution()
+        self.assertEqual(source.project_name, "visible-project")
+        source_project_id = source.project_id
+        source_execution_id = source.execution_id
+        QTest.mouseClick(panel.project_name_edit, Qt.LeftButton)
+        QTest.keyClick(panel.project_name_edit, Qt.Key_A, Qt.ControlModifier)
+        QTest.keyClicks(panel.project_name_edit, "Prueba F14.1 Renombrado")
+        QTest.mouseClick(panel.rename_project_button, Qt.LeftButton)
+        self.wait_for_worker()
+        source_name = "Prueba F14.1 Renombrado"
+        self.assertEqual(panel._current_execution().project_name, source_name)
+        self.assertTrue(panel.clone_button.isEnabled())
+
+        QTest.mouseClick(panel.clone_button, Qt.LeftButton)
+        self.wait_for_worker()
+
+        clone = panel._current_execution()
+        self.assertIsNotNone(clone)
+        self.assertNotEqual(clone.project_id, source_project_id, panel.status.text())
+        self.assertNotEqual(clone.execution_id, source_execution_id)
+        self.assertEqual(clone.project_name, f"Copia de {source_name}")
+        self.assertTrue(
+            self.resources["repository"].get_project_name(source_project_id) == source_name
+        )
+        self.assertEqual(self.resources["repository"].get_project_name(clone.project_id), clone.project_name)
+        self.assertEqual(panel.project_name_edit.text(), clone.project_name)
+        self.assertTrue(panel.project_name_edit.isEnabled())
+        self.assertFalse(panel.project_name_edit.isReadOnly())
+        self.assertIs(
+            self.app.focusWidget(),
+            panel.project_name_edit,
+            "a new clone should leave the durable-name editor ready for immediate keyboard input",
+        )
+
+        QTest.keyClick(panel.project_name_edit, Qt.Key_A, Qt.ControlModifier)
+        QTest.keyClicks(panel.project_name_edit, "Copia renombrada desde Biblioteca")
+        self.app.processEvents()
+        self.assertTrue(panel.rename_project_button.isEnabled())
+        QTest.mouseClick(panel.rename_project_button, Qt.LeftButton)
+        self.wait_for_worker()
+
+        selected = panel._current_execution()
+        self.assertEqual((selected.project_id, selected.execution_id), (clone.project_id, clone.execution_id))
+        self.assertEqual(selected.project_name, "Copia renombrada desde Biblioteca")
+        self.assertEqual(self.resources["repository"].get_project_name(source_project_id), source_name)
+        self.assertEqual(
+            self.resources["repository"].get_project_name(clone.project_id),
+            "Copia renombrada desde Biblioteca",
+        )
+
+        panel.refresh()
+        self.wait_for_worker()
+        selected = panel._current_execution()
+        self.assertEqual((selected.project_id, selected.execution_id), (clone.project_id, clone.execution_id))
+        self.assertEqual(panel.project_name_edit.text(), "Copia renombrada desde Biblioteca")
+        self.select_execution(source_project_id, source_execution_id)
+        self.assertEqual(panel._current_execution().project_name, source_name)
+
+        reopened = SQLiteProjectRepository(self.root)
+        try:
+            projects = {str(project.id): project for project in reopened.list_projects()}
+            self.assertEqual(projects[source_project_id].name, source_name)
+            self.assertEqual(projects[clone.project_id].name, "Copia renombrada desde Biblioteca")
+        finally:
+            reopened.close()
+
     def test_offscreen_wiring_selection_editability_clone_and_saved_configuration(self):
         panel = self.window.library_panel
         self.window.resize(1280, 900)
