@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-09-28
 **Baseline de implementación F14.2:** `a3a9be122a1ce4f41de18725867e0453e95dc471` (descendiente documental de F14.1 aprobado). El SHA final queda verificable como `origin/main` después del push normal autorizado.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 está **CLOSED — APROBADO**. **F14.1 queda CLOSED — APROBADA**, incluida validación humana Windows del flujo create/rename/restart y `Crear a partir de esta` con nombre previo, cancelación sin escrituras, coexistencia source+clone y persistencia tras reinicio. **F14.2 está implementada técnicamente y pendiente de smoke humano Windows; permanece abierta.** F11.6 (pulido visual/UX) sigue pospuesta hasta después de F14.
+**Estado de la evolución:** F13.0–F13.10 y F14.1 están cerradas. F14.2 está implementada técnicamente pero **REQUIERE DIAGNÓSTICO/CORRECCIÓN antes del cierre**: durante el smoke humano Windows, con modo Manual y antes de poder encolar, pulsar `Prepare` dejó la ventana en `Orquestador (No responde)` durante más de 30 s. No se continúa el smoke ni se inicia F14.3 hasta reproducir y explicar el bloqueo. F11.6 sigue pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -112,3 +112,16 @@ Validación humana Windows completada el 2026-09-28 sobre el commit de implement
 - el source permanece intacto y el clone es un proyecto independiente.
 
 Con la evidencia automática previa (`NEW_REGRESSIONS=0`) y esta validación humana, F14.1 queda cerrada. F14.2 pasa a ser la próxima slice, todavía no iniciada.
+
+
+### Incidente de smoke F14.2 — Prepare deja la GUI sin responder
+
+**Estado:** REQUIERE DIAGNÓSTICO/CORRECCIÓN.
+
+Durante la validación humana Windows del 2026-09-28, con F14.2 publicada en `8b7258304eca384d20d4721f35639268a6036e01`, se intentó preparar un borrador de dos chunks para luego agregarlo a la Cola. Al pulsar `Prepare`, la ventana pasó a mostrar `Orquestador (No responde)` y permaneció así más de 30 segundos. No se llegó a `Agregar a cola` ni a generar/submitear un video como parte de esa acción.
+
+El código vigente ejecuta `Prepare` mediante `OperationWorker` en un `QThread`, por lo que una operación de preparación lenta o bloqueada no debería congelar el event loop de Qt. El incidente debe reproducirse con instrumentación antes de inferir la causa.
+
+Hipótesis a verificar, no conclusión: desde F14.2 el scheduler hace polling cada 0,25 s y `QueueDispatchSession.claim_next()` llega a `SQLiteProjectRepository.claim_next_queue_item()`; esa función abre `BEGIN IMMEDIATE` antes de comprobar `manual + permiso cerrado`. Puede introducir contención de escritura con operaciones como Prepare. Debe medirse y no asumirse como causa hasta obtener stacks/timings/evidencia.
+
+F14.2 permanece abierta. F14.3 NO INICIADA.
