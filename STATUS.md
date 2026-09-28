@@ -2,7 +2,7 @@
 
 **Última actualización:** 2026-09-27
 **Baseline de implementación:** `c14aa524c770b994330a04c55e615bc110313fda` más el fast-forward documental previo a F14.1; Git es la autoridad del SHA publicado vigente.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**; su evidencia histórica está en `TESTING.md`. F14.1 está implementada técnicamente y pendiente del smoke humano Windows para cierre. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO**; su evidencia histórica está en `TESTING.md`. F14.1 está implementada técnicamente pero el smoke humano Windows detectó una corrección pendiente: una copia creada mediante `Crear a partir de esta` debe poder renombrarse inmediatamente como proyecto independiente y conservar ese nombre. F14.2 no se inició. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -70,3 +70,16 @@ F14.2 continúa **PLANNED — NO INICIADA**. Para validar y cerrar F14.1, la per
 - El host PySide6 de `F10GuiMatrixTests.test_reopened_window_loads_project_before_prepare_without_duplicate_execution` no termina de forma determinista bajo `python -m unittest`; un probe en memoria con `ea106049` reproduce el mismo comportamiento. No se contabiliza como prueba aprobada ni se corrigió fuera de F13.6.
 - La prueba histórica `test_render_snapshot_without_reference_authority_preserves_existing_state` de F11.4 sigue teniendo una fixture sin `execution_id`/`execution_number`; fuente y fixture ya estaban así en `ea106049`. No se corrigió fuera de alcance. Los dos asserts de tabs actualizados por la nueva pestaña Library sí pasaron.
 - No se ejecutaron UI de operaciones de cola, scheduler, submit de cola ni recovery/reconciliación de cola; pertenecen a F13.7 backend y F13.8/F13.9, no a F13.6.
+
+
+### Incidencia humana F14.1 — clone renombrable
+
+**Estado:** REQUIERE CORRECCIÓN.
+
+Validación humana Windows del 2026-09-28:
+
+- crear un proyecto nombrado y renombrarlo funcionó; el nombre anterior deja de existir porque rename modifica la identidad humana del mismo `ProjectId`, lo cual es el comportamiento esperado;
+- el flujo `Crear a partir de esta` produjo una copia, pero la persona no pudo cambiar el nombre del nuevo proyecto abierto de forma usable/inmediata;
+- por contrato F14.1, el clone debe ser un proyecto independiente y su nombre durable debe poder editarse sin modificar el proyecto fuente.
+
+F14.1 no puede declararse CLOSED hasta reproducir, corregir y revalidar este caso. F14.2 permanece NO INICIADA.

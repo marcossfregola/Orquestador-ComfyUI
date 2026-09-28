@@ -1,41 +1,79 @@
 # CODEX_TASK — próxima tarea del Orquestador
 
-Este archivo es un handoff operativo, no una autoridad de arquitectura. Si hay conflicto, prevalecen `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y `TESTING.md`.
+Este archivo es un handoff operativo. Si hay conflicto, prevalecen `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y `TESTING.md`.
 
 ## Próxima tarea
 
-**F14.1 — Nombre durable y renombrado de proyectos.**
+**F14.1 — corrección de validación humana: clone inmediatamente renombrable.**
 
-Baseline de partida: `origin/main` en `c14aa524c770b994330a04c55e615bc110313fda` o un commit documental posterior que no cambie producción. El gate pre-F14 está cerrado y aprobado.
+Baseline publicado: `f7196ac84f3ae5ed49bb37e7495c78d28b1f9db4` más este commit documental si `main` avanzó sólo en docs.
 
-## Instrucciones para Codex local
+## Hallazgo humano
 
-1. Trabajar exclusivamente en `C:\Codex\Orquestador-ComfyUI`.
-2. Ejecutar `git fetch origin` y sincronizar `main` sólo mediante `git pull --ff-only`.
-3. Antes de modificar, leer completos: `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y las secciones relevantes de `TESTING.md`.
-4. Verificar baseline real: repo, rama, HEAD, `origin/main`, status, staging/untracked y `git diff --check`. El working tree debe estar limpio.
-5. Inspeccionar el código real afectado y confirmar el diagnóstico de F14.1 antes de editar.
-6. Implementar **sólo F14.1** conforme al contrato completo de `FUNCTIONAL_COMPLETION.md`. No iniciar F14.2.
-7. Mantener `ProjectId` técnico, opaco e inmutable; agregar identidad humana durable separada. Rename no puede mover archivos, alterar IDs, ejecuciones, cola, attempts, artifacts, transitions, outputs ni recovery.
-8. Implementar migración incremental desde schema 7 preservando todos los proyectos existentes y probar casos con IDs legibles, UUIDs y colisiones normalizadas.
-9. Mantener UI → aplicación/casos de uso → dominio. Ningún widget accede directamente a SQLite.
-10. Crear/actualizar pruebas de create, rename, conflictos, restart/reopen, clone con autosufijo, Biblioteca y Cola por nombre, y regresión F13 relevante.
-11. Ejecutar como mínimo las pruebas focales de F14.1, las regresiones F13.1/F13.2/F13.6/F13.7/F13.10 afectadas, `python -B -m compileall -q src tests` y `git diff --check`.
-12. Ejecutar también la suite completa. Los failures/errors históricos registrados en `TESTING.md` no deben ocultarse ni corregirse fuera de alcance; cualquier failure/error nuevo respecto del baseline debe tratarse como regresión y bloquear el commit.
-13. Actualizar `ARCHITECTURE.md`, `DATA_MODEL.md`, `STATUS.md`, `TESTING.md` y demás autoridades sólo según la implementación real.
-14. Revisar el diff final y confirmar ausencia de refactors no solicitados, cambios de EOL masivos o paths ajenos.
-15. Si todo lo exigido para F14.1 queda correcto, queda autorizado un único commit lógico de F14.1 y push normal a `origin/main`, sin force, tag ni release.
-16. Detenerse después del push. **No iniciar F14.2.**
-17. Si la implementación requiere validación humana Windows para cerrar F14.1, no declararla CLOSED todavía: indicar exactamente qué debe probar la persona.
+En Windows se verificó:
+
+1. crear `Prueba F14.1` funciona;
+2. renombrarlo a `Prueba F14.1 Renombrado` funciona y el nombre anterior desaparece. **Esto es correcto**: rename cambia el nombre del mismo proyecto y no debe conservar una segunda copia;
+3. al usar `Crear a partir de esta`, la copia nueva debe ser independiente, pero la persona no pudo cambiar de forma usable el nombre del nuevo proyecto abierto.
+
+F14.1 queda REQUIERE CORRECCIÓN. F14.2 no está autorizada.
+
+## Objetivo
+
+Reproducir el flujo humano real y corregir el mínimo necesario para que una copia creada con `Crear a partir de esta` pueda renombrarse inmediatamente y persistir el nuevo nombre, sin alterar el proyecto fuente ni ninguna evidencia/runtime.
+
+## Contrato obligatorio
+
+- El proyecto fuente permanece con su `ProjectId`, nombre, ejecuciones y evidencia.
+- El clone conserva `ProjectId` y `ExecutionId` nuevos.
+- El clone recibe inicialmente el nombre durable automático `Copia de <origen>` / sufijo disponible.
+- Después de crear el clone, éste debe quedar inequívocamente seleccionado en Biblioteca.
+- El control `Nombre durable seleccionado` debe quedar habilitado para ese clone.
+- Editar ese campo a un nombre único debe habilitar `Renombrar proyecto`.
+- Renombrar debe actuar sobre el clone, no sobre el source.
+- El nombre nuevo debe sobrevivir refresh y reinicio de la aplicación.
+- El source debe seguir visible y abrirse con su nombre original.
+- No convertir rename en clone: renombrar un proyecto existente sigue reemplazando sólo su nombre.
+- No mover archivos, no cambiar IDs, no tocar cola/runtime/attempts/artifacts/transitions.
+- No rediseñar Biblioteca ni agregar funciones ajenas. Si el problema es de selección/foco/estado del panel, corregir sólo esa frontera.
+
+## Trabajo requerido
+
+1. `git fetch origin` y `git pull --ff-only`; confirmar árbol limpio.
+2. Leer las autoridades y revisar el flujo exacto:
+   `clone_selected → GuiFacade.clone_library_execution → PreparationLibraryUseCase.clone → handle_result/render/_current_execution/_update_controls → rename_project`.
+3. Reproducir primero con un test Qt/offscreen que modele exactamente:
+   - crear/seleccionar source;
+   - `Crear a partir de esta`;
+   - verificar que source y clone existen;
+   - verificar selección del clone;
+   - editar `libraryProjectName`;
+   - verificar botón de rename habilitado;
+   - renombrar;
+   - refresh/reopen;
+   - verificar source intacto y clone con nombre nuevo.
+4. Diagnosticar la causa real antes de editar. No asumir que el problema está en persistencia si la reproducción muestra que es UI/selección.
+5. Implementar la corrección mínima.
+6. Agregar/ajustar test de regresión específico del hallazgo humano.
+7. Ejecutar:
+   - `tests.test_f14_1_project_names`;
+   - `tests.test_f13_6_library_gui`;
+   - regresiones F13.2 clone + F13.10 GUI relevantes;
+   - `python -B -m compileall -q src tests`;
+   - `git diff --check`;
+   - suite completa diferencial contra el baseline publicado, bloqueando cualquier regresión nueva.
+8. No corregir deuda histórica fuera de alcance.
+9. Actualizar `STATUS.md` y `TESTING.md` con el diagnóstico y la evidencia técnica, pero dejar F14.1 pendiente hasta repetir el smoke humano.
+10. Si todo queda correcto, queda autorizado un único commit lógico de corrección F14.1 y push normal a `origin/main`, sin force/tag/release.
+11. Detenerse. No iniciar F14.2.
 
 ## Evidencia final requerida
 
-- baseline y SHA final;
+- causa raíz concreta;
 - archivos modificados;
-- migración implementada y compatibilidad demostrada;
-- criterios de aceptación cubiertos;
-- comandos de prueba y resultados exactos;
-- comparación de suite completa contra la deuda histórica registrada;
-- cualquier aspecto no verificado;
-- commit/push realizados;
+- test que reproduce el fallo previo y pasa después;
+- resultados exactos de focales y regresión;
+- `NEW_REGRESSIONS=0` o detalle;
+- SHA del commit/push;
+- instrucciones humanas mínimas para repetir únicamente el caso source→clone→rename→restart;
 - confirmación de que F14.2 no se inició.
