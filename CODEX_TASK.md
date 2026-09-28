@@ -1,55 +1,41 @@
 # CODEX_TASK — próxima tarea del Orquestador
 
-Este archivo es un handoff operativo. Si hay conflicto, prevalecen `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y `TESTING.md`.
+Este archivo es un handoff operativo, no una autoridad de arquitectura. Si hay conflicto, prevalecen `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y `TESTING.md`.
 
 ## Próxima tarea
 
-**Gate pre-F14 — verificación diferencial final de los hotfixes runtime antes de publicar.**
+**F14.1 — Nombre durable y renombrado de proyectos.**
 
-## Estado
+Baseline de partida: `origin/main` en `c14aa524c770b994330a04c55e615bc110313fda` o un commit documental posterior que no cambie producción. El gate pre-F14 está cerrado y aprobado.
 
-Baseline limpio: `80943faeee828def5dda54fefa70cad13ba6a0b5`.
+## Instrucciones para Codex local
 
-Sobre ese baseline existen localmente cuatro hotfixes:
-1. wrapper SaveVideo `images + animated`, excluyendo previews temporales;
-2. resolución robusta de `ffmpeg`/`ffprobe` bare names;
-3. retry con rematerialización de inputs estáticos;
-4. detalle compacto de rechazo 4xx de ComfyUI.
+1. Trabajar exclusivamente en `C:\Codex\Orquestador-ComfyUI`.
+2. Ejecutar `git fetch origin` y sincronizar `main` sólo mediante `git pull --ff-only`.
+3. Antes de modificar, leer completos: `RULES.md`, `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md`, `ARCHITECTURE.md`, `DATA_MODEL.md` y las secciones relevantes de `TESTING.md`.
+4. Verificar baseline real: repo, rama, HEAD, `origin/main`, status, staging/untracked y `git diff --check`. El working tree debe estar limpio.
+5. Inspeccionar el código real afectado y confirmar el diagnóstico de F14.1 antes de editar.
+6. Implementar **sólo F14.1** conforme al contrato completo de `FUNCTIONAL_COMPLETION.md`. No iniciar F14.2.
+7. Mantener `ProjectId` técnico, opaco e inmutable; agregar identidad humana durable separada. Rename no puede mover archivos, alterar IDs, ejecuciones, cola, attempts, artifacts, transitions, outputs ni recovery.
+8. Implementar migración incremental desde schema 7 preservando todos los proyectos existentes y probar casos con IDs legibles, UUIDs y colisiones normalizadas.
+9. Mantener UI → aplicación/casos de uso → dominio. Ningún widget accede directamente a SQLite.
+10. Crear/actualizar pruebas de create, rename, conflictos, restart/reopen, clone con autosufijo, Biblioteca y Cola por nombre, y regresión F13 relevante.
+11. Ejecutar como mínimo las pruebas focales de F14.1, las regresiones F13.1/F13.2/F13.6/F13.7/F13.10 afectadas, `python -B -m compileall -q src tests` y `git diff --check`.
+12. Ejecutar también la suite completa. Los failures/errors históricos registrados en `TESTING.md` no deben ocultarse ni corregirse fuera de alcance; cualquier failure/error nuevo respecto del baseline debe tratarse como regresión y bloquear el commit.
+13. Actualizar `ARCHITECTURE.md`, `DATA_MODEL.md`, `STATUS.md`, `TESTING.md` y demás autoridades sólo según la implementación real.
+14. Revisar el diff final y confirmar ausencia de refactors no solicitados, cambios de EOL masivos o paths ajenos.
+15. Si todo lo exigido para F14.1 queda correcto, queda autorizado un único commit lógico de F14.1 y push normal a `origin/main`, sin force, tag ni release.
+16. Detenerse después del push. **No iniciar F14.2.**
+17. Si la implementación requiere validación humana Windows para cerrar F14.1, no declararla CLOSED todavía: indicar exactamente qué debe probar la persona.
 
-Las suites focales reportaron 27/27, 80/80 y 41/41; `compileall` y `git diff --check` reportaron OK. La suite completa reportó 778 tests, 9 failures, 5 errors y 2 skipped. Falta demostrar que esos failures/errors son preexistentes.
+## Evidencia final requerida
 
-## Objetivo único
-
-Comparar la suite completa del baseline limpio contra la suite completa con hotfixes. No modificar implementación salvo que aparezca una regresión nueva.
-
-## Instrucciones
-
-1. No perder, resetear ni reformatear el working tree actual.
-2. No usar cherry-pick, rebase, force ni merge.
-3. Crear un worktree temporal separado desde `80943faeee828def5dda54fefa70cad13ba6a0b5`, fuera del working tree principal.
-4. Ejecutar allí la suite completa con un `ORQ_TEST_TMP` fresco.
-5. Registrar lista exacta de tests FAILED/ERROR/SKIPPED del baseline.
-6. En el working tree con hotfixes, volver a ejecutar la suite completa con otro `ORQ_TEST_TMP` fresco y registrar la lista exacta.
-7. Comparar por nombre de test:
-   - si hotfix tiene la misma lista o menos failures/errors que baseline: `NEW_REGRESSIONS=0`;
-   - si aparece cualquier failure/error nuevo: detenerse, no commit/push y diagnosticar.
-8. Confirmar otra vez pruebas focales, `python -B -m compileall -q src tests`, `git diff --check` y ausencia de churn CRLF masivo.
-9. Eliminar el worktree temporal sólo con `git worktree remove` después de capturar evidencia.
-10. Si `NEW_REGRESSIONS=0` y los focales siguen verdes, queda autorizado:
-    - un único commit lógico con sólo los diez paths del hotfix;
-    - mensaje: `stabilize F13.10 runtime recovery paths`;
-    - push normal a `origin/main`;
-    - sin force, tag ni release.
-11. Detenerse después del push. No iniciar F14.1.
-
-## Evidencia requerida
-
-- SHA baseline;
-- SHA final si se publica;
-- lista exacta FAILED/ERROR/SKIPPED baseline;
-- lista exacta FAILED/ERROR/SKIPPED hotfix;
-- `NEW_REGRESSIONS=0` o detalle;
-- focales, compileall y diff-check;
-- ausencia de churn CRLF;
-- paths del commit;
-- confirmación de que F14.1 no se inició.
+- baseline y SHA final;
+- archivos modificados;
+- migración implementada y compatibilidad demostrada;
+- criterios de aceptación cubiertos;
+- comandos de prueba y resultados exactos;
+- comparación de suite completa contra la deuda histórica registrada;
+- cualquier aspecto no verificado;
+- commit/push realizados;
+- confirmación de que F14.2 no se inició.

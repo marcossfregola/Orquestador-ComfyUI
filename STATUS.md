@@ -1,8 +1,8 @@
 # Estado del proyecto
 
 **Última actualización:** 2026-09-27
-**Baseline publicada anterior a este trabajo:** `origin/main` en `0ddcff1b722105be6c0ecfbc99731dde8880395f`; Git es la autoridad del SHA vigente.
-**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. Se decidió F14 — cierre funcional del producto actual. F14.1 es la próxima slice, todavía no iniciada. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
+**Baseline publicada vigente:** `origin/main` en `c14aa524c770b994330a04c55e615bc110313fda`; Git es la autoridad del SHA vigente.
+**Estado de la evolución:** F13.0–F13.10 están implementadas, aprobadas y cerradas. El gate técnico pre-F14 quedó **CLOSED — APROBADO** en `c14aa524...`, sin regresiones nuevas detectadas frente al baseline diferencial. F14.1 es la próxima slice, todavía no iniciada. F11.6 (pulido visual/UX) queda pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -51,7 +51,7 @@ F14 — cierre funcional del producto actual — está **DECIDIDA, NO INICIADA**
 
 Orden aprobado:
 
-0. **Gate pre-F14 — reconciliación de hotfixes runtime preservados**: reconstruir sólo cambios semánticos de output correlation, resolución FFmpeg/FFprobe Windows, retry con rematerialización de inputs y detalle de rechazo ComfyUI; ejecutar pruebas y auditar antes de integrar.
+0. **Gate pre-F14 — CLOSED — APROBADO**: hotfixes runtime reconstruidos limpiamente e integrados en `c14aa524...`; comparación diferencial contra `80943fae...` dio `NEW_REGRESSIONS=0`.
 1. **F14.1 — nombre durable y renombrado de proyectos**: separar identidad humana de `ProjectId`, migrar datos existentes, crear/renombrar/seleccionar por nombre y conservar clone/restart sin tocar evidencia.
 2. **F14.2 — política de inicio de cola auto/manual**: conservar auto y agregar manual sin confundirlo con pausa ni habilitar doble submit.
 3. **F14.3 — ensamblado como requisito de finalización real**: chunks completos no equivalen a ejecución final; el MP4 ensamblado y validado es requisito, con retry sólo de ensamblado.

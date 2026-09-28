@@ -415,3 +415,27 @@ La prueba histórica `tests.test_f11_4_mainwindow_acceptance.MainWindowF114Accep
 | F13.10 | proyección/acciones Qt, persistencia y restart focal, pausa/reanudación, activo único y no doble submit | CLOSED — APROBADA; validación humana Windows completada |
 
 En toda slice, tests automáticos, ejecución real y validación humana se informan por separado. Ninguna prueba con fake acredita una generación real ni una observación visual.
+
+
+## Gate técnico pre-F14 — evidencia de cierre (2026-09-27)
+
+Commit integrado: `c14aa524c770b994330a04c55e615bc110313fda` — `stabilize F13.10 runtime recovery paths`.
+
+La reconstrucción limpia incorporó cuatro correcciones acotadas:
+
+- correlación del wrapper SaveVideo `images + animated`, excluyendo previews `type=temp` de la identidad durable;
+- resolución de nombres bare `ffmpeg`/`ffprobe` a través de PATH en Windows, preservando rutas explícitas;
+- retry de chunk con rematerialización de inputs estáticos antes de reconstruir el prompt, fail-closed ante materialización incompleta;
+- detalle compacto y accionable de rechazos HTTP 4xx de ComfyUI, sin cambiar presupuesto ni estado del retry.
+
+Evidencia local reportada para el hotfix: suites focales **27/27**, **80/80** y **41/41** OK; `python -B -m compileall -q src tests` exit 0; `git diff --check` exit 0; diff staged sin churn CRLF masivo.
+
+La suite completa se ejecutó diferencialmente con directorios temporales frescos:
+
+- baseline `80943faeee828def5dda54fefa70cad13ba6a0b5`: **769 tests**, 12 failures, 25 errors, 2 skipped;
+- hotfix: **778 tests**, 9 failures, 5 errors, 2 skipped;
+- comparación por nombre de test: **NEW_REGRESSIONS=0**. Los failures/errors del hotfix fueron un subconjunto de los ya presentes en el baseline.
+
+Por lo tanto, la suite completa no está globalmente verde y esa deuda histórica no se oculta ni se declara resuelta; sí quedó demostrado que el gate no añadió failures/errors nuevos. Los dos skips corresponden a creación de symlink no disponible bajo privilegios Windows.
+
+No se ejecutaron en este cierre una cadena contra ComfyUI real, FFmpeg/FFprobe con binarios reales ni validación visual humana. Esas categorías permanecen separadas de la evidencia automática anterior.
