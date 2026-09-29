@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — F14.1 CLOSED; F14.2 IMPLEMENTADA TÉCNICAMENTE, PENDIENTE DE SMOKE HUMANO WINDOWS.
+**Estado:** EN CURSO — F14.1 y F14.2 CLOSED; F14.3 es la próxima slice planificada.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -197,7 +197,7 @@ Windows:
 4. Pulsar `Iniciar/Reanudar cola`; confirmar que el scheduler existente activa ese único item y comienza su cadena una sola vez.
 5. Dejar que el item termine; cambiar a `Automático`, agregar otro snapshot de prueba seguro y confirmar que se activa sin pulsar `Iniciar/Reanudar cola`.
 
-La implementación técnica F14.2 y su comparación diferencial quedan registradas en [TESTING.md](TESTING.md). La slice permanece pendiente de la comprobación humana anterior; no se declara cerrada hasta que se aporte esa evidencia.
+La implementación técnica F14.2 y su comparación diferencial quedan registradas en [TESTING.md](TESTING.md). La validación humana Windows del 2026-09-29 confirmó ambos modos con ComfyUI real: Manual mantuvo trabajos `En espera` hasta `Iniciar/Reanudar cola`, luego procesó secuencialmente dos proyectos de dos chunks sin duplicados; ambos quedaron `Finalizada`; el ensamblado manual existente produjo los MP4 esperados; y en Automático un nuevo trabajo arrancó sin pulsar el botón manual. Tras reinicio de Windows el gate de sesión volvió a requerir autorización y la política durable se conservó. **F14.2 CLOSED — APROBADA.**
 
 ---
 

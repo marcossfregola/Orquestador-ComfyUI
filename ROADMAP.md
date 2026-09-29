@@ -243,7 +243,7 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ## F14 — Cierre funcional del producto actual
 
-**EN CURSO — F14.1 CLOSED; F14.2 IMPLEMENTADA TÉCNICAMENTE, PENDIENTE DE SMOKE HUMANO WINDOWS.** Contrato y cierre funcional: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+**EN CURSO — F14.1 y F14.2 CLOSED; F14.3 es la próxima slice.** Contrato y cierre funcional: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
 
 F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
 
@@ -259,11 +259,11 @@ Biblioteca pide el nombre antes de crear y guarda el clone con ese nombre dentro
 
 ### F14.2 — Política de inicio de cola auto/manual
 
-**Estado:** IMPLEMENTADA TÉCNICAMENTE — PENDIENTE DE SMOKE HUMANO WINDOWS.
+**Estado:** CLOSED — APROBADA.
 
 Conservar el autoarranque existente y agregar modo manual por sesión: abrir la aplicación no reclama ni envía trabajo nuevo hasta `Iniciar/Reanudar cola`. La política no sustituye la pausa durable y no cancela active/running.
 
-Implementación: singleton SQLite `queue_start_policy` con migración schema 8→9 y default `auto`; gate manual en memoria inicialmente cerrado por runtime, serializado con claims y cambios de modo. Recovery observacional existente sigue activo, mientras que un activo virgen que necesitaría `start_claimed` espera el permiso. La UI delega modo y acción por la fachada en la pestaña Cola. La evidencia automatizada y el smoke humano pendiente están en [TESTING.md](TESTING.md).
+Implementación: singleton SQLite `queue_start_policy` con migración schema 8→9 y default `auto`; gate manual en memoria inicialmente cerrado por runtime, serializado con claims y cambios de modo. Recovery observacional existente sigue activo, mientras que un activo virgen que necesitaría `start_claimed` espera el permiso. La UI delega modo y acción por la fachada en la pestaña Cola. La evidencia automatizada y la validación humana Windows aprobada están en [TESTING.md](TESTING.md).
 
 **Dependencia:** F14.1 cerrada.
 

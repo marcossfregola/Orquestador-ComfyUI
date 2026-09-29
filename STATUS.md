@@ -1,8 +1,8 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-09-28
-**Baseline de implementación F14.2:** `a3a9be122a1ce4f41de18725867e0453e95dc471` (descendiente documental de F14.1 aprobado). El SHA final queda verificable como `origin/main` después del push normal autorizado.
-**Estado de la evolución:** F13.0–F13.10 y F14.1 están cerradas. F14.2 está implementada técnicamente pero **REQUIERE DIAGNÓSTICO/CORRECCIÓN antes del cierre**: durante el smoke humano Windows, con modo Manual y antes de poder encolar, pulsar `Prepare` dejó la ventana en `Orquestador (No responde)` durante más de 30 s. No se continúa el smoke ni se inicia F14.3 hasta reproducir y explicar el bloqueo. F11.6 sigue pospuesta hasta después de F14.
+**Última actualización:** 2026-09-29
+**Implementación F14.2:** `8b7258304eca384d20d4721f35639268a6036e01`; diagnóstico documental posterior `5a17e450982a67360bf08f4740528c0f90500eb9`; cierre humano aprobado el 2026-09-29.
+**Estado de la evolución:** F13.0–F13.10, F14.1 y F14.2 están **CLOSED — APROBADAS**. F14.3 es la próxima slice planificada y todavía no está iniciada. F11.6 sigue pospuesta hasta después de F14.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -20,7 +20,7 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - F13.8 agrega `claim_next_queue_item()` y `finish_claimed_queue_item()` atómicos sobre el schema 7 existente. El claim valida `queue_control`, el único `active`, eligibilidad de la `Execution` y el primer `queued` por orden durable antes de promoverlo y registrar `active_queue_item_id`; la finalización exige la misma relación activa y una `Execution` terminal. El runtime inicia automáticamente un scheduler de aplicación con lock local de archivo/OS, fuera de Qt, y llega al mismo `StartGuiChainUseCase → ChainExecutionUseCase → SubmitBoundary` mediante `start_claimed`, sin abrir una ruta de submit paralela. Si falta el output root confiable, la frontera de readiness bloquea antes de reclamar la cola. Invocaciones repetidas con un activo, errores o submit ambiguo conservan el activo y no reenvían; esa reconciliación posterior pertenece exclusivamente a F13.9. Pausar conserva el activo y bloquea el siguiente claim. No se introdujo migración, UI de cola, multi-GPU ni cancelación running.
 - F13.9 reconcilia el `QueueItem active` antes de cualquier claim nuevo. `ActiveQueueRecoveryUseCase` valida la relación activa exacta, carga la `Execution` durable y sus chunks/intentos, verifica outputs importados, artefactos y transiciones de un éxito, y usa el mismo `StartGuiChainUseCase → ChainExecutionUseCase → ResumeExecutionUseCase` para continuar u observar un job con `external_job_ref`. La recuperación de cola no habilita submit/retry automático: un intento durable sin referencia queda en manual review; un job desconocido o desaparecido conserva el activo; un job observable vivo espera; fallo o cancelación observados se persisten terminales y dejan el retry explícito como autoridad separada. Un activo virgen o `RUNNING` sin intento puede continuar porque `SubmitBoundary` persiste Attempt 1 antes del transporte. Un éxito con evidencia completa puede recuperar la transición final perdida. Pausa difiere la reconciliación del activo, conserva la relación durable y no inicia el siguiente. El cierre formal fue aprobado sobre esta implementación y los 82 tests focales registrados, sin repetir tests, auditorías ni smoke. Schema 7, UI de cola, multi-GPU, paralelismo e `/interrupt` siguen fuera de esta etapa.
 - F13.10 expone la cola de producto en una pestaña `Cola` y agrega `Agregar a cola` sólo para un snapshot preparado y durablemente editable. `QueueDashboardUseCase → GuiFacade → worker Qt → QueuePanel` proyecta orden, nombre durable del proyecto, número de ejecución, estado de `QueueItem`, lifecycle de `Execution`, pausa, activo y el último resultado de scheduler sólo para lectura. Sus botones delegan enqueue, selección/consulta, reorder, remove, skip, duplicate y pausa/reanudar a las operaciones F13.7; no reclaman, envían, recuperan ni cancelan por su cuenta. El estado global distingue idle, paused, running, recovery, revisión manual y bloqueo; un activo ambiguo conserva el slot y no habilita el siguiente. El refresco visual periódico sólo relee snapshots durables y el estado runtime, fuera del hilo UI. Multi-GPU, paralelismo, cloud, prioridades inteligentes, auto-skip y `/interrupt` siguen fuera de alcance. La validación humana Windows aprobó la integración Start→Cola, la visibilidad del activo, el recovery tras reinicio y el retry exclusivo del chunk fallido sin doble submit.
-- F14.2 conserva el autoarranque y permite elegir `auto | manual` desde Cola. Manual abre cada runtime con el gate cerrado; `Iniciar/Reanudar cola` autoriza nuevos claims sólo durante esa sesión. El claim lee la política durable dentro de su transacción, y el gate se serializa con cambios de modo; pause sigue independiente. En manual, la recovery observa evidencia enlazada, pero difiere el `start_claimed` de un activo virgen hasta el permiso explícito. La implementación, migración y pruebas diferenciales están en `TESTING.md`; el smoke humano Windows está pendiente y F14.3 no fue iniciada.
+- F14.2 conserva el autoarranque y permite elegir `auto | manual` desde Cola. Manual abre cada runtime con el gate cerrado; `Iniciar/Reanudar cola` autoriza nuevos claims sólo durante esa sesión. El claim lee la política durable dentro de su transacción, y el gate se serializa con cambios de modo; pause sigue independiente. La validación humana Windows aprobó el comportamiento Manual y Automático con ComfyUI real: trabajos en espera no arrancaron sin permiso, dos proyectos de dos chunks se ejecutaron secuencialmente al abrir el gate, ambos terminaron sin duplicados y el modo Automático inició un nuevo trabajo sin usar el botón manual. F14.2 queda CLOSED — APROBADA.
 - F13.6 agrega la biblioteca de preparación como una proyección de los casos de uso existentes: lista y ordena por nombre durable de proyecto y `execution_number` local con estado derivado, abre borradores/históricos, crea proyectos por nombre con `ProjectId` generado internamente, renombra sin alterar identidad/evidencia, clona mediante F13.2 y administra Global Defaults, presets técnicos y plantillas de chunks mediante sus autoridades F13.3–F13.5. La UI no solicita IDs técnicos, no accede a SQLite, ComfyUI ni FFmpeg, y ejecuta sus operaciones en el worker GUI. El clone de Biblioteca persiste el nombre elegido antes de la creación, y la duplicación de Cola conserva el autosufijo determinista; no se guarda lineage. Crear un borrador captura por copia los Global Defaults vigentes; aplicar preset o plantilla también es por copia. Una fila `queued`, activa, histórica o inconsistente se puede consultar, pero no habilita cambios estructurales. Las acciones de cola pertenecen exclusivamente al panel F13.10 y siguen delegando a sus casos de uso.
 - Para evitar cambios accidentales al recorrer Biblioteca, sus controles técnicos sensibles a la rueda derivan el wheel al scroll de la página hasta recibir un click explícito. El foco Qt, incluso automático, restaurado o por navegación, no arma la edición por rueda; un click fuera del control vuelve a desarmarla. Con click explícito, se conserva la edición normal por rueda, teclado y controles propios.
 
@@ -54,13 +54,13 @@ Orden aprobado:
 
 0. **Gate pre-F14 — CLOSED — APROBADO**: hotfixes runtime reconstruidos limpiamente e integrados en `c14aa524...`; comparación diferencial contra `80943fae...` dio `NEW_REGRESSIONS=0`.
 1. **F14.1 — CLOSED — APROBADA**: nombre durable/rename/clone verificados con pruebas automáticas y smoke humano Windows del 2026-09-28; evidencia en [TESTING.md](TESTING.md).
-2. **F14.2 — política de inicio de cola auto/manual**: implementada técnicamente; smoke humano Windows pendiente. Conservar auto y agregar manual sin confundirlo con pausa ni habilitar doble submit.
+2. **F14.2 — CLOSED — APROBADA**: política durable auto/manual verificada con pruebas automáticas y smoke humano Windows con ComfyUI real; no se observó doble submit ni paralelismo indebido.
 3. **F14.3 — ensamblado como requisito de finalización real**: chunks completos no equivalen a ejecución final; el MP4 ensamblado y validado es requisito, con retry sólo de ensamblado.
 4. **F14.4 — regresión integral y cierre funcional**.
 
 F11.6 permanece **OPEN — NO INICIADA**, expresamente pospuesta por decisión de producto hasta cerrar F14. No se agregan características nuevas ni pulido visual dentro de F14.
 
-F14.2 está implementada técnicamente, publicada y **PENDIENTE DE SMOKE HUMANO WINDOWS**. F14.3 permanece **PLANNED — NO INICIADA**.
+F14.2 está **CLOSED — APROBADA**. F14.3 pasa a ser la próxima slice y permanece **PLANNED — NO INICIADA**.
 
 ## Alcance y evidencia no ejercitada en el cierre F13.6
 
@@ -116,7 +116,7 @@ Con la evidencia automática previa (`NEW_REGRESSIONS=0`) y esta validación hum
 
 ### Incidente de smoke F14.2 — Prepare deja la GUI sin responder
 
-**Estado:** NO REPRODUCIDO EN HARNESS; INCIDENTE HUMANO AÚN ABIERTO.
+**Estado:** NO REPRODUCIDO; REGISTRADO COMO INCIDENTE TRANSITORIO NO BLOQUEANTE PARA EL CIERRE F14.2.
 
 El diagnóstico controlado sobre `main=0f6dd576980f23a7b5750503e0f56cc77377bd5c` no reprodujo el freeze de >30 s. F14.1 y F14.2 mostraron tiempos de Prepare del orden de decenas de milisegundos con imágenes sintéticas de 7 MB y 50 MB; la mayor pausa del event loop medida fue ~124 ms.
 
@@ -124,6 +124,6 @@ Prepare y GUI se observaron en hilos distintos. SQLite quedó íntegro, sin tran
 
 Se observó que el render de preview carga QPixmap sincrónicamente y puede causar pausas breves con imágenes grandes, comportamiento ya presente en F14.1; no explica por sí solo el freeze humano de >30 s.
 
-Siguiente evidencia requerida: repetir con el mismo borrador e imagen real del incidente y, si vuelve a superar 5 s sin responder, capturar stack/dump del proceso durante el bloqueo antes de tocar producción.
+El incidente no reapareció en el smoke humano posterior tras reinicio de Windows: `Prepare` volvió a operar normalmente y la prueba real de cola pudo completarse. La causa raíz del freeze aislado sigue sin demostrarse; si reaparece se capturará stack/dump antes de cualquier corrección. No se modifica producción por una hipótesis no reproducida.
 
-F14.2 permanece abierta por smoke humano incompleto. F14.3 NO INICIADA.
+F14.2 queda CLOSED — APROBADA. F14.3 pasa a ser la próxima slice y permanece NO INICIADA.

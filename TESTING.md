@@ -556,3 +556,24 @@ Suite completa diferencial con temporales separados, `PYTHONPATH=src`, `QT_QPA_P
 - Comparación por identificador exacto `FAIL`/`ERROR`: baseline **37**, actual **13**; todas las incidencias actuales ya estaban en baseline; **`NEW_REGRESSIONS=0`**. Una primera pasada del árbol actual reportó un error adicional transitorio `WinError 10053` en `test_real_http_transport_and_materialization_cardinality`; la prueba pasó aislada y la repetición de la suite completa quedó sin IDs nuevos.
 
 La suite completa conserva fallos históricos y no se declara globalmente verde. No se ejecutó ComfyUI real ni se produjo video. La UI tuvo prueba automatizada Qt offscreen, pero falta el smoke humano interactivo Windows indicado en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); F14.2 permanece abierta hasta esa validación. F14.3 no se inició.
+
+
+## F14.2 — validación humana Windows y cierre (2026-09-29)
+
+Validación humana final **APROBADA** sobre la implementación publicada de F14.2.
+
+Se comprobó en la aplicación real con ComfyUI:
+
+- modo Manual con trabajos preparados: dos proyectos permanecieron `En espera` sin arrancar por sí solos;
+- tras abrir ComfyUI, `Iniciar/Reanudar cola` se pulsó una sola vez;
+- el scheduler procesó secuencialmente ambos proyectos, cada uno con 2 chunks: se observaron 4 generaciones en total, una cadena a la vez y sin doble submit reportado;
+- ambos QueueItems terminaron mostrando `Finalizada`;
+- el ensamblado manual existente (`Assemble MP4`) produjo correctamente un MP4 único por proyecto, confirmando que los outputs de chunks eran utilizables;
+- después se cambió a `Automático`, se agregó un nuevo snapshot preparado y la activación ocurrió sin pulsar `Iniciar/Reanudar cola`;
+- el reinicio de Windows no dejó un despacho manual abierto de la sesión anterior; el comportamiento posterior volvió a requerir la autorización de sesión correspondiente.
+
+El freeze aislado de `Prepare` observado previamente (>30 s) no pudo reproducirse ni en harness ni en el smoke posterior. No existe evidencia para atribuirlo a F14.2; se conserva como incidente transitorio documentado y, si reaparece, deberá capturarse stack/dump antes de modificar producción.
+
+La suite global continúa conservando fallos históricos ya documentados; no se declara globalmente verde.
+
+**Decisión:** F14.2 CLOSED — APROBADA. F14.3 pasa a ser la próxima slice; todavía no se implementó.
