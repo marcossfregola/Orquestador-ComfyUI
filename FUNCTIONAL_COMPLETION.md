@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — F14.1 y F14.2 CLOSED; F14.3 es la próxima slice planificada.
+**Estado:** EN CURSO — F14.1 y F14.2 CLOSED; la implementación y el smoke humano de F14.3 están APROBADOS CON OBSERVACIONES. El cierre documental/Git espera auditoría final; F14.4 no iniciada.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -203,6 +203,8 @@ La implementación técnica F14.2 y su comparación diferencial quedan registrad
 
 ## F14.3 — Ensamblado como requisito de finalización real
 
+**Estado:** implementación y smoke humano **APROBADOS CON OBSERVACIONES**; pendiente auditoría Git final y cierre formal. No se inició F14.4.
+
 ### Problema
 
 El producto ya tiene un adaptador de ensamblado fail-closed y validación FFprobe, pero el ensamblado está expuesto como operación separada. Completar todos los chunks no debe equivaler a completar la ejecución de producto.
@@ -234,6 +236,12 @@ chunks completos
 - La implementación debe elegir el modelo durable mínimo correcto después de inspeccionar el estado real. No forzar la semántica de fallo de ensamblado dentro del retry de chunks si eso puede regenerar video.
 - La UI sólo debe exponer estado y acción funcional mínima de retry/export; el rediseño visual queda para F11.6.
 
+### Implementación y resultado auditado
+
+La implementación conserva una única autoridad durable por Execution: historial append-only `execution_assembly_attempts` (schema 9→10). El último chunk deja la ejecución `running`; `ChainExecutionUseCase` invoca automáticamente `FinalizeExecutionUseCase`, y F13.9 reingresa esa misma cadena tras recovery. Cada fuente exige Attempt/Artifact únicos, ruta contenida, SHA-256 y checkpoint N−1 exacto hacia el siguiente chunk. FFmpeg/FFprobe validan el staging antes de publicar sin sobrescritura y de persistir `Execution.succeeded`; el QueueItem no se libera sin evidencia final vigente. Los fallos preservan chunks, Attempts y transiciones; retry ejecuta sólo assembly. La UI proyecta estado y delega acciones sin invocar infraestructura.
+
+El smoke real de Windows usó la Execution `31239b42-97c5-4f7d-ad53-70ed80565323` (proyecto `Copia de abs`, dos chunks) y el QueueItem `2bb76b0b-e681-4c8b-848e-da90fa492865`. En schema 10 quedó `AssemblyAttempt #1 succeeded`; el QueueItem pasó a `finished` sólo después de actualizarse la evidencia final válida. El detalle durable/FFprobe, hashes y tiempos está en [TESTING.md](TESTING.md). La persona que ejecutó el smoke confirmó reproducción completa y continuidad/orden visual. No se declara F14.3 CLOSED en esta entrega sin commit/push.
+
 ### Aceptación
 
 - El último chunk exitoso no libera por sí solo el QueueItem como ejecución finalizada.
@@ -259,7 +267,7 @@ chunks completos
 
 ### Validación humana
 
-Una cadena real representativa en Windows: observar chunks, ensamblado automático, MP4 final reproducible y continuidad. Si se prueba un fallo de ensamblado, el retry debe actuar sólo sobre el ensamblado.
+Validación humana Windows completada y aprobada con observaciones: se ejecutaron dos chunks secuencialmente; el assembly del MP4 inició automáticamente; el MP4 final abrió y se reprodujo completo; se confirmó visualmente el orden y la continuidad. La verificación técnica posterior confirmó schema 10, `AssemblyAttempt #1 succeeded` y QueueItem finalizado después de la evidencia final válida. No hubo Attempts de chunk nuevos ni submits a ComfyUI durante assembly. El retry de un fallo no se ejercitó en este smoke exitoso.
 
 ---
 

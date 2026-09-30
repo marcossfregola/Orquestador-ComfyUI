@@ -124,7 +124,6 @@ class F141ProjectNameTests(unittest.TestCase):
             artifacts.append(
                 Artifact(project.id, terminal_execution.id, chunk.id, attempt.id, Phase.OUTPUT, output)
             )
-        terminal_execution.transition(Lifecycle.SUCCEEDED)
         transition = TransitionFrame(
             project.id,
             terminal_execution.id,
@@ -136,6 +135,13 @@ class F141ProjectNameTests(unittest.TestCase):
             terminal_execution.chunks[1].id,
         )
         self.repository.save(project, [terminal_execution], artifacts=artifacts, transitions=[transition])
+        # Preserve a legacy terminal row without inventing F14.3 evidence;
+        # this test only exercises whether a project rename mutates history.
+        self.repository.db.execute(
+            "UPDATE executions SET state=? WHERE id=?",
+            (Lifecycle.SUCCEEDED.value, str(terminal_execution.id)),
+        )
+        terminal_execution.state = Lifecycle.SUCCEEDED
 
         preserved_tables = (
             "executions",
@@ -220,12 +226,13 @@ class F141ProjectNameTests(unittest.TestCase):
         db.execute("ALTER TABLE projects DROP COLUMN name_key")
         db.execute("ALTER TABLE projects DROP COLUMN name")
         db.execute("DROP TABLE queue_start_policy")
+        db.execute("DROP TABLE execution_assembly_attempts")
         db.execute("UPDATE schema_version SET version=7")
         db.commit()
         db.close()
 
         self.repository = SQLiteProjectRepository(self.root)
-        self.assertEqual(self.repository.db.execute("SELECT version FROM schema_version").fetchone()[0], 9)
+        self.assertEqual(self.repository.db.execute("SELECT version FROM schema_version").fetchone()[0], 10)
         ids = {str(project_id) for project_id in self.repository.list_project_ids()}
         self.assertEqual(ids, {"legacy-visible", generated_uuid, "Proyecto generado 12345678", "CASE", "case"})
         names = {project.id.value: project.name for project in self.repository.list_projects()}

@@ -60,13 +60,16 @@ class F132CloneConfigurationTests(unittest.TestCase):
                 attempt = chunk.attempts[0]
                 attempt.transition(Lifecycle.SUCCEEDED, output=OutputRef("outputs/result-%s.mp4" % chunk.order), evidence=Evidence("verified"))
                 chunk.transition(Lifecycle.SUCCEEDED)
-            execution.transition(Lifecycle.SUCCEEDED)
-        self.repository.save(project, [execution])
-        if state is Lifecycle.SUCCEEDED:
+            # Persist the old chunk and artifact rows while the execution is
+            # still running, then reproduce the legacy terminal row directly.
             for chunk in execution.chunks:
                 attempt = chunk.attempts[0]
                 execution.artifacts.append(Artifact(project.id, execution.id, chunk.id, attempt.id, Phase.OUTPUT, attempt.output))
             self.repository.save(project, [execution], artifacts=execution.artifacts)
+            self.repository.db.execute("UPDATE executions SET state=? WHERE id=?", (Lifecycle.SUCCEEDED.value, str(execution.id)))
+            execution.state = Lifecycle.SUCCEEDED
+        else:
+            self.repository.save(project, [execution])
         return project, execution
 
     def test_copies_public_configuration_from_draft_succeeded_and_failed_without_runtime_evidence(self):

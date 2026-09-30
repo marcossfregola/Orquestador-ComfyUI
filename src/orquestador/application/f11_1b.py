@@ -35,7 +35,7 @@ class ChainRoutingDecision:
 @dataclass(frozen=True)
 class UiCapabilities:
     can_start: bool=False; can_resume: bool=False; can_recover: bool=False
-    can_retry: bool=False; can_cancel: bool=False; can_assemble: bool=False
+    can_retry: bool=False; can_retry_assembly: bool=False; can_cancel: bool=False; can_assemble: bool=False
     supported_parameters: tuple[str,...]=()
     reference_slots: tuple[str,...]=()
 
@@ -52,7 +52,8 @@ def select_active_cancellation_target(execution):
     return next(iter(unique.values())) if len(unique)==1 else None
 
 def derive_capabilities(execution, *, can_cancel_candidate=False, retryable=False,
-                        retry_only=False, startable=True, assemble=False):
+                        retry_only=False, startable=True, assemble=False,
+                        retry_assembly=False):
     state=getattr(getattr(execution,'state',None),'value',getattr(execution,'state','unknown'))
     state=str(state).lower()
     return UiCapabilities(
@@ -60,6 +61,7 @@ def derive_capabilities(execution, *, can_cancel_candidate=False, retryable=Fals
         can_resume=state in ('running','failed') and not retry_only,
         can_recover=state in ('running','failed') and not retry_only,
         can_retry=state=='failed' and bool(retryable),
+        can_retry_assembly=bool(retry_assembly),
         can_cancel=state in ('pending','running','failed') and bool(can_cancel_candidate),
         can_assemble=state=='succeeded' and bool(assemble),
         supported_parameters=('megapixels','length','steps','fps','ref_image_size','also_ref_first_frame','first_frame_as_primary_reference'),

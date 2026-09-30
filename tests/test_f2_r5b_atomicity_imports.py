@@ -51,7 +51,7 @@ class MigrationAtomicityTests(unittest.TestCase):
             repo.close()
             repo = None
             reopened = SQLiteProjectRepository(d)
-            self.assertEqual(reopened.db.execute("SELECT version FROM schema_version").fetchone()[0], 9)
+            self.assertEqual(reopened.db.execute("SELECT version FROM schema_version").fetchone()[0], 10)
             self.assertEqual(reopened.db.execute("SELECT defaults FROM projects WHERE id='sentinel'").fetchone()[0], "{}")
             reopened.close()
 

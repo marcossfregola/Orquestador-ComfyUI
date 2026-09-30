@@ -119,7 +119,8 @@ class F139QueueRecoveryTests(unittest.TestCase):
 
     def _scheduler(self, start_claimed, resume_claimed, *, validator=None):
         if validator is None:
-            validator = self._resume(None).is_durably_complete
+            chunk_validator=self._resume(None).is_durably_complete
+            validator=lambda execution: chunk_validator(execution) and execution.has_valid_assembly_evidence()
         recovery = ActiveQueueRecoveryUseCase(
             self.repo, start_claimed, resume_claimed,
             completion_validator=validator,
@@ -154,11 +155,12 @@ class F139QueueRecoveryTests(unittest.TestCase):
             transitions.append(TransitionFrame(
                 project.id, execution.id, chunk.id, attempt.id, output, 0, 1, target,
             ))
-        if terminal:
-            execution.transition(Lifecycle.SUCCEEDED)
         self.repo.save(project, [execution], artifacts=artifacts, transitions=transitions)
+        if terminal:
+            # Simulate a pre-F14.3 terminal row: schema 9 had no assembly evidence.
+            self.repo.db.execute("UPDATE executions SET state='succeeded' WHERE id=?",(str(execution.id),))
 
-    def test_terminal_success_survives_restart_and_releases_before_next_claim(self):
+    def test_legacy_terminal_success_without_final_assembly_stays_active_for_review(self):
         active, queued = self._queue_two()
         self._durable_success(terminal=True)
         self.repo.close()
@@ -171,12 +173,13 @@ class F139QueueRecoveryTests(unittest.TestCase):
         )
         result = scheduler.tick()
 
-        self.assertEqual(result.outcome, SchedulerTickOutcome.FINISHED)
-        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.FINISHED)
+        self.assertEqual(result.outcome, SchedulerTickOutcome.RECOVERY_REQUIRED)
+        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
         self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
+        self.assertIn("durable success lacks verified output", result.reason)
         self.assertEqual(calls, [])
 
-    def test_durable_outputs_promote_lost_success_transition_without_backend_submit(self):
+    def test_durable_chunks_without_final_assembly_keep_active_and_do_not_claim_next(self):
         active, queued = self._queue_two()
         self._durable_success(terminal=False)
         calls = []
@@ -187,12 +190,13 @@ class F139QueueRecoveryTests(unittest.TestCase):
 
         result = scheduler.tick()
 
-        self.assertEqual(result.outcome, SchedulerTickOutcome.FINISHED)
+        self.assertEqual(result.outcome, SchedulerTickOutcome.RECOVERY_REQUIRED)
         _, execution = self._load()
-        self.assertEqual(execution.state, Lifecycle.SUCCEEDED)
-        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.FINISHED)
+        self.assertEqual(execution.state, Lifecycle.RUNNING)
+        self.assertTrue(all(chunk.state is Lifecycle.SUCCEEDED for chunk in execution.chunks))
+        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
         self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
-        self.assertEqual(calls, [])
+        self.assertEqual(calls, [("resume", ("project", "first", "active"))])
 
     def test_bound_live_job_waits_without_submit_or_next_claim(self):
         active, queued = self._queue_two()
@@ -584,7 +588,7 @@ class F139QueueRecoveryTests(unittest.TestCase):
         self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
         self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
 
-    def test_staged_stale_retry_completed_history_finishes_chunk_without_submit(self):
+    def test_staged_stale_retry_completed_history_finishes_chunk_but_holds_queue_for_assembly(self):
         from orquestador.application.chunk_execution import ChunkExecutionCoordinator
 
         active, queued = self._queue_two()
@@ -664,18 +668,18 @@ class F139QueueRecoveryTests(unittest.TestCase):
         )
         result = scheduler.tick()
 
-        self.assertEqual(result.outcome, SchedulerTickOutcome.FINISHED)
+        self.assertEqual(result.outcome, SchedulerTickOutcome.RECOVERY_REQUIRED)
         self.assertEqual(backend.calls, [stale_ref])
         submit.submit.assert_not_called()
         _, recovered = self._load()
         recovered_target = recovered.chunks[1]
-        self.assertEqual(recovered.state, Lifecycle.SUCCEEDED)
+        self.assertEqual(recovered.state, Lifecycle.RUNNING)
         self.assertEqual(recovered_target.state, Lifecycle.SUCCEEDED)
         self.assertEqual(recovered_target.attempts[-1].state, Lifecycle.SUCCEEDED)
         self.assertEqual(recovered_target.attempts[-1].external_job_ref, stale_ref)
         self.assertEqual(len(recovered.artifacts), 2)
         self.assertEqual(len(self.repo.load_transitions(recovered.id)), 2)
-        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.FINISHED)
+        self.assertEqual(self.repo.get_queue_item(active.id).state, QueueItemState.ACTIVE)
         self.assertEqual(self.repo.get_queue_item(queued.id).state, QueueItemState.QUEUED)
 
     def test_observed_failed_or_cancelled_job_is_terminalized_without_auto_retry(self):

@@ -1,6 +1,6 @@
 # Modelo de dominio
 
-Este documento es la autoridad de semántica, relaciones, estados e invariantes. Distingue explícitamente lo implementado de lo decidido para F14.
+Este documento es la autoridad de semántica, relaciones, estados e invariantes. La sección F14.3 describe el modelo implementado en el working tree; el smoke humano Windows está aprobado con observaciones y el cierre formal espera la auditoría Git final.
 
 ## Modelo implementado en HEAD auditado
 
@@ -10,7 +10,7 @@ Implementado como `ProjectId` global e inmutable, mapping `defaults` y nombre hu
 
 ### Execution
 
-Corrida concreta de un proyecto. Tiene `ExecutionId` UUID global, `execution_number` visible y correlativo dentro del proyecto, defaults/snapshot, lifecycle, profile, chunks, artifacts y errores.
+Corrida concreta de un proyecto. Tiene `ExecutionId` UUID global, `execution_number` visible y correlativo dentro del proyecto, defaults/snapshot, lifecycle, profile, chunks, artifacts, errores e historial de ensamblado final.
 
 `execution_number` no es identidad técnica: Proyecto A y Proyecto B pueden tener ambos `Execution 1`.
 
@@ -54,6 +54,8 @@ El contrato exige N >= 2 y un prompt no vacío por chunk. Width/height, seed, sa
 - `unknown` para carga/reconciliación, no como éxito implícito.
 
 Transiciones normales: `pending → running|cancelled` y `running → succeeded|failed|cancelled`. Retry posee reaperturas estrechas y explícitas; no habilita transiciones generales hacia atrás.
+
+F14.3 agrega `AssemblyState` para finalización, separado del lifecycle de Execution/Chunk/Attempt: `pending → assembling → failed|succeeded`. Para ejecuciones de producto multichunk, `Execution.succeeded` requiere un ensamblado exitoso con procedencia completa. El último chunk deja la ejecución en `running`; no completa ni libera la cola. El componente F6 de un chunk conserva su contrato aislado y no participa del flujo de producto multichunk.
 
 ## Ejecución editable virgen
 
@@ -128,6 +130,18 @@ Registro singleton durable con:
 
 Pausar impide iniciar el siguiente item. No cancela ni interrumpe el activo.
 
+### Finalización de ejecución F14.3
+
+`AssemblyAttempt` queda asociado a una sola `Execution`. El historial append-only es la autoridad durable de finalización y reside en `execution_assembly_attempts` (schema 10). Cada registro contiene número, estado, ruta final, ruta de staging, fuentes ordenadas, SHA-256 y firma FFprobe del resultado, error y timestamps.
+
+Cada `AssemblySourceEvidence` enlaza orden, `ChunkId`, `AttemptId`, `ArtifactId`, output relativo y SHA-256 de los bytes importados. Antes de aceptar una fuente, el caso de uso exige un único Attempt exitoso con evidencia, un único Artifact OUTPUT coincidente y, para cada enlace intermedio, exactamente un `TransitionFrame` N−1 al siguiente chunk. Las rutas final, staging y fuentes deben quedar bajo el project root.
+
+La ruta final determinista es `assembled-<execution-id>.mp4`. El staging por tentativa es `.orquestador-assembly/<execution-id>/attempt-N.mp4`. FFmpeg crea y FFprobe valida el staging; su hash/firma se persisten antes de publicarlo. La publicación por hard link no reemplaza un destino existente. Después de publicar, se inspeccionan otra vez hash, firma FFprobe y procedencia antes de guardar `AssemblyState.succeeded` y `Execution.succeeded` en una transacción.
+
+Un fallo mantiene `Execution.running` y conserva chunks, Attempts, outputs y transiciones. Retry agrega una tentativa de ensamblado y sólo se permite si las fuentes no cambiaron, la procedencia sigue inequívoca y la ruta final no existe. No llama al runner de chunks ni a ComfyUI. Un destino previo o evidencia contradictoria bloquea; la mera presencia del archivo no constituye éxito.
+
+La migración schema 9→10 crea la tabla vacía y deja las ejecuciones terminales históricas legibles sin inventar evidencia final. El scheduler sólo libera un QueueItem exitoso si la aplicación verificó el final actual; SQLite también rechaza el cierre sin estado/hash/probe/procedencia durables.
+
 ### Política de inicio F14.2 implementada
 
 `QueueStartMode` es configuración durable global del producto (`auto | manual`), independiente de `QueueControl.paused`, guardada en un singleton `queue_start_policy`. La migración schema 8→9 crea la fila como `auto`, por lo que una base existente mantiene su comportamiento. Una fila ausente, duplicada, inválida o con modo desconocido es corrupción y falla cerradamente.
@@ -144,7 +158,7 @@ Con permiso cerrado, recovery puede completar evidencia terminal y observar refe
 
 El resultado del claim no se persiste como entidad o lifecycle adicional. Contiene la identidad del item sólo para la frontera de scheduler que debe arrancar exactamente esa `Execution`.
 
-`finish_claimed_queue_item()` también es una transacción única: exige que item/control/execution coincidan, que no exista otro activo y que la `Execution` ya sea `succeeded`, `failed` o `cancelled`; persiste `active → finished`, limpia `active_queue_item_id` e incrementa la revisión. No borra evidencia ni QueueItems históricos.
+`finish_claimed_queue_item()` también es una transacción única: exige que item/control/execution coincidan, que no exista otro activo y que la `Execution` ya sea `succeeded`, `failed` o `cancelled`. Para `succeeded` exige además un ensamblado final durable con destino, hash, firma FFprobe y fuentes; la aplicación comprueba los bytes/procedencia actuales antes de llegar a esta frontera. Sólo entonces persiste `active → finished`, limpia `active_queue_item_id` e incrementa la revisión. No borra evidencia ni QueueItems históricos.
 
 ## Operaciones manuales F13.7
 
@@ -240,7 +254,7 @@ La UI no agrega una tabla ni un lifecycle paralelo: `QueueDashboardUseCase` lee 
 
 ## Persistencia y compatibilidad
 
-SQLite está en schema 8. F13.0 elevó el schema a 4 mediante una migración incremental desde 3; añade `queue_items`, sus índices parciales de items vigentes/activo y `queue_control` singleton sin cambiar filas históricas. F13.3 añadió en schema 5 `global_defaults`, F13.4 añadió en schema 6 `technical_presets`, F13.5 añadió en schema 7 `chunk_templates` y F14.1 añadió `projects.name`, `projects.name_key` y su índice único normalizado mediante migración 7→8. Para proyectos preexistentes conserva `ProjectId`: IDs legibles pasan a ser nombre inicial; UUIDs reciben `Proyecto generado <primeros 8 caracteres hexadecimales>`. Si nombres colisionan tras normalizar, asigna `(2)`, `(3)`, etc. de forma determinista. La migración sólo completa los campos nuevos y no reescribe Execution, Chunk, Attempt ni evidencia histórica. F13.7 y F13.8 no requirieron migración: las columnas, índices y control existentes contienen los datos para operaciones manuales, claim y finalización. Defaults globales iniciales deben equivaler a los defaults canónicos vigentes para no alterar comportamiento.
+SQLite está en schema 10 en la implementación F14.3 del working tree. F13.0 elevó el schema a 4; F13.3 añadió `global_defaults` en schema 5; F13.4 añadió `technical_presets` en schema 6; F13.5 añadió `chunk_templates` en schema 7; F14.1 añadió nombres de proyecto mediante 7→8; F14.2 añadió `queue_start_policy` mediante 8→9; F14.3 añade `execution_assembly_attempts` mediante 9→10. Esta última migración no cambia las ejecuciones/chunks/attempts/artifacts existentes ni infiere resultados assembly. Las migraciones ordenadas mantienen el camino desde schema 1/2 hasta la versión actual; los valores iniciales de defaults y política preservan el comportamiento vigente.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 

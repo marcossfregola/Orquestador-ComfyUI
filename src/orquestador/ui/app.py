@@ -18,9 +18,10 @@ from ..application.submit_boundary import ComfyUISubmitTransport
 from ..application.robust_chunk_execution import RobustChunkExecutionCoordinator
 from ..application.recover_execution import ResumeExecutionUseCase, RecoverExecutionUseCase, RetryExecutionUseCase
 from ..application.chain_execution import ChainExecutionUseCase
-from ..application.assembly import AssembleExecutionUseCase, AssemblySource, AssemblySourceRoot
+from ..application.assembly import (AssembleExecutionUseCase, FinalizeExecutionUseCase,
+                                    AssemblySource, AssemblySourceRoot)
 from ..adapters.video import FFmpegVideoAdapter
-from ..domain.core import Lifecycle, MaterializedInputRef, editable_virgin
+from ..domain.core import AssemblyState, Lifecycle, MaterializedInputRef, editable_virgin
 from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
@@ -115,7 +116,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             client_factory=ComfyUIClient, cancellation_factory=ComfyUICancellationAdapter,
             assembler_factory=FFmpegAssemblyAdapter, chain_usecase=None,
             resume_usecase=None, recover_usecase=None, retry_usecase=None,
-            assembly_usecase=None, extractor_factory=FFmpegVideoAdapter):
+            assembly_usecase=None, finalization_usecase=None, extractor_factory=FFmpegVideoAdapter):
     """Build concrete production boundaries; no network call is made here."""
     cfg = config.check()
     injected_chain = chain_usecase is not None
@@ -151,7 +152,8 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     orchestrator_real = F11_1BOrchestrator(materializer=materializer_real,
         submit_boundary=submit_boundary, recovery=recover_real, resume=resume_real,
         retry=None, robust=chain_coordinator)
-    chain_kwargs = {'recovery': resume_real, 'orchestrator': orchestrator_real}
+    finalizer_real = FinalizeExecutionUseCase(repository,assembler,cfg.project_root)
+    chain_kwargs = {'recovery': resume_real, 'orchestrator': orchestrator_real,'finalizer':finalizer_real}
     if 'orchestrator' not in inspect.signature(ChainExecutionUseCase).parameters:
         chain_kwargs.pop('orchestrator')
     chain_real = (ChainExecutionUseCase(repository, chain_coordinator, **chain_kwargs)
@@ -166,6 +168,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     recover_usecase = recover_usecase or recover_real
     retry_usecase = retry_usecase or retry_real
     assembly_usecase = assembly_usecase or assembly_real
+    finalization_usecase = finalization_usecase or finalizer_real
     def _snapshot_for_repo(repo, project_id=None, execution_id=None):
         if not project_id: return {"state":"unavailable","errors":("select a project",)}
         try:
@@ -202,9 +205,12 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         retry_only = _retry_only_capability(retry_usecase, e, repo)
         live_queue = repo.has_live_queue_item(e.id)
         editable = editable_virgin(e) and not live_queue
+        final_attempt=e.latest_assembly_attempt()
+        can_retry_assembly=FinalizeExecutionUseCase(repo,assembler,cfg.project_root).can_retry(e)
         caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
             retry_only=retry_only, startable=not live_queue,
-            assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2))
+            assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2),
+            retry_assembly=can_retry_assembly)
         edit_reason = "" if editable else (
             "live durable queue item locks editing" if live_queue
             else (
@@ -213,7 +219,10 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 else "runtime evidence locks editing"
             )
         )
-        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else "", "can_edit":editable, "edit_reason":edit_reason}
+        snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else "", "can_edit":editable, "edit_reason":edit_reason,
+                    "assembly_state":e.assembly_state.value if e.assembly_state is not None else "",
+                    "assembly_error":final_attempt.error if final_attempt is not None else "",
+                    "final_output":final_attempt.destination_uri if final_attempt is not None and final_attempt.state is AssemblyState.SUCCEEDED else None}
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
         # A persisted execution is authoritative even when it has not yet
@@ -353,8 +362,9 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         op_retry = RetryExecutionUseCase(op_repo, op_resume, op_materializer)
         orchestrator = F11_1BOrchestrator(materializer=op_materializer, submit_boundary=op_boundary,
             recovery=op_recover, resume=op_resume, retry=op_retry, robust=op_chain_coordinator)
-        op_chain = ChainExecutionUseCase(op_repo, op_chain_coordinator, recovery=op_resume, orchestrator=orchestrator)
-        return op_chain, op_resume, op_recover, op_retry, orchestrator
+        op_finalizer=FinalizeExecutionUseCase(op_repo,assembler,cfg.project_root)
+        op_chain = ChainExecutionUseCase(op_repo, op_chain_coordinator, recovery=op_resume, orchestrator=orchestrator, finalizer=op_finalizer)
+        return op_chain, op_resume, op_recover, op_retry, orchestrator, op_finalizer
     def _prepare_operation(**kwargs):
         op_repo = _operation_repository()
         try:
@@ -456,7 +466,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             adopt = getattr(op_repo, "adopt_orphaned_running_executions", None)
             if callable(adopt):
                 adopt()
-            op_chain, op_resume, _, _, orchestrator = _worker_services(op_repo)
+            op_chain, op_resume, _, _, orchestrator, op_finalizer = _worker_services(op_repo)
             op_materializer = orchestrator.materializer
             op_start = StartGuiChainUseCase(
                 op_repo,
@@ -470,7 +480,10 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 op_repo,
                 op_start.start_claimed,
                 op_start.resume_claimed,
-                completion_validator=op_resume.is_durably_complete,
+                completion_validator=lambda execution: (
+                    op_resume.is_durably_complete(execution)
+                    and op_finalizer.is_durably_complete(execution)
+                ),
             )
             boundary = SchedulerExecutionBoundary(
                 op_start.start_claimed,
@@ -525,6 +538,19 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             if injected_retry: return retry_usecase.retry(project_id, execution_id, **kwargs)
             return _worker_services(op_repo)[4].retry(project_id, execution_id, **kwargs)
         finally: op_repo.close()
+    def retry_assembly_route(project_id,execution_id=None,**_):
+        op_repo=_operation_repository()
+        try:
+            _,executions=op_repo.load(project_id)
+            matches=[item for item in executions if str(item.id)==str(execution_id)]
+            if len(matches)!=1: raise ValueError('execution selection is missing or ambiguous')
+            execution=matches[0]
+            active=next((item for item in op_repo.list_queue_items(states=('active',))
+                         if str(item.execution_id)==str(execution.id)),None)
+            finalizer=FinalizeExecutionUseCase(op_repo,assembler,cfg.project_root)
+            return finalizer.retry(project_id,execution_id,
+                queue_item_id=str(active.id) if active is not None else None)
+        finally: op_repo.close()
     def assemble_route(project_id, execution_id=None, destination=None, **_):
         op_repo = _operation_repository()
         try:
@@ -545,7 +571,8 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     library = _PreparationLibraryGateway()
     scheduler = SchedulerBackgroundRunner(_scheduler_factory)
     queue = _QueueDashboardGateway()
-    facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route, chain=start_chain,
+    facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route,
+                       retry_assembly=retry_assembly_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
                        cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit,
                        library=library, queue=queue)
@@ -553,7 +580,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     "assembler": assembler, "submitter": submitter, "coordinator": coordinator,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,
                     "retry": retry_usecase,
-                    "assemble": assembly_usecase, "library": library, "queue": queue,
+                    "assemble": assembly_usecase, "finalize": finalization_usecase, "library": library, "queue": queue,
                     "scheduler": scheduler, "dispatch_session": dispatch_session}
 
 def launch(config: AppConfig) -> int:

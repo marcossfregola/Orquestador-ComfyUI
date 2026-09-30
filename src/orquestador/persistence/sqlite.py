@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 from orquestador.domain import *
 from orquestador.domain.project_names import initial_project_name, normalize_project_name, unique_project_name
-SCHEMA_VERSION=9
+SCHEMA_VERSION=10
 class PersistenceError(Exception): pass
 class PersistenceConflictError(PersistenceError): pass
 PersistenceConflict=PersistenceConflictError
@@ -95,6 +95,10 @@ class SQLiteProjectRepository:
   db.execute("CREATE TABLE queue_start_policy(singleton INTEGER PRIMARY KEY CHECK(singleton=1),mode TEXT NOT NULL CHECK(mode IN ('auto','manual')))" )
   db.execute("INSERT INTO queue_start_policy(singleton,mode) VALUES(1,'auto')")
  migrations[9]=_migrate_queue_start_policy.__func__
+ @staticmethod
+ def _migrate_execution_assembly(db):
+  db.execute("CREATE TABLE execution_assembly_attempts(execution_id TEXT NOT NULL REFERENCES executions(id),attempt_number INTEGER NOT NULL CHECK(attempt_number>0),state TEXT NOT NULL CHECK(state IN ('pending','assembling','failed','succeeded')),destination_uri TEXT NOT NULL,staging_uri TEXT NOT NULL,sources TEXT NOT NULL,expected_sha256 TEXT NULL,probe_signature TEXT NULL,error TEXT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(execution_id,attempt_number),CHECK((expected_sha256 IS NULL AND probe_signature IS NULL) OR (expected_sha256 IS NOT NULL AND probe_signature IS NOT NULL)),CHECK((state='failed' AND error IS NOT NULL AND length(trim(error))>0) OR (state<>'failed' AND error IS NULL)),CHECK(state<>'pending' OR (expected_sha256 IS NULL AND error IS NULL)),CHECK(state<>'succeeded' OR (expected_sha256 IS NOT NULL AND error IS NULL)))")
+ migrations[10]=_migrate_execution_assembly.__func__
  @classmethod
  def register_migration(cls,version,fn): cls.migrations[version]=fn
  def _run_migrations(self, migrations=None, target_version=SCHEMA_VERSION):
@@ -402,6 +406,10 @@ class SQLiteProjectRepository:
    if execution is None: raise PersistenceDataError('queue completion execution is missing')
    if execution[0] not in {Lifecycle.SUCCEEDED.value,Lifecycle.FAILED.value,Lifecycle.CANCELLED.value}:
     raise PersistenceConflictError('queue completion requires terminal execution')
+   if execution[0] == Lifecycle.SUCCEEDED.value:
+    final=self.db.execute("SELECT state,destination_uri,expected_sha256,probe_signature,sources FROM execution_assembly_attempts WHERE execution_id=? ORDER BY attempt_number DESC LIMIT 1",(str(execution_id),)).fetchone()
+    if not final or final[0]!='succeeded' or not final[1] or not final[2] or not final[3] or not final[4]:
+     raise PersistenceConflictError('successful queue completion requires durable final assembly evidence')
    active.transition(QueueItemState.FINISHED,at=self._queue_update_time((active,)))
    if self.db.execute("UPDATE queue_items SET state=?,updated_at=?,terminal_reason=? WHERE id=? AND state='active'",(active.state.value,self._queue_time(active.updated_at),active.terminal_reason,str(active.id))).rowcount!=1:
     raise PersistenceConflictError('active queue item changed during completion')
@@ -575,6 +583,7 @@ class SQLiteProjectRepository:
    for e in es:
     prof=e.workflow_profile_ref.value if e.workflow_profile_ref else None; old=self.db.execute('SELECT state,workflow_profile_ref,execution_number FROM executions WHERE id=?',(str(e.id),)).fetchone()
     if old and (not _legal(Lifecycle(old[0]),e.state,allow_retry_reopen=allow_retry_reopen) or old[1]!=prof):raise PersistenceConflictError('execution lifecycle/profile conflict')
+    if old and Lifecycle(old[0]) is Lifecycle.RUNNING and e.state is Lifecycle.SUCCEEDED and len(e.chunks)>1 and not e.has_valid_assembly_evidence(): raise PersistenceConflictError('execution success requires validated final assembly evidence')
     if old:
      e.execution_number=old[2]
     elif e.execution_number is None:
@@ -611,6 +620,7 @@ class SQLiteProjectRepository:
      self.db.execute('DELETE FROM transitions WHERE execution_id=? AND source_chunk_id=? AND source_attempt_id=? AND target_chunk_id IS NULL',(str(t.execution_id),str(t.source_chunk_id),str(t.source_attempt_id)))
     m=getattr(t,'materialized_ref',None)
     self.db.execute('INSERT OR REPLACE INTO transitions(project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(str(t.project_id),str(t.execution_id),str(t.target_chunk_id) if t.target_chunk_id is not None else None,str(t.source_chunk_id),str(t.source_attempt_id),t.source_output.uri,t.source_frame_index,t.frame_count, getattr(m,'type',None),getattr(m,'subfolder',None),getattr(m,'name',None),getattr(m,'source_sha256',None)))
+   for e in es:self._save_assembly_attempts(e)
    if not _in_transaction: self.db.execute('COMMIT')
   except PersistenceError:
    if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
@@ -622,6 +632,38 @@ class SQLiteProjectRepository:
   except Exception as e:
    if self.db.in_transaction and not _in_transaction:self.db.execute('ROLLBACK')
    raise PersistenceError(str(e))
+ def _save_assembly_attempts(self,execution):
+  incoming=tuple(execution.assembly_attempts)
+  if not incoming:return
+  if any(attempt.execution_id!=execution.id for attempt in incoming): raise PersistenceDataError('assembly attempt execution ownership mismatch')
+  if tuple(attempt.number for attempt in incoming)!=tuple(range(1,len(incoming)+1)): raise PersistenceConflictError('assembly attempt history is incomplete or unordered')
+  existing_rows=self.db.execute('SELECT attempt_number,state,destination_uri,staging_uri,sources,expected_sha256,probe_signature,error,created_at,updated_at FROM execution_assembly_attempts WHERE execution_id=? ORDER BY attempt_number',(str(execution.id),)).fetchall()
+  if existing_rows and tuple(row[0] for row in existing_rows)!=tuple(attempt.number for attempt in incoming[:len(existing_rows)]): raise PersistenceConflictError('assembly attempt history cannot be rewritten')
+  existing_by_number={row[0]:row for row in existing_rows}
+  for attempt in incoming:
+   destination=_safe(self.root,attempt.destination_uri)
+   staging=_safe(self.root,attempt.staging_uri)
+   sources=_json([{'order':s.order,'chunk_id':str(s.chunk_id),'attempt_id':str(s.attempt_id),'artifact_id':str(s.artifact_id),'output_uri':_safe(self.root,s.output_uri),'sha256':s.sha256} for s in attempt.sources])
+   signature=_json(attempt.probe_signature) if attempt.probe_signature is not None else None
+   created=self._queue_time(attempt.created_at); updated=self._queue_time(attempt.updated_at)
+   row=existing_by_number.get(attempt.number)
+   if row is None:
+    maximum=self.db.execute('SELECT COALESCE(MAX(attempt_number),0) FROM execution_assembly_attempts WHERE execution_id=?',(str(execution.id),)).fetchone()[0]
+    source_less_failure=(maximum==0 and attempt.state is AssemblyState.FAILED and not attempt.sources and attempt.error is not None)
+    if attempt.number!=maximum+1 or not (attempt.state is AssemblyState.PENDING or source_less_failure) or attempt.expected_sha256 is not None: raise PersistenceConflictError('new assembly attempt must append a pending record or a source-validation failure')
+    if maximum:
+     previous=self.db.execute('SELECT state,destination_uri,sources FROM execution_assembly_attempts WHERE execution_id=? AND attempt_number=?',(str(execution.id),maximum)).fetchone()
+     if not previous or previous[0]!='failed' or previous[1]!=destination or previous[2]!=sources: raise PersistenceConflictError('only a failed assembly with unchanged sources can be retried')
+    self.db.execute('INSERT INTO execution_assembly_attempts(execution_id,attempt_number,state,destination_uri,staging_uri,sources,expected_sha256,probe_signature,error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(str(execution.id),attempt.number,attempt.state.value,destination,staging,sources,attempt.expected_sha256,signature,attempt.error,created,updated))
+    continue
+   _,old_state,old_destination,old_staging,old_sources,old_sha,old_signature,old_error,old_created,old_updated=row
+   if (destination,staging,sources,created)!=(old_destination,old_staging,old_sources,old_created): raise PersistenceConflictError('assembly attempt provenance is immutable')
+   if old_sha is not None and (attempt.expected_sha256!=old_sha or signature!=old_signature): raise PersistenceConflictError('assembly output identity is immutable')
+   if old_sha is None and attempt.expected_sha256 is not None and not (old_state=='assembling' and attempt.state is AssemblyState.ASSEMBLING): raise PersistenceConflictError('assembly output identity can only be recorded while assembling')
+   allowed={'pending':{'pending','assembling'},'assembling':{'assembling','failed','succeeded'},'failed':{'failed'},'succeeded':{'succeeded'}}
+   if attempt.state.value not in allowed.get(old_state,set()): raise PersistenceConflictError('illegal durable assembly transition')
+   if datetime.fromisoformat(updated)<datetime.fromisoformat(old_updated): raise PersistenceConflictError('assembly attempt timestamp moved backwards')
+   self.db.execute('UPDATE execution_assembly_attempts SET state=?,expected_sha256=?,probe_signature=?,error=?,updated_at=? WHERE execution_id=? AND attempt_number=?',(attempt.state.value,attempt.expected_sha256,signature,attempt.error,updated,str(execution.id),attempt.number))
  def save_preparation_sequence(self, project, execution, *, allow_retry_reopen=False):
   eid=str(execution.id); self.db.execute('BEGIN')
   try:
@@ -697,6 +739,36 @@ class SQLiteProjectRepository:
     try: mref=MaterializedInputRef(mtype,msub,mname,msha)
     except Exception as exc: raise PersistenceDataError('invalid materialized reference') from exc
    if tgt is not None: tc.first_frame=TransitionFrame(ProjectId(pr),ExecutionId(ex),ChunkId(src),AttemptId(sa),OutputRef(out),idx,count,ChunkId(tgt),mref)
+  for e in es:
+   source_by_chunk={str(chunk.id):(order,chunk) for order,chunk in enumerate(e.chunks)}
+   previous=None
+   rows=self.db.execute('SELECT attempt_number,state,destination_uri,staging_uri,sources,expected_sha256,probe_signature,error,created_at,updated_at FROM execution_assembly_attempts WHERE execution_id=? ORDER BY attempt_number',(str(e.id),)).fetchall()
+   for expected_number,row in enumerate(rows,1):
+    number,state,destination,staging,sources_json,sha,signature,error,created,updated=row
+    if number!=expected_number: raise PersistenceDataError('assembly attempt sequence is not contiguous')
+    try:
+     raw_sources=json.loads(sources_json)
+     if not isinstance(raw_sources,list): raise ValueError
+     sources=tuple(AssemblySourceEvidence(int(item['order']),ChunkId(item['chunk_id']),AttemptId(item['attempt_id']),ArtifactId(item['artifact_id']),item['output_uri'],item['sha256']) for item in raw_sources)
+     probe=json.loads(signature) if signature is not None else None
+     attempt=AssemblyAttempt(ExecutionId(e.id.value),number,AssemblyState(state),destination,staging,sources,sha,tuple(probe) if probe is not None else None,error,datetime.fromisoformat(created),datetime.fromisoformat(updated))
+    except Exception as exc: raise PersistenceDataError('invalid durable assembly attempt') from exc
+    if len(sources)!=len(e.chunks) and not (attempt.state is AssemblyState.FAILED and not sources): raise PersistenceDataError('assembly source count does not match execution chunks')
+    if not sources and attempt.state is AssemblyState.FAILED:
+     if previous is not None: raise PersistenceDataError('source-less assembly failure cannot be followed by an automatic retry')
+     previous=attempt; e.assembly_attempts.append(attempt); continue
+    for source in sources:
+     owned=source_by_chunk.get(str(source.chunk_id))
+     provenance=am.get(str(source.attempt_id)); artifact_owner=arts.get(str(source.artifact_id))
+     if (owned is None or owned[0]!=source.order or provenance is None or provenance[0] is not e or provenance[1] is not owned[1] or provenance[2].state is not Lifecycle.SUCCEEDED or provenance[2].output is None or provenance[2].output.uri!=source.output_uri or artifact_owner is not provenance):
+      raise PersistenceDataError('assembly source provenance mismatch')
+     artifact=next((item for item in e.artifacts if item.id==source.artifact_id),None)
+     if artifact is None or artifact.phase is not Phase.OUTPUT or artifact.output.uri!=source.output_uri: raise PersistenceDataError('assembly source artifact mismatch')
+    if previous is not None:
+     if previous.destination_uri!=attempt.destination_uri or previous.sources!=attempt.sources: raise PersistenceDataError('assembly retries changed destination or source provenance')
+     if previous.state is not AssemblyState.FAILED or attempt.state not in {AssemblyState.PENDING,AssemblyState.ASSEMBLING,AssemblyState.FAILED,AssemblyState.SUCCEEDED}: raise PersistenceDataError('assembly retry history is invalid')
+    previous=attempt; e.assembly_attempts.append(attempt)
+   if e.state is Lifecycle.SUCCEEDED and len(e.chunks)>1 and rows and not e.has_valid_assembly_evidence(): raise PersistenceDataError('successful execution lacks matching final assembly evidence')
   return p,es
  def list_project_ids(self):
   """Return durable project identities only; product classification lives in application."""

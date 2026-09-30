@@ -1,4 +1,6 @@
 import threading
+import hashlib
+import os
 import tempfile
 import time
 import unittest
@@ -76,8 +78,31 @@ class _DurableStarter:
                     evidence=Evidence("controlled scheduler engine result"),
                 )
                 chunk.transition(Lifecycle.SUCCEEDED)
-        execution.transition(self.terminal)
+        if self.terminal is not Lifecycle.SUCCEEDED:
+            execution.transition(self.terminal)
         self.repository.save(project, [execution])
+
+
+class _TestAssemblyAdapter:
+    signature = ("h264", "avc1", "High", 40, 32, 32, "yuv420p", None, "5/1", "1/10240", ())
+
+    @staticmethod
+    def _hash(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    def stage(self, sources, destination, *, reencode=False):
+        destination=Path(destination); destination.parent.mkdir(parents=True,exist_ok=True)
+        destination.write_bytes(b"".join(Path(source).read_bytes() for source in sources))
+        return type("Staged",(),{"path":destination,"sha256":self._hash(destination),"probe_signature":self.signature})()
+
+    def inspect(self,path):
+        return self._hash(path),self.signature
+
+    def publish(self,staged,destination,*,expected_sha256):
+        if Path(destination).exists() or self._hash(staged)!=expected_sha256:
+            raise RuntimeError("invalid assembly publication")
+        os.link(staged,destination)
+        return Path(destination)
 
 
 class F138SchedulerTests(unittest.TestCase):
@@ -274,7 +299,7 @@ class F138SchedulerTests(unittest.TestCase):
         self.assertEqual(chain.calls[0][1]["queue_item_id"], item.id)
         self.assertEqual(chain.calls[0][0][1].state, Lifecycle.PENDING)
 
-    def test_scheduler_terminalizes_succeeded_failed_and_cancelled_items(self):
+    def test_scheduler_finishes_terminal_failures_but_holds_chunks_pending_assembly(self):
         for terminal in (Lifecycle.SUCCEEDED, Lifecycle.FAILED, Lifecycle.CANCELLED):
             with self.subTest(terminal=terminal.value):
                 root = self.root / terminal.value
@@ -299,11 +324,18 @@ class F138SchedulerTests(unittest.TestCase):
                 try:
                     scheduler.start()
                     result = scheduler.tick()
-                    self.assertEqual(result.outcome, SchedulerTickOutcome.FINISHED)
-                    self.assertEqual(repository.get_queue_item("item").state, QueueItemState.FINISHED)
-                    self.assertIsNone(repository.get_queue_control().active_queue_item_id)
                     _, execution = self._load(repository, "execution")
-                    self.assertEqual(execution.state, terminal)
+                    if terminal is Lifecycle.SUCCEEDED:
+                        self.assertEqual(result.outcome, SchedulerTickOutcome.RECOVERY_REQUIRED)
+                        self.assertEqual(repository.get_queue_item("item").state, QueueItemState.ACTIVE)
+                        self.assertEqual(repository.get_queue_control().active_queue_item_id.value,"item")
+                        self.assertEqual(execution.state,Lifecycle.RUNNING)
+                        self.assertTrue(all(chunk.state is Lifecycle.SUCCEEDED for chunk in execution.chunks))
+                    else:
+                        self.assertEqual(result.outcome, SchedulerTickOutcome.FINISHED)
+                        self.assertEqual(repository.get_queue_item("item").state, QueueItemState.FINISHED)
+                        self.assertIsNone(repository.get_queue_control().active_queue_item_id)
+                        self.assertEqual(execution.state, terminal)
                 finally:
                     scheduler.close()
 
@@ -318,7 +350,7 @@ class F138SchedulerTests(unittest.TestCase):
         one = self.enqueue(first.execution_id, "one")
         two = self.enqueue(second.execution_id, "two")
         starter = _DurableStarter(
-            self.repo, terminal=Lifecycle.SUCCEEDED, pause_during_run=True
+            self.repo, terminal=Lifecycle.FAILED, pause_during_run=True
         )
         scheduler = self.scheduler(starter)
 
@@ -476,6 +508,7 @@ class F138SchedulerTests(unittest.TestCase):
         runner = SchedulerBackgroundRunner(lambda: LockBlockedScheduler())
         with self.assertRaises(SchedulerLockError):
             runner.start()
+        self.assertTrue(runner.stop(timeout=2))
         self.assertEqual(ticks, [])
         self.assertEqual(closed, [True])
         self.assertFalse(runner.running)
@@ -593,6 +626,7 @@ class F138SchedulerTests(unittest.TestCase):
             AppConfig(root, comfyui_output_root=output_root),
             client_factory=lambda endpoint: Client(endpoint),
             extractor_factory=lambda: Extractor(),
+            assembler_factory=lambda: _TestAssemblyAdapter(),
         )
         runner = resources["scheduler"]
         try:

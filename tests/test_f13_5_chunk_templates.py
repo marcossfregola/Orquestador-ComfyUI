@@ -230,6 +230,7 @@ class F135ChunkTemplateTests(unittest.TestCase):
         db = sqlite3.connect(self.root / "orquestador.sqlite3")
         db.execute("DROP TABLE chunk_templates")
         db.execute("DROP TABLE queue_start_policy")
+        db.execute("DROP TABLE execution_assembly_attempts")
         db.execute("UPDATE schema_version SET version=6")
         db.commit()
         db.close()
@@ -237,7 +238,7 @@ class F135ChunkTemplateTests(unittest.TestCase):
         self.repo = SQLiteProjectRepository(self.root)
         self.templates = ChunkTemplatesUseCase(self.repo)
         self.drafts = DraftUseCase(self.repo)
-        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 9)
+        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 10)
         self.assertEqual(
             [row[1] for row in self.repo.db.execute("PRAGMA table_info(chunk_templates)")],
             ["id", "name", "name_key", "prompts", "template_version", "created_at", "updated_at"],

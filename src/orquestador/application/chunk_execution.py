@@ -101,14 +101,22 @@ class ChunkExecutionCoordinator:
             if frame.frame_index != frame.frame_count-1: raise ValueError('frame is not N-1')
         except Exception as exc: return ChunkExecutionResult(False,f'extractor failed: {exc}',str(attempt.id))
         clone = _clone_execution(execution)
+        if clone.state is Lifecycle.PENDING:
+            clone.transition(Lifecycle.RUNNING)
+            try:
+                self.repository.save(project,[clone])
+            except Exception as exc:
+                return ChunkExecutionResult(False,f'persistence failed: {exc}',str(attempt.id))
+            _copy_execution_state(execution, clone)
         cc=next(c for c in clone.chunks if str(c.id)==str(chunk.id)); aa=next(a for a in cc.attempts if str(a.id)==str(attempt.id)); cc.transition(Lifecycle.RUNNING); aa.transition(Lifecycle.RUNNING); aa.transition(Lifecycle.SUCCEEDED,output=obs.output,evidence=Evidence('correlated output, physical validation, decodable N-1 frame'))
         artifact=Artifact(project.id,clone.id,cc.id,aa.id,Phase.OUTPUT,obs.output)
         transition=TransitionFrame(project.id,clone.id,cc.id,aa.id,obs.output,frame.frame_index,frame.frame_count)
         cc.transition(Lifecycle.SUCCEEDED)
-        if clone.chunks and all(x.state is Lifecycle.SUCCEEDED for x in clone.chunks):
-            # Promote execution only when its durable lifecycle is already RUNNING;
-            # legacy F5 callers may persist a PENDING execution alongside completed chunk data.
-            if clone.state is Lifecycle.RUNNING: clone.transition(Lifecycle.SUCCEEDED)
+        # Preserve the established one-chunk primitive contract. Product H3
+        # chains contain multiple chunks and remain RUNNING until F14.3 has
+        # durably assembled and validated their final MP4.
+        if len(clone.chunks)==1 and cc.state is Lifecycle.SUCCEEDED:
+            clone.transition(Lifecycle.SUCCEEDED)
         try: self.repository.save(project,[clone],artifacts=[artifact],transitions=[transition])
         except Exception as exc: return ChunkExecutionResult(False,f'persistence failed: {exc}',str(attempt.id))
         _copy_execution_state(execution, clone)
@@ -119,7 +127,9 @@ def _clone_execution(execution: Execution) -> Execution:
     """Clone the mutable aggregate without copying mappingproxy defaults."""
     clone = Execution(execution.project_id, execution.id, dict(execution.defaults),
                       execution.state, [], execution.workflow_profile_ref,
-                      list(execution.artifacts), list(execution.errors))
+                      list(execution.artifacts), list(execution.errors),
+                      execution.execution_number,
+                      [replace(attempt) for attempt in execution.assembly_attempts])
     for source in execution.chunks:
         chunk = Chunk(source.id, source.order, source.execution_id,
                       dict(source.defaults), source.state, [], source.first_frame)
@@ -136,6 +146,7 @@ def _copy_execution_state(target: Execution, source: Execution) -> None:
     target.state = source.state
     target.artifacts = list(source.artifacts)
     target.errors = list(source.errors)
+    target.assembly_attempts = [replace(attempt) for attempt in source.assembly_attempts]
     for target_chunk, source_chunk in zip(target.chunks, source.chunks):
         target_chunk.state = source_chunk.state
         target_chunk.first_frame = source_chunk.first_frame

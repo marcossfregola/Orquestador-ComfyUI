@@ -1,8 +1,11 @@
 """Application boundary for assembling completed chunk artifacts."""
+import hashlib
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from ..adapters.assembly import AssemblyError
+from ..domain.core import (AssemblyAttempt, AssemblySourceEvidence, AssemblyState,
+                           ExecutionId, Lifecycle, Phase)
 
 @dataclass(frozen=True)
 class AssemblyResult:
@@ -74,3 +77,248 @@ class AssembleExecutionUseCase:
             result=self.assembler.assemble(paths,dst,reencode=reencode)
             return AssemblyResult(True,result)
         except Exception as exc: return AssemblyResult(False,reason=str(exc))
+
+
+@dataclass(frozen=True)
+class FinalizationResult:
+    success: bool
+    execution_id: str
+    state: str
+    output: Path|None = None
+    reason: str = ''
+
+
+class FinalizeExecutionUseCase:
+    """Durably finalize a chunk-complete execution through the shared video adapter."""
+    def __init__(self, repository, assembler, trusted_root=None):
+        self.repository=repository
+        self.assembler=assembler
+        configured=trusted_root if trusted_root is not None else getattr(repository,'root',None)
+        if configured is None: raise ValueError('trusted project output root is required')
+        self.root=Path(configured).resolve()
+        if Path(getattr(repository,'root',self.root)).resolve()!=self.root:
+            raise ValueError('assembly root must match the durable project root')
+
+    @staticmethod
+    def _under(path,root):
+        try:path.relative_to(root); return True
+        except ValueError:return False
+
+    def _resolve(self,uri,*,must_exist=False):
+        if not isinstance(uri,str) or not uri.strip(): raise AssemblyError('durable assembly path is empty')
+        raw=Path(uri)
+        if raw.is_absolute() or raw.drive or '\\' in uri or any(part in {'','..'} for part in uri.split('/')):
+            raise AssemblyError('durable assembly path is not a contained project-relative path')
+        path=(self.root/raw).resolve()
+        if not self._under(path,self.root): raise AssemblyError('durable assembly path escapes project root')
+        if must_exist and (not path.is_file() or path.stat().st_size==0): raise AssemblyError('durable assembly file is missing or empty')
+        return path
+
+    @staticmethod
+    def _sha256(path):
+        digest=hashlib.sha256()
+        with Path(path).open('rb') as stream:
+            for block in iter(lambda:stream.read(1024*1024),b''):
+                digest.update(block)
+        return digest.hexdigest()
+
+    def _source_manifest(self,execution):
+        if len(execution.chunks)<2 or any(chunk.state.value!='succeeded' for chunk in execution.chunks):
+            raise AssemblyError('every execution chunk must be successful before final assembly')
+        try:
+            transitions=tuple(self.repository.load_transitions(execution.id))
+        except Exception as exc:
+            raise AssemblyError(f'durable chunk transitions are unavailable: {exc}') from exc
+        entries=[]; paths=[]
+        for order,chunk in enumerate(execution.chunks):
+            if chunk.order!=order or str(chunk.execution_id)!=str(execution.id): raise AssemblyError('chunk order or ownership is inconsistent')
+            attempts=[attempt for attempt in chunk.attempts if attempt.state.value=='succeeded' and attempt.output is not None and attempt.evidence is not None]
+            if len(attempts)!=1: raise AssemblyError(f'chunk {order} has missing or ambiguous successful attempt')
+            attempt=attempts[0]
+            artifacts=[artifact for artifact in execution.artifacts
+                       if artifact.execution_id==execution.id and artifact.chunk_id==chunk.id
+                       and artifact.attempt_id==attempt.id and artifact.phase is Phase.OUTPUT]
+            if len(artifacts)!=1 or artifacts[0].output!=attempt.output:
+                raise AssemblyError(f'chunk {order} has missing or ambiguous durable output artifact')
+            if order<len(execution.chunks)-1:
+                links=[transition for transition in transitions
+                       if transition.source_chunk_id==chunk.id
+                       and transition.source_attempt_id==attempt.id]
+                if len(links)!=1:
+                    raise AssemblyError(f'chunk {order} has missing or ambiguous durable continuity transition')
+                transition=links[0]
+                if (transition.project_id!=execution.project_id or transition.execution_id!=execution.id
+                        or transition.target_chunk_id!=execution.chunks[order+1].id
+                        or transition.source_output!=attempt.output
+                        or isinstance(transition.frame_count,bool) or not isinstance(transition.frame_count,int)
+                        or transition.frame_count<=0
+                        or isinstance(transition.source_frame_index,bool)
+                        or not isinstance(transition.source_frame_index,int)
+                        or transition.source_frame_index!=transition.frame_count-1):
+                    raise AssemblyError(f'chunk {order} has contradictory durable continuity evidence')
+            path=self._resolve(attempt.output.uri,must_exist=True)
+            entries.append(AssemblySourceEvidence(order,chunk.id,attempt.id,artifacts[0].id,attempt.output.uri,self._sha256(path)))
+            paths.append(path)
+        return tuple(entries),tuple(paths)
+
+    def _load_exact(self,project_id,execution_id):
+        project,executions=self.repository.load(project_id)
+        matches=[execution for execution in executions if str(execution.id)==str(execution_id)]
+        if len(matches)!=1: raise AssemblyError('execution selection is missing or ambiguous')
+        return project,matches[0]
+
+    def _destination_uri(self,execution):
+        return f'assembled-{execution.id}.mp4'
+
+    @staticmethod
+    def _staging_uri(execution,number):
+        return f'.orquestador-assembly/{execution.id}/attempt-{number}.mp4'
+
+    def can_retry(self,execution):
+        latest=execution.latest_assembly_attempt()
+        if (latest is None or latest.state is not AssemblyState.FAILED
+                or execution.state is not Lifecycle.RUNNING
+                or len(latest.sources)!=len(execution.chunks)
+                or not execution.chunks or any(chunk.state is not Lifecycle.SUCCEEDED for chunk in execution.chunks)):
+            return False
+        try:
+            sources,_=self._source_manifest(execution)
+            if sources!=latest.sources: return False
+            destination=self._resolve(latest.destination_uri)
+            if destination.exists(): return False
+            self._resolve(latest.staging_uri)
+            return True
+        except (OSError,ValueError,AssemblyError):
+            return False
+
+    def is_durably_complete(self,execution):
+        latest=execution.latest_assembly_attempt()
+        if (execution.state is not Lifecycle.SUCCEEDED or latest is None
+                or latest.state is not AssemblyState.SUCCEEDED
+                or not execution.has_valid_assembly_evidence()): return False
+        try:
+            sources,_=self._source_manifest(execution)
+            if sources!=latest.sources: return False
+            destination=self._resolve(latest.destination_uri,must_exist=True)
+            digest,signature=self.assembler.inspect(destination)
+            return digest==latest.expected_sha256 and tuple(signature)==latest.probe_signature
+        except Exception:
+            return False
+
+    def execute(self,project_id,execution_id,*,queue_item_id=None,retry=False):
+        try:
+            project,execution=self._load_exact(project_id,execution_id)
+            if execution.state is not Lifecycle.RUNNING:
+                raise AssemblyError('only a running execution can be finalized')
+            if not execution.chunks or any(chunk.state is not Lifecycle.SUCCEEDED for chunk in execution.chunks):
+                raise AssemblyError('all chunks must be successful before finalization')
+            if queue_item_id is not None:
+                validator=getattr(self.repository,'validate_active_queue_claim',None)
+                if not callable(validator): raise AssemblyError('active queue claim validation is unavailable')
+                validator(queue_item_id,execution.id)
+            elif self.repository.has_live_queue_item(execution.id):
+                raise AssemblyError('a live queue item owns this execution')
+            destination_uri=self._destination_uri(execution)
+            destination=self._resolve(destination_uri)
+            latest=execution.latest_assembly_attempt()
+            try:
+                sources,source_paths=self._source_manifest(execution)
+            except Exception as exc:
+                if latest is None:
+                    attempt=AssemblyAttempt(execution.id,1,AssemblyState.FAILED,destination_uri,
+                        self._staging_uri(execution,1),(),error=str(exc).strip() or 'chunk source validation failed')
+                    execution.assembly_attempts.append(attempt)
+                    self.repository.save(project,[execution])
+                    return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=attempt.error)
+                raise
+            if latest is None:
+                latest=AssemblyAttempt(execution.id,1,AssemblyState.PENDING,destination_uri,
+                    self._staging_uri(execution,1),sources)
+                execution.assembly_attempts.append(latest)
+                self.repository.save(project,[execution])
+            else:
+                if latest.destination_uri!=destination_uri or latest.sources!=sources:
+                    if latest.state in {AssemblyState.PENDING,AssemblyState.ASSEMBLING}:
+                        return self._fail(project,execution,latest,'durable finalization provenance no longer matches completed chunks')
+                    raise AssemblyError('durable finalization provenance no longer matches completed chunks')
+                if latest.state is AssemblyState.SUCCEEDED:
+                    if not self.is_durably_complete(execution): raise AssemblyError('recorded final MP4 failed provenance/hash/FFprobe validation; destination will not be overwritten')
+                    return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
+                if latest.state is AssemblyState.FAILED:
+                    if not retry: return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=latest.error or 'assembly failed; explicit assembly retry is required')
+                    if destination.exists(): raise AssemblyError('final MP4 destination already exists; retry will not overwrite it')
+                    if not self.can_retry(execution): raise AssemblyError('assembly retry is not safe for the current durable evidence')
+                    number=latest.number+1
+                    latest=AssemblyAttempt(execution.id,number,AssemblyState.PENDING,destination_uri,
+                        self._staging_uri(execution,number),sources)
+                    execution.assembly_attempts.append(latest)
+                    self.repository.save(project,[execution])
+            latest=execution.latest_assembly_attempt()
+            if latest.state is AssemblyState.SUCCEEDED:
+                return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
+            if latest.state is AssemblyState.FAILED:
+                return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=latest.error or 'assembly failed')
+            staging=self._resolve(latest.staging_uri)
+            if latest.state is AssemblyState.PENDING:
+                if destination.exists(): return self._fail(project,execution,latest,'final MP4 destination already exists without matching durable assembly evidence')
+                if staging.exists(): return self._fail(project,execution,latest,'staging MP4 already exists without matching durable output evidence')
+                latest.transition(AssemblyState.ASSEMBLING)
+                self.repository.save(project,[execution])
+            if destination.exists():
+                return self._adopt_published(project,execution,latest,destination)
+            if latest.expected_sha256 is not None:
+                if not staging.is_file(): return self._fail(project,execution,latest,'validated staged MP4 is missing after restart')
+                try:
+                    staged_hash,staged_probe=self.assembler.inspect(staging)
+                    if staged_hash!=latest.expected_sha256 or tuple(staged_probe)!=latest.probe_signature:
+                        return self._fail(project,execution,latest,'staged MP4 no longer matches durable assembly evidence')
+                except Exception as exc:return self._fail(project,execution,latest,f'staged MP4 validation failed: {exc}')
+            else:
+                if staging.exists(): return self._fail(project,execution,latest,'interrupted staging file has no durable hash/probe identity; assembly retry is required')
+                try:
+                    staged=self.assembler.stage(source_paths,staging)
+                    latest.record_staged_output(staged.sha256,staged.probe_signature)
+                    self.repository.save(project,[execution])
+                except Exception as exc:
+                    return self._fail(project,execution,latest,str(exc))
+            try:
+                self.assembler.publish(staging,destination,expected_sha256=latest.expected_sha256)
+            except Exception as exc:
+                if destination.exists(): return self._adopt_published(project,execution,latest,destination)
+                return self._fail(project,execution,latest,str(exc))
+            return self._adopt_published(project,execution,latest,destination)
+        except Exception as exc:
+            return FinalizationResult(False,str(execution_id),AssemblyState.FAILED.value,reason=str(exc))
+
+    def retry(self,project_id,execution_id,*,queue_item_id=None):
+        return self.execute(project_id,execution_id,queue_item_id=queue_item_id,retry=True)
+
+    def _adopt_published(self,project,execution,attempt,destination):
+        if attempt.expected_sha256 is None or attempt.probe_signature is None:
+            return self._fail(project,execution,attempt,'final destination exists without durable output hash/probe provenance; overwrite is prohibited')
+        try:
+            digest,signature=self.assembler.inspect(destination)
+            if digest!=attempt.expected_sha256 or tuple(signature)!=attempt.probe_signature:
+                return self._fail(project,execution,attempt,'published MP4 failed hash/FFprobe provenance validation; overwrite is prohibited')
+            current_sources,_=self._source_manifest(execution)
+            if current_sources!=attempt.sources:
+                return self._fail(project,execution,attempt,'published MP4 source provenance changed during recovery')
+            attempt.transition(AssemblyState.SUCCEEDED)
+            execution.transition(Lifecycle.SUCCEEDED)
+            self.repository.save(project,[execution])
+            return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
+        except Exception as exc:
+            return self._fail(project,execution,attempt,f'published MP4 validation/finalization failed: {exc}')
+
+    def _fail(self,project,execution,attempt,reason):
+        detail=str(reason).strip() or 'assembly failed'
+        try:
+            if attempt.state is AssemblyState.PENDING:
+                attempt.transition(AssemblyState.ASSEMBLING)
+                self.repository.save(project,[execution])
+            if attempt.state is AssemblyState.ASSEMBLING:
+                attempt.transition(AssemblyState.FAILED,error=detail)
+                self.repository.save(project,[execution])
+        except Exception as exc:
+            detail=f'{detail}; failure evidence could not be persisted: {exc}'
+        return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=detail)

@@ -32,8 +32,8 @@ class F142QueueStartPolicyPersistenceTests(unittest.TestCase):
         self.repo.close()
         self.temp.cleanup()
 
-    def test_schema9_defaults_to_auto_and_manual_mode_survives_reopen(self):
-        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 9)
+    def test_schema10_defaults_to_auto_and_manual_mode_survives_reopen(self):
+        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 10)
         self.assertEqual(self.repo.get_queue_start_mode(), QueueStartMode.AUTO)
         self.assertEqual(
             self.repo.db.execute("SELECT singleton,mode FROM queue_start_policy").fetchall(),
@@ -49,13 +49,14 @@ class F142QueueStartPolicyPersistenceTests(unittest.TestCase):
         self.repo.set_queue_start_mode(QueueStartMode.MANUAL)
         self.repo.set_queue_paused(True)
         self.repo.db.execute("DROP TABLE queue_start_policy")
+        self.repo.db.execute("DROP TABLE execution_assembly_attempts")
         self.repo.db.execute("UPDATE schema_version SET version=8")
         self.repo.close()
 
         self.repo = SQLiteProjectRepository(self.root)
         self.assertEqual(self.repo.get_queue_start_mode(), QueueStartMode.AUTO)
         self.assertTrue(self.repo.get_queue_control().paused)
-        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 9)
+        self.assertEqual(self.repo.db.execute("SELECT version FROM schema_version").fetchone()[0], 10)
 
     def test_invalid_and_missing_policy_fail_closed(self):
         with self.assertRaises(PersistenceDataError):

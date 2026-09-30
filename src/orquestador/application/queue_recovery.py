@@ -306,9 +306,18 @@ class ActiveQueueRecoveryUseCase:
 
         chunk, attempt = self._actionable_attempt(execution)
         if chunk is None:
+            if execution.chunks and all(entry.state is Lifecycle.SUCCEEDED for entry in execution.chunks):
+                # F14.3 keeps the queue claim active after the last chunk.
+                # Re-enter the same chain boundary to reconcile or continue
+                # only final assembly; no chunk is actionable and no submit
+                # authority is granted here.
+                return self._drive(
+                    self.resume_claimed, project.id, execution.id, queue_item_id,
+                    "final assembly continuation",
+                )
             return self._result(
                 QueueRecoveryOutcome.MANUAL_REVIEW, execution.id, queue_item_id,
-                "running execution has no actionable chunk and lacks complete evidence",
+                "running execution has no actionable chunk and lacks complete final evidence",
             )
         if attempt is None:
             if chunk.state not in {Lifecycle.PENDING, Lifecycle.RUNNING}:

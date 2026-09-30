@@ -34,6 +34,7 @@ class BackendJobRef:
 class Lifecycle(str,Enum): PENDING='pending'; RUNNING='running'; SUCCEEDED='succeeded'; FAILED='failed'; CANCELLED='cancelled'; UNKNOWN='unknown'
 class QueueItemState(str,Enum): QUEUED='queued'; ACTIVE='active'; FINISHED='finished'; REMOVED='removed'; SKIPPED='skipped'
 class Phase(str,Enum): PREPARE='prepare'; EXECUTE='execute'; ASSEMBLE='assemble'; OUTPUT='output'
+class AssemblyState(str,Enum): PENDING='pending'; ASSEMBLING='assembling'; FAILED='failed'; SUCCEEDED='succeeded'
 @dataclass(frozen=True)
 class InputRef: uri:str
 @dataclass(frozen=True)
@@ -58,6 +59,73 @@ class ErrorRecord: code:str; message:str; id:ErrorId=field(default_factory=lambd
 @dataclass(frozen=True)
 class Artifact:
  project_id:ProjectId; execution_id:ExecutionId; chunk_id:ChunkId; attempt_id:AttemptId; phase:Phase; output:OutputRef; id:ArtifactId=field(default_factory=lambda:ArtifactId(str(uuid4())))
+@dataclass(frozen=True)
+class AssemblySourceEvidence:
+ order:int; chunk_id:ChunkId; attempt_id:AttemptId; artifact_id:ArtifactId; output_uri:str; sha256:str
+ def __post_init__(self):
+  if type(self.order) is not int or self.order<0: raise DomainError('assembly source order must be non-negative')
+  if not all(isinstance(v,t) for v,t in ((self.chunk_id,ChunkId),(self.attempt_id,AttemptId),(self.artifact_id,ArtifactId))): raise DomainError('invalid assembly source identity')
+  if not isinstance(self.output_uri,str) or not self.output_uri.strip(): raise DomainError('assembly source path is required')
+  path=self.output_uri.replace('\\','/')
+  if path.startswith('/') or os.path.isabs(self.output_uri) or os.path.splitdrive(self.output_uri)[0] or any(part in {'','..'} for part in path.split('/')): raise DomainError('assembly source path must be contained and relative')
+  if not isinstance(self.sha256,str) or not re.fullmatch(r'[0-9a-fA-F]{64}',self.sha256): raise DomainError('invalid assembly source sha256')
+  object.__setattr__(self,'sha256',self.sha256.lower())
+
+@dataclass
+class AssemblyAttempt:
+ execution_id:ExecutionId; number:int; state:AssemblyState; destination_uri:str; staging_uri:str
+ sources:tuple[AssemblySourceEvidence,...]; expected_sha256:str|None=None
+ probe_signature:tuple|None=None; error:str|None=None
+ created_at:datetime=field(default_factory=lambda:datetime.now(timezone.utc))
+ updated_at:datetime=field(default_factory=lambda:datetime.now(timezone.utc))
+ def __post_init__(self):
+  if not isinstance(self.execution_id,ExecutionId): raise DomainError('invalid assembly execution identity')
+  if type(self.number) is not int or self.number<1: raise DomainError('assembly attempt number must be positive')
+  try: self.state=AssemblyState(self.state)
+  except (TypeError,ValueError) as exc: raise DomainError('invalid assembly state') from exc
+  for label,value in (('destination',self.destination_uri),('staging',self.staging_uri)):
+   if not isinstance(value,str) or not value.strip(): raise DomainError(f'assembly {label} path is required')
+   path=value.replace('\\','/')
+   if path.startswith('/') or os.path.isabs(value) or os.path.splitdrive(value)[0] or any(part in {'','..'} for part in path.split('/')): raise DomainError(f'assembly {label} path must be contained and relative')
+  if not self.destination_uri.lower().endswith('.mp4') or not self.staging_uri.lower().endswith('.mp4'): raise DomainError('assembly paths must identify MP4 files')
+  self.sources=tuple(self.sources)
+  if (len(self.sources)<2 and not (self.state is AssemblyState.FAILED and not self.sources)) or any(not isinstance(source,AssemblySourceEvidence) for source in self.sources): raise DomainError('assembly requires ordered source evidence for every chunk')
+  if tuple(source.order for source in self.sources)!=tuple(range(len(self.sources))): raise DomainError('assembly sources must be ordered and contiguous')
+  if len({str(source.chunk_id) for source in self.sources})!=len(self.sources) or len({str(source.attempt_id) for source in self.sources})!=len(self.sources): raise DomainError('assembly sources must be unique')
+  if self.expected_sha256 is not None:
+   if not isinstance(self.expected_sha256,str) or not re.fullmatch(r'[0-9a-fA-F]{64}',self.expected_sha256): raise DomainError('invalid assembled output sha256')
+   self.expected_sha256=self.expected_sha256.lower()
+  if self.probe_signature is not None:
+   if not isinstance(self.probe_signature,(tuple,list)): raise DomainError('invalid assembled output probe signature')
+   self.probe_signature=tuple(_freeze_evidence(value) for value in self.probe_signature)
+  if self.error is not None and (not isinstance(self.error,str) or not self.error.strip()): raise DomainError('assembly error must be nonblank')
+  self.created_at=_utc(self.created_at); self.updated_at=_utc(self.updated_at)
+  if self.updated_at<self.created_at: raise DomainError('assembly attempt updated_at precedes created_at')
+  if self.state is AssemblyState.PENDING and (self.expected_sha256 is not None or self.probe_signature is not None or self.error is not None): raise DomainError('pending assembly cannot contain result evidence')
+  if (self.expected_sha256 is None)!=(self.probe_signature is None): raise DomainError('assembled output hash and probe signature must be recorded together')
+  if self.state is AssemblyState.FAILED and self.error is None: raise DomainError('failed assembly requires an error')
+  if self.state is AssemblyState.SUCCEEDED and (self.error is not None or self.expected_sha256 is None): raise DomainError('successful assembly requires validated output evidence')
+  if self.state in {AssemblyState.PENDING,AssemblyState.ASSEMBLING} and self.error is not None: raise DomainError('nonterminal assembly cannot contain a terminal error')
+ def record_staged_output(self,sha256,probe_signature,*,at=None):
+  if self.state is not AssemblyState.ASSEMBLING: raise DomainError('staged output requires an assembling attempt')
+  if self.expected_sha256 is not None: raise DomainError('staged output evidence is immutable')
+  if not isinstance(sha256,str) or not re.fullmatch(r'[0-9a-fA-F]{64}',sha256): raise DomainError('invalid staged output sha256')
+  if not isinstance(probe_signature,(tuple,list)): raise DomainError('invalid staged output probe signature')
+  self.expected_sha256=sha256.lower(); self.probe_signature=tuple(_freeze_evidence(v) for v in probe_signature); self.updated_at=_utc(at)
+ def transition(self,target,*,error=None,at=None):
+  try: target=AssemblyState(target)
+  except (TypeError,ValueError) as exc: raise DomainError('invalid assembly state') from exc
+  allowed={AssemblyState.PENDING:{AssemblyState.ASSEMBLING},AssemblyState.ASSEMBLING:{AssemblyState.FAILED,AssemblyState.SUCCEEDED}}
+  if target not in allowed.get(self.state,set()): raise DomainError(f'illegal assembly transition {self.state}->{target}')
+  if target is AssemblyState.FAILED and (not isinstance(error,str) or not error.strip()): raise DomainError('assembly failure requires a cause')
+  if target is AssemblyState.SUCCEEDED and (error is not None or self.expected_sha256 is None): raise DomainError('assembly success requires validated output evidence')
+  if target is not AssemblyState.FAILED and error is not None: raise DomainError('assembly error is only valid on failure')
+  self.state=target; self.error=error; self.updated_at=_utc(at)
+
+def _freeze_evidence(value):
+ if isinstance(value,(tuple,list)): return tuple(_freeze_evidence(item) for item in value)
+ if value is None or isinstance(value,(str,int,float,bool)): return value
+ raise DomainError('probe signature contains unsupported evidence')
 @dataclass(frozen=True)
 class TransitionFrame:
  project_id:ProjectId; execution_id:ExecutionId; source_chunk_id:ChunkId; source_attempt_id:AttemptId; source_output:OutputRef; source_frame_index:int; frame_count:int|None=None
@@ -126,7 +194,7 @@ class Chunk:
  def effective_parameters(self,project,execution_defaults): return _map({**project.defaults,**dict(execution_defaults),**self.defaults})
 @dataclass
 class Execution:
- project_id:ProjectId; id:ExecutionId=_uid(ExecutionId); defaults:Mapping[str,Any]=field(default_factory=dict); state:Lifecycle=Lifecycle.PENDING; chunks:list[Chunk]=field(default_factory=list); workflow_profile_ref:WorkflowProfileRef|None=None; artifacts:list[Artifact]=field(default_factory=list); errors:list[ErrorRecord]=field(default_factory=list); execution_number:int|None=None
+ project_id:ProjectId; id:ExecutionId=_uid(ExecutionId); defaults:Mapping[str,Any]=field(default_factory=dict); state:Lifecycle=Lifecycle.PENDING; chunks:list[Chunk]=field(default_factory=list); workflow_profile_ref:WorkflowProfileRef|None=None; artifacts:list[Artifact]=field(default_factory=list); errors:list[ErrorRecord]=field(default_factory=list); execution_number:int|None=None; assembly_attempts:list[AssemblyAttempt]=field(default_factory=list)
  def __post_init__(self): self.defaults=_map(self.defaults)
  def add_chunk(self,chunk):
   if chunk.execution_id not in (None,self.id): raise DomainError('chunk belongs to another execution')
@@ -156,7 +224,24 @@ class Execution:
   allowed={Lifecycle.PENDING:{Lifecycle.RUNNING,Lifecycle.CANCELLED},Lifecycle.RUNNING:{Lifecycle.SUCCEEDED,Lifecycle.FAILED,Lifecycle.CANCELLED}}
   if target not in allowed.get(self.state,set()): raise DomainError(f'illegal execution transition {self.state}->{target}')
   if target is Lifecycle.SUCCEEDED and (not self.chunks or any(c.state is not Lifecycle.SUCCEEDED for c in self.chunks)): raise DomainError('execution requires all chunks succeeded')
+  if target is Lifecycle.SUCCEEDED and len(self.chunks)>1 and not self.has_valid_assembly_evidence(): raise DomainError('execution requires validated final assembly evidence')
   self.state=target
+ def latest_assembly_attempt(self): return self.assembly_attempts[-1] if self.assembly_attempts else None
+ @property
+ def assembly_state(self):
+  latest=self.latest_assembly_attempt()
+  if latest is not None: return latest.state
+  if self.state is Lifecycle.RUNNING and self.chunks and all(c.state is Lifecycle.SUCCEEDED for c in self.chunks): return AssemblyState.PENDING
+  return None
+ def has_valid_assembly_evidence(self):
+  latest=self.latest_assembly_attempt()
+  if latest is None or latest.state is not AssemblyState.SUCCEEDED or latest.execution_id!=self.id or len(latest.sources)!=len(self.chunks): return False
+  for order,(source,chunk) in enumerate(zip(latest.sources,self.chunks)):
+   if source.order!=order or source.chunk_id!=chunk.id or chunk.state is not Lifecycle.SUCCEEDED: return False
+   attempts=[a for a in chunk.attempts if a.id==source.attempt_id and a.state is Lifecycle.SUCCEEDED and a.output is not None and a.output.uri==source.output_uri and a.evidence is not None]
+   artifacts=[a for a in self.artifacts if a.execution_id==self.id and a.chunk_id==chunk.id and a.attempt_id==source.attempt_id and a.phase is Phase.OUTPUT and a.output.uri==source.output_uri and a.id==source.artifact_id]
+   if len(attempts)!=1 or len(artifacts)!=1: return False
+  return True
  def reopen_for_retry(self):
   """Re-enter a durably failed execution for its single bounded retry."""
   if self.state is not Lifecycle.FAILED:

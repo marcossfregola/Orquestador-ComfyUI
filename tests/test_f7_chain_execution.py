@@ -1,3 +1,5 @@
+import hashlib
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +9,7 @@ from orquestador.domain import (Artifact, BackendJobRef, Chunk, Evidence,
 from orquestador.domain.core import DomainError
 from orquestador.application.chain_execution import ChainExecutionUseCase, ChainOutcome
 from orquestador.application.chunk_execution import ChunkExecutionResult
+from orquestador.application.assembly import FinalizeExecutionUseCase
 from orquestador.persistence.sqlite import SQLiteProjectRepository, PersistenceDataError
 from orquestador.application.recover_execution import ResumeExecutionUseCase, RecoveryOutcome
 from orquestador.application.bridge import SubmitAttemptUseCase
@@ -56,6 +59,34 @@ class _ReloadFailRepository(_DelegatingRepository):
         return self.repository.load_transitions(execution_id)
 
 
+class _AssemblyAdapter:
+    signature = ("h264", "avc1", "High", 40, 32, 32, "yuv420p", None, "5/1", "1/10240", ())
+
+    @staticmethod
+    def _hash(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    def stage(self, sources, destination, *, reencode=False):
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"".join(Path(source).read_bytes() for source in sources))
+        return type("Staged", (), {"path": destination, "sha256": self._hash(destination), "probe_signature": self.signature})()
+
+    def inspect(self, path):
+        return self._hash(path), self.signature
+
+    def publish(self, staged, destination, *, expected_sha256):
+        if self._hash(staged) != expected_sha256 or Path(destination).exists():
+            raise RuntimeError("invalid assembly publish")
+        os.link(staged, destination)
+        return Path(destination)
+
+
+def _chain(repository, coordinator, **kwargs):
+    finalizer = FinalizeExecutionUseCase(repository, _AssemblyAdapter(), repository.root)
+    return ChainExecutionUseCase(repository, coordinator, finalizer=finalizer, **kwargs)
+
+
 class F7ChainExecutionTests(unittest.TestCase):
     def make(self, n=2):
         root = Path(tempfile.mkdtemp()); (root/'media').mkdir()
@@ -67,7 +98,7 @@ class F7ChainExecutionTests(unittest.TestCase):
     def run_chain(self, n=2, runner=None, repo=None, p=None, e=None):
         if repo is None: root, repo, p, e = self.make(n)
         runner = runner or _Runner(repo)
-        out = ChainExecutionUseCase(repo, runner).run(p, e, lambda i, c: {'seed': i}, transition_materializer=lambda t: t.source_output.uri)
+        out = _chain(repo, runner).run(p, e, lambda i, c: {'seed': i}, transition_materializer=lambda t: t.source_output.uri)
         return out, runner, repo, p, e
 
     def reopened_provisional(self, *, include_artifact=True):
@@ -114,7 +145,7 @@ class F7ChainExecutionTests(unittest.TestCase):
                 return result
 
         runner = PersistedProvisionalRunner(repo)
-        out = ChainExecutionUseCase(repo, runner).run(
+        out = _chain(repo, runner).run(
             p, e, lambda i, c: {"seed": i},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -136,7 +167,7 @@ class F7ChainExecutionTests(unittest.TestCase):
         linked = next(t for t in links if t.target_chunk_id == loaded.chunks[1].id)
         self.assertEqual(linked.source_frame_index, linked.frame_count - 1)
         before = list(runner.calls)
-        again = ChainExecutionUseCase(repo, runner).run(
+        again = _chain(repo, runner).run(
             p, loaded, lambda i, c: {"seed": i},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -147,7 +178,7 @@ class F7ChainExecutionTests(unittest.TestCase):
     def test_succeeded_provisional_matches_chunk_attempt_output_and_artifact(self):
         root, repo, p, e = self.reopened_provisional()
         runner = _Runner(repo)
-        out = ChainExecutionUseCase(repo, runner).run(
+        out = _chain(repo, runner).run(
             p, e, lambda i, c: {'seed': i},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -159,7 +190,7 @@ class F7ChainExecutionTests(unittest.TestCase):
         self.assertEqual((link.source_chunk_id, link.source_attempt_id, link.source_output),
                          (e.chunks[0].id, source.id, source.output))
         before = list(runner.calls)
-        again = ChainExecutionUseCase(repo, runner).run(
+        again = _chain(repo, runner).run(
             p, e, lambda i, c: {'seed': i},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -178,7 +209,7 @@ class F7ChainExecutionTests(unittest.TestCase):
         provisional = TransitionFrame(p.id, e.id, source.id, attempt.id, alternate, 4, 5)
         repo.save(p, [e], artifacts=(artifact,), transitions=(provisional,))
         runner = _Runner(repo)
-        out = ChainExecutionUseCase(repo, runner).run(
+        out = _chain(repo, runner).run(
             p, e, lambda i, c: {},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -196,7 +227,7 @@ class F7ChainExecutionTests(unittest.TestCase):
         )
         repo.load_transitions = lambda execution_id: [foreign]
         runner = _Runner(repo)
-        out = ChainExecutionUseCase(repo, runner).run(
+        out = _chain(repo, runner).run(
             p, e, lambda i, c: {},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -208,7 +239,7 @@ class F7ChainExecutionTests(unittest.TestCase):
     def test_succeeded_provisional_without_matching_artifact_fails_closed(self):
         root, repo, p, e = self.reopened_provisional(include_artifact=False)
         runner = _Runner(repo)
-        out = ChainExecutionUseCase(repo, runner).run(
+        out = _chain(repo, runner).run(
             p, e, lambda i, c: {},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -220,7 +251,7 @@ class F7ChainExecutionTests(unittest.TestCase):
     def test_succeeded_provisional_save_failure_fails_closed(self):
         root, repo, p, e = self.reopened_provisional()
         failing = _SaveFailRepository(repo); runner = _Runner(failing)
-        out = ChainExecutionUseCase(failing, runner).run(
+        out = _chain(failing, runner).run(
             p, e, lambda i, c: {},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -232,7 +263,7 @@ class F7ChainExecutionTests(unittest.TestCase):
     def test_succeeded_provisional_reload_failure_fails_closed(self):
         root, repo, p, e = self.reopened_provisional()
         failing = _ReloadFailRepository(repo); runner = _Runner(failing)
-        out = ChainExecutionUseCase(failing, runner).run(
+        out = _chain(failing, runner).run(
             p, e, lambda i, c: {},
             transition_materializer=lambda t: t.source_output.uri,
         )
@@ -254,26 +285,26 @@ class F7ChainExecutionTests(unittest.TestCase):
     def test_close_reopen_after_chunk_one_resumes_without_resubmit(self):
         root, repo, p, e = self.make(2); r = _Runner(repo); e.transition(Lifecycle.RUNNING); repo.save(p,[e]);
         first = r.execute(p,e,e.chunks[0].id,{'seed':0}); e.link_transition(e.chunks[1], first.transition); repo.save(p,[e],artifacts=[first.artifact],transitions=[__import__('dataclasses').replace(first.transition,target_chunk_id=e.chunks[1].id)]); repo.close()
-        repo = SQLiteProjectRepository(root,'f7.sqlite3'); p,es = repo.load(p.id); e=es[0]; r2=_Runner(repo); out=ChainExecutionUseCase(repo,r2).run(p,e,lambda i,c:{'seed':i},transition_materializer=lambda t:t.source_output.uri); self.assertEqual(out.outcome,ChainOutcome.COMPLETE); self.assertEqual(r2.calls,[str(e.chunks[1].id)]); repo.close()
+        repo = SQLiteProjectRepository(root,'f7.sqlite3'); p,es = repo.load(p.id); e=es[0]; r2=_Runner(repo); out=_chain(repo,r2).run(p,e,lambda i,c:{'seed':i},transition_materializer=lambda t:t.source_output.uri); self.assertEqual(out.outcome,ChainOutcome.COMPLETE); self.assertEqual(r2.calls,[str(e.chunks[1].id)]); repo.close()
 
     def test_three_chunk_reopen_last_safe_point(self):
-        out,r,repo,p,e=self.run_chain(3); self.assertEqual(out.outcome,ChainOutcome.COMPLETE); calls=len(r.calls); repo.close(); repo=SQLiteProjectRepository(Path(repo.root),'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; r2=_Runner(repo); self.assertEqual(ChainExecutionUseCase(repo,r2).run(p,e,lambda i,c:{}).outcome,ChainOutcome.COMPLETE); self.assertEqual(r2.calls,[]); self.assertEqual(len(repo.load_transitions(e.id)),2); repo.close(); self.assertEqual(calls,3)
+        out,r,repo,p,e=self.run_chain(3); self.assertEqual(out.outcome,ChainOutcome.COMPLETE); calls=len(r.calls); repo.close(); repo=SQLiteProjectRepository(Path(repo.root),'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; r2=_Runner(repo); self.assertEqual(_chain(repo,r2).run(p,e,lambda i,c:{}).outcome,ChainOutcome.COMPLETE); self.assertEqual(r2.calls,[]); self.assertEqual(len(repo.load_transitions(e.id)),2); repo.close(); self.assertEqual(calls,3)
 
     def test_crash_window_provisional_without_target_fails_closed(self):
-        root,repo,p,e=self.make(2); e.transition(Lifecycle.RUNNING); a=e.chunks[0].new_attempt(); a.transition(Lifecycle.RUNNING); a.transition(Lifecycle.SUCCEEDED,output=OutputRef('media/chunk-0.mp4'),evidence=Evidence('ok')); e.chunks[0].transition(Lifecycle.RUNNING); e.chunks[0].transition(Lifecycle.SUCCEEDED); t=TransitionFrame(p.id,e.id,e.chunks[0].id,a.id,a.output,4,5); repo.save(p,[e],transitions=[t]); r=_Runner(repo); out=ChainExecutionUseCase(repo,r).run(p,e,lambda i,c:{}); self.assertEqual(out.outcome,ChainOutcome.BLOCKED); self.assertEqual(r.calls,[]); repo.close()
+        root,repo,p,e=self.make(2); e.transition(Lifecycle.RUNNING); a=e.chunks[0].new_attempt(); a.transition(Lifecycle.RUNNING); a.transition(Lifecycle.SUCCEEDED,output=OutputRef('media/chunk-0.mp4'),evidence=Evidence('ok')); e.chunks[0].transition(Lifecycle.RUNNING); e.chunks[0].transition(Lifecycle.SUCCEEDED); t=TransitionFrame(p.id,e.id,e.chunks[0].id,a.id,a.output,4,5); repo.save(p,[e],transitions=[t]); r=_Runner(repo); out=_chain(repo,r).run(p,e,lambda i,c:{}); self.assertEqual(out.outcome,ChainOutcome.BLOCKED); self.assertEqual(r.calls,[]); repo.close()
 
     def test_failed_chunk_preserves_old_attempt_and_f6_retry_budget(self):
-        root,repo,p,e=self.make(2); r=_Runner(repo,fail_at=0); out=ChainExecutionUseCase(repo,r).run(p,e,lambda i,c:{}); self.assertEqual(out.outcome,ChainOutcome.BLOCKED); repo.close(); repo=SQLiteProjectRepository(root,'f7.sqlite3'); _,es=repo.load(p.id); self.assertEqual(len(es[0].chunks[0].attempts),1); self.assertEqual(es[0].chunks[0].attempts[0].state,Lifecycle.FAILED); repo.close()
+        root,repo,p,e=self.make(2); r=_Runner(repo,fail_at=0); out=_chain(repo,r).run(p,e,lambda i,c:{}); self.assertEqual(out.outcome,ChainOutcome.BLOCKED); repo.close(); repo=SQLiteProjectRepository(root,'f7.sqlite3'); _,es=repo.load(p.id); self.assertEqual(len(es[0].chunks[0].attempts),1); self.assertEqual(es[0].chunks[0].attempts[0].state,Lifecycle.FAILED); repo.close()
 
     def test_repeated_resume_is_idempotent_no_duplicate_submit_or_links(self):
-        out,r,repo,p,e=self.run_chain(2); self.assertEqual(ChainExecutionUseCase(repo,r).run(p,e,lambda i,c:{}).outcome,ChainOutcome.COMPLETE); self.assertEqual(len(r.calls),2); self.assertEqual(len(repo.load_transitions(e.id)),1); repo.close()
+        out,r,repo,p,e=self.run_chain(2); self.assertEqual(_chain(repo,r).run(p,e,lambda i,c:{}).outcome,ChainOutcome.COMPLETE); self.assertEqual(len(r.calls),2); self.assertEqual(len(repo.load_transitions(e.id)),1); repo.close()
 
     def test_missing_invalid_provenance_and_frame_fail_closed(self):
-        root,repo,p,e=self.make(2); e.transition(Lifecycle.RUNNING); a=e.chunks[0].new_attempt(); a.transition(Lifecycle.RUNNING); a.transition(Lifecycle.SUCCEEDED,output=OutputRef('media/chunk-0.mp4'),evidence=Evidence('ok')); e.chunks[0].transition(Lifecycle.RUNNING); e.chunks[0].transition(Lifecycle.SUCCEEDED); repo.save(p,[e]); r=_Runner(repo); self.assertEqual(ChainExecutionUseCase(repo,r).run(p,e,lambda i,c:{}).outcome,ChainOutcome.BLOCKED); repo.close()
+        root,repo,p,e=self.make(2); e.transition(Lifecycle.RUNNING); a=e.chunks[0].new_attempt(); a.transition(Lifecycle.RUNNING); a.transition(Lifecycle.SUCCEEDED,output=OutputRef('media/chunk-0.mp4'),evidence=Evidence('ok')); e.chunks[0].transition(Lifecycle.RUNNING); e.chunks[0].transition(Lifecycle.SUCCEEDED); repo.save(p,[e]); r=_Runner(repo); self.assertEqual(_chain(repo,r).run(p,e,lambda i,c:{}).outcome,ChainOutcome.BLOCKED); repo.close()
         with self.assertRaises(DomainError): TransitionFrame(p.id,e.id,e.chunks[0].id,a.id,a.output,5,5)
 
     def test_execution_never_succeeds_without_required_links(self):
-        out,r,repo,p,e=self.run_chain(2); self.assertEqual(e.state,Lifecycle.SUCCEEDED); repo.db.execute('DELETE FROM transitions'); repo.db.execute("UPDATE executions SET state='running'"); repo.close(); repo=SQLiteProjectRepository(root:=Path(repo.root),'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; self.assertEqual(ChainExecutionUseCase(repo,_Runner(repo)).run(p,e,lambda i,c:{}).outcome,ChainOutcome.BLOCKED); repo.close()
+        out,r,repo,p,e=self.run_chain(2); self.assertEqual(e.state,Lifecycle.SUCCEEDED); repo.db.execute('DELETE FROM transitions'); repo.db.execute("UPDATE executions SET state='running'"); repo.close(); repo=SQLiteProjectRepository(root:=Path(repo.root),'f7.sqlite3'); p,es=repo.load(p.id); e=es[0]; self.assertEqual(_chain(repo,_Runner(repo)).run(p,e,lambda i,c:{}).outcome,ChainOutcome.BLOCKED); repo.close()
 
     def test_f5_provisional_transition_compatibility(self):
         root,repo,p,e=self.make(2); a=e.chunks[0].new_attempt(); a.transition(Lifecycle.RUNNING); a.transition(Lifecycle.SUCCEEDED,output=OutputRef('media/chunk-0.mp4'),evidence=Evidence('ok')); e.chunks[0].transition(Lifecycle.RUNNING); e.chunks[0].transition(Lifecycle.SUCCEEDED); repo.save(p,[e],transitions=[TransitionFrame(p.id,e.id,e.chunks[0].id,a.id,a.output,4,5,None)]); self.assertIsNone(repo.load_transitions(e.id)[0].target_chunk_id); repo.close()
@@ -294,20 +325,20 @@ class F7ChainExecutionTests(unittest.TestCase):
                 return {'seed': i}
         r1 = _Runner(repo)
         with self.assertRaisesRegex(RuntimeError, 'SAFE_BOUNDARY'):
-            ChainExecutionUseCase(repo, r1).run(p, e, StopBeforeSubmit(1), transition_materializer=lambda t:t.source_output.uri)
+            _chain(repo, r1).run(p, e, StopBeforeSubmit(1), transition_materializer=lambda t:t.source_output.uri)
         self.assertEqual(r1.calls, [str(e.chunks[0].id)])
         links = repo.load_transitions(e.id); self.assertEqual(len(links), 1)
         repo.close()
         repo = SQLiteProjectRepository(root, 'f7.sqlite3'); p, es = repo.load(p.id); e = es[0]
         r2 = _Runner(repo)
         with self.assertRaisesRegex(RuntimeError, 'SAFE_BOUNDARY'):
-            ChainExecutionUseCase(repo, r2).run(p, e, StopBeforeSubmit(2), transition_materializer=lambda t:t.source_output.uri)
+            _chain(repo, r2).run(p, e, StopBeforeSubmit(2), transition_materializer=lambda t:t.source_output.uri)
         self.assertEqual(r2.calls, [str(e.chunks[1].id)])
         self.assertEqual(r2.prompts[0]['first_frame'], links[0].source_output.uri)
         links = repo.load_transitions(e.id); self.assertEqual(len(links), 2)
         repo.close()
         repo = SQLiteProjectRepository(root, 'f7.sqlite3'); p, es = repo.load(p.id); e = es[0]
-        r3 = _Runner(repo); out = ChainExecutionUseCase(repo, r3).run(p, e, lambda i,c: {}, transition_materializer=lambda t:t.source_output.uri)
+        r3 = _Runner(repo); out = _chain(repo, r3).run(p, e, lambda i,c: {}, transition_materializer=lambda t:t.source_output.uri)
         self.assertEqual(out.outcome, ChainOutcome.COMPLETE)
         self.assertEqual(r3.calls, [str(e.chunks[2].id)])
         self.assertEqual(r3.prompts[0]['first_frame'], links[1].source_output.uri)
@@ -317,7 +348,7 @@ class F7ChainExecutionTests(unittest.TestCase):
     def test_in_chain_f6_resume_use_case_is_dispatched_for_failed_chunk(self):
         root, repo, p, e = self.make(2)
         failed = _Runner(repo, fail_at=0)
-        self.assertEqual(ChainExecutionUseCase(repo, failed).run(p, e, lambda i,c:{}).outcome, ChainOutcome.BLOCKED)
+        self.assertEqual(_chain(repo, failed).run(p, e, lambda i,c:{}).outcome, ChainOutcome.BLOCKED)
         repo.close(); repo = SQLiteProjectRepository(root, 'f7.sqlite3'); p, es = repo.load(p.id); e = es[0]
         class Client:
             def __init__(self): self.submits=[]
@@ -338,7 +369,7 @@ class F7ChainExecutionTests(unittest.TestCase):
             correlator=lambda o,r: OutputCorrelationResult(r,OutputCorrelationStatus.VALID,(descriptor,)),
             physical_validator=lambda d,r: PhysicalOutputEvidence(d,PhysicalOutputStatus.EXISTS,r,r/'media'/'chunk-0.mp4'))
         recovery=ResumeExecutionUseCase(repo,backend,coordinator,submitter); self.assertIsInstance(recovery, ResumeExecutionUseCase); r = _Runner(repo)
-        out = ChainExecutionUseCase(repo, r, recovery=recovery).run(p, e, lambda i,c:{}, transition_materializer=lambda t:t.source_output.uri)
+        out = _chain(repo, r, recovery=recovery).run(p, e, lambda i,c:{}, transition_materializer=lambda t:t.source_output.uri)
         self.assertEqual(out.outcome, ChainOutcome.COMPLETE); self.assertEqual(len(backend.observations), 2); self.assertEqual(len(client.submits), 1); self.assertEqual(r.calls, [str(e.chunks[1].id)]); self.assertEqual(len(e.chunks[0].attempts), 2); self.assertEqual(e.chunks[0].attempts[0].state, Lifecycle.FAILED); self.assertEqual(e.chunks[0].attempts[1].state, Lifecycle.SUCCEEDED); self.assertEqual(len(repo.load_transitions(e.id)), 1); self.assertEqual(r.prompts[0]['first_frame'], 'media/chunk-0.mp4'); repo.close()
 
     def test_multiple_executions_recovery_reload_is_exact_and_isolated(self):
@@ -362,7 +393,7 @@ class F7ChainExecutionTests(unittest.TestCase):
         recovery = Recovery(repo); runner = _Runner(repo)
         target, untouched = es[-1], es[0]
         self.assertNotEqual(repo.load(p.id)[1][0].id, target.id)  # old refreshed[0] would be wrong
-        out = ChainExecutionUseCase(repo, runner, recovery=recovery).run(p, target, lambda i,c:{'seed':i}, transition_materializer=lambda t:t.source_output.uri)
+        out = _chain(repo, runner, recovery=recovery).run(p, target, lambda i,c:{'seed':i}, transition_materializer=lambda t:t.source_output.uri)
         self.assertEqual(out.outcome, ChainOutcome.COMPLETE); self.assertEqual(runner.calls, [str(target.chunks[1].id)])
         _, reopened=repo.load(p.id); target=next(x for x in reopened if x.id==target.id); untouched=next(x for x in reopened if x.id==untouched.id)
         self.assertEqual(len(target.chunks[0].attempts),2); self.assertEqual(len(untouched.chunks[0].attempts),1); self.assertEqual(repo.load_transitions(untouched.id),[]); self.assertEqual(repo.load_transitions(target.id)[0].execution_id,target.id); repo.close()

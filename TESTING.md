@@ -577,3 +577,33 @@ El freeze aislado de `Prepare` observado previamente (>30 s) no pudo reproducirs
 La suite global continúa conservando fallos históricos ya documentados; no se declara globalmente verde.
 
 **Decisión:** F14.2 CLOSED — APROBADA. F14.3 pasa a ser la próxima slice; todavía no se implementó.
+
+
+## F14.3 — ensamblado automático como requisito de finalización (implementación 2026-09-29; smoke 2026-09-30)
+
+La implementación y el smoke humano Windows están **APROBADOS CON OBSERVACIONES**. El último chunk conserva la ejecución y el QueueItem activos hasta que la finalización automática verifique el MP4 con FFprobe y guarde procedencia durable. El retry se limita al ensamblado. La migración schema 9→10 preserva filas históricas sin inferir éxito a partir de archivos. F14.4 no se inició. El cierre formal de F14.3 queda pendiente de la auditoría Git final y de un commit autorizado.
+
+Evidencia focal:
+
+- `python -B -m unittest -v tests.test_f14_3_final_assembly` — **12 tests, OK**, incluido el ensamblado de clips sintéticos mediante FFmpeg/FFprobe reales.
+- `python -B -m unittest -v tests.test_f14_3_final_assembly tests.test_f5_chunk_execution tests.test_f5_robust_chunk_execution tests.test_f6_recover_execution tests.test_f6_stale_not_found_provenance tests.test_f7_chain_execution tests.test_f8_assembly tests.test_f11_5_operations tests.test_f13_8_scheduler tests.test_f13_9_queue_recovery tests.test_f13_10_queue_gui tests.test_f13_10_retry_hotfix tests.test_f13_10_runtime_regression` — **166 tests, OK**.
+- `python -B -m compileall -q src tests` — **exit 0**; `git diff --check` — **PASS**. Los avisos de Git son sólo su configuración LF→CRLF de Windows.
+- FFmpeg y FFprobe reales: **9.0 essentials** desde `C:\ProjectStorage\VisorVideo\tools\ffmpeg\bin`. La prueba usa clips sintéticos; no acredita una cadena generada por ComfyUI.
+
+Suite completa diferencial, `python -B -m unittest discover -s tests -v`, contra snapshot limpio del baseline exacto `5bb63389ff3af7de1d81581fae15de0b1f5327cb`, con `ORQ_TEST_TMP` separados:
+
+- Baseline: **803 tests en 72.834 s; 11 failures, 27 errors, 2 skipped**.
+- Implementación F14.3: **816 tests en 71.398 s; 8 failures, 6 errors, 2 skipped**.
+- Comparación de identificadores exactos `FAIL`/`ERROR`: **38** incidencias baseline, **14** actuales; **24** incidencias previas resueltas, todas las actuales pertenecen al baseline y **`NEW_REGRESSIONS=0`**. La suite completa sigue teniendo fallos históricos y no se declara globalmente verde. Los dos skips corresponden a symlink no disponible bajo los privilegios de este Windows.
+
+### Validación humana Windows y verificación técnica posterior (2026-09-30)
+
+La persona que realizó el smoke confirmó una cadena real de dos chunks, ejecutados secuencialmente, con assembly automático. El MP4 final abrió y se reprodujo completo; su orden y continuidad fueron validados visualmente. No se ejercitó un fallo ni retry de assembly.
+
+- SQLite reporta schema 10. Execution 1 `31239b42-97c5-4f7d-ad53-70ed80565323` (`Copia de abs`) terminó `succeeded`; su único QueueItem `2bb76b0b-e681-4c8b-848e-da90fa492865` terminó `finished`.
+- `AssemblyAttempt #1` quedó `succeeded`, sin error, con destino `assembled-31239b42-97c5-4f7d-ad53-70ed80565323.mp4`. La evidencia durable pasó a final a las **18:28:52.417557 ART**; el QueueItem se finalizó a las **18:28:52.426458 ART**, después de esa evidencia.
+- SHA-256 del MP4 final y staging: `949f137777dc1afa7d5e07d4931f84e0aecbecb59ee62f0360b3550b38a4037c`. FFprobe 9.0 terminó con exit 0 y la firma coincide con la durable: H.264/AVC1 High, level 31, 800×544, yuv420p, 18 fps, time base 1/18432, sin audio; 588 frames, 32.666667 s, 3,725,677 bytes, probe score 100.
+- Sources en orden: chunk `18342054-6fa4-414b-bfe8-4e9d7b18d30b`, Attempt `0db35330-7b7d-4a6b-8838-4d4a93d7f3f9`, output `video/MiniMax_H3_00387_.mp4`, SHA-256 `f6b7575683552fb26a689f656ee4fa17b8939c71104546b1abb8e475cddf6a89`; luego chunk `39c5b0fd-de15-431e-bd9d-5a7c4188dcae`, Attempt `845bfb3d-d6af-40c4-b329-fc996f7cf5fd`, output `video/MiniMax_H3_00388_.mp4`, SHA-256 `38b2ed7af6992f8251e8b56cd1f73831fbb5336199af0b338404585646d41f94`. Los hashes físicos coincidieron con la procedencia durable.
+- El frame de continuidad N−1 (293/294) del primer chunk sigue materializado y su hash coincide con SQLite. Cada chunk conserva sólo su Attempt #1; el manifest de assembly referencia esos dos Attempts. ComfyUI `/history` conserva sólo los dos prompts enlazados: el segundo terminó a las **18:28:51.362 ART**, assembly empezó a las **18:28:52.204014 ART** y terminó a las **18:28:52.417557 ART**. No hubo Attempts de chunk nuevos ni submits ComfyUI durante assembly. `/queue` quedó vacía.
+
+La verificación fue de sólo lectura y no repitió suites. El retry de assembly ante fallo continúa sin validación humana en este smoke exitoso.

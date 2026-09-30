@@ -55,6 +55,8 @@ class QueueDashboardEntry:
     can_skip: bool = False
     can_duplicate: bool = False
     project_name: str = ""
+    assembly_state: str = ""
+    assembly_error: str = ""
 
 
 @dataclass(frozen=True)
@@ -166,7 +168,10 @@ class QueueDashboardUseCase:
             number = getattr(execution, "execution_number", None)
             if number is not None and type(number) is not int:
                 raise QueueDashboardError("queue execution number is invalid")
-            return project_id, project.name, execution_state, number
+            latest=execution.latest_assembly_attempt()
+            assembly_state=execution.assembly_state.value if execution.assembly_state is not None else ""
+            assembly_error=latest.error if latest is not None else ""
+            return project_id, project.name, execution_state, number, assembly_state, assembly_error
         except (
             PersistenceError,
             OSError,
@@ -204,6 +209,11 @@ class QueueDashboardUseCase:
                     or "El item activo se está reconciliando antes de continuar.",
                 )
             execution_state = contexts[active.id][2]
+            assembly_state=contexts[active.id][4]
+            if execution_state=="running" and assembly_state=="failed":
+                return "assembly_failed",contexts[active.id][5] or "Falló el ensamblado; el item activo conserva la exclusividad de cola."
+            if execution_state=="running" and assembly_state in {"pending","assembling"}:
+                return "finalizing","Todos los chunks terminaron; se valida el MP4 final antes de liberar la cola."
             if execution_state == "running":
                 return "running", "Hay una ejecución activa; no se iniciará otra."
             if execution_state in {"succeeded", "failed", "cancelled"}:
@@ -229,7 +239,7 @@ class QueueDashboardUseCase:
         return "idle", "Sin ejecución activa ni items en espera."
 
     @staticmethod
-    def _entry_presentation(record, execution_state, dashboard_state, is_active):
+    def _entry_presentation(record, execution_state, dashboard_state, is_active, assembly_state="", assembly_error=""):
         if record.state == "queued":
             return "queued", "En espera de su turno durable."
         if record.state == "active":
@@ -241,6 +251,10 @@ class QueueDashboardUseCase:
                 return "recovery", "El activo se reconcilia antes de considerar el siguiente item."
             if dashboard_state == "blocked":
                 return "blocked", "El activo quedó bloqueado y conserva la exclusividad de cola."
+            if execution_state=="running" and assembly_state=="failed":
+                return "assembly_failed",assembly_error or "Falló el ensamblado; el item activo espera un retry exclusivo."
+            if execution_state=="running" and assembly_state in {"pending","assembling"}:
+                return "finalizing","Chunks completos; validando el MP4 final."
             if execution_state == "running":
                 return "running", "Ejecución activa."
             if execution_state in {"succeeded", "failed", "cancelled"}:
@@ -274,10 +288,10 @@ class QueueDashboardUseCase:
             queued_ids = tuple(record.id for record in queued)
             entries = []
             for record in records:
-                project_id, project_name, execution_state, execution_number = contexts[record.id]
+                project_id, project_name, execution_state, execution_number, assembly_state, assembly_error = contexts[record.id]
                 is_active = record.id == control.active_queue_item_id
                 presentation_state, detail = self._entry_presentation(
-                    record, execution_state, dashboard_state, is_active
+                    record, execution_state, dashboard_state, is_active, assembly_state, assembly_error
                 )
                 queued_index = queued_ids.index(record.id) if record.id in queued_ids else -1
                 mutable = record.state == "queued"
@@ -301,6 +315,8 @@ class QueueDashboardUseCase:
                         mutable,
                         mutable,
                         project_name,
+                        assembly_state,
+                        assembly_error,
                     )
                 )
             return QueueDashboardSnapshot(

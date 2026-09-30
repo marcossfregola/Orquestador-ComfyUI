@@ -138,8 +138,13 @@ class F131DraftTests(unittest.TestCase):
         self.repository.save(project, [success])
         success.transition(Lifecycle.RUNNING)
         self.repository.save(project, [success])
-        success.transition(Lifecycle.SUCCEEDED)
-        self.repository.save(project, [success])
+        # This record models a legacy multichunk success created before final
+        # assembly was represented durably.
+        self.repository.db.execute(
+            "UPDATE executions SET state=? WHERE id=?",
+            (Lifecycle.SUCCEEDED.value, str(success.id)),
+        )
+        success.state = Lifecycle.SUCCEEDED
         self.assertEqual(
             [item.classification for item in self.drafts.list_project_executions("project")],
             ["failed", "succeeded"],

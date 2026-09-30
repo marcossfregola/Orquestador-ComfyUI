@@ -1,4 +1,5 @@
 import os
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,6 +47,27 @@ from orquestador.persistence.sqlite import SQLiteProjectRepository
 from orquestador.profiles.minimax_h3 import H3_PROFILE
 from orquestador.ui.app import AppConfig, compose
 
+class _TestAssemblyAdapter:
+    signature=("h264","avc1","High",40,32,32,"yuv420p",None,"5/1","1/10240",())
+
+    @staticmethod
+    def _hash(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    def stage(self,sources,destination,*,reencode=False):
+        destination=Path(destination); destination.parent.mkdir(parents=True,exist_ok=True)
+        destination.write_bytes(b"".join(Path(source).read_bytes() for source in sources))
+        return type("Staged",(),{"path":destination,"sha256":self._hash(destination),"probe_signature":self.signature})()
+
+    def inspect(self,path):
+        return self._hash(path),self.signature
+
+    def publish(self,staged,destination,*,expected_sha256):
+        if Path(destination).exists() or self._hash(staged)!=expected_sha256:
+            raise RuntimeError("invalid assembly publication")
+        os.link(staged,destination)
+        return Path(destination)
+
 class F115OperationsTests(unittest.TestCase):
     def test_reopen_snapshot_exposes_chunk_transition_and_artifacts(self):
         facade = GuiFacade(snapshot=lambda *_: {"project_id":"p","execution_id":"e","state":"running","chunks":[{"order":0,"state":"succeeded","output":"chunks/0.mp4","transition":"transitions/0.png"}],"artifacts":["chunks/0.mp4"],"can_resume":True,"can_recover":True})
@@ -63,6 +85,17 @@ class F115OperationsTests(unittest.TestCase):
         facade = GuiFacade(snapshot=lambda *_: {"state":"failed","can_retry":False,"can_assemble":False})
         snap = facade.refresh("p", "e")
         self.assertFalse(snap.can_retry or snap.can_assemble)
+
+        assembly_facade = GuiFacade(snapshot=lambda *_: {
+            "project_id":"p", "execution_id":"e", "state":"running",
+            "assembly_state":"failed", "assembly_error":"ffmpeg failed",
+            "can_retry":False, "can_retry_assembly":True,
+        })
+        assembly = assembly_facade.refresh("p", "e")
+        self.assertTrue(assembly.can_retry_assembly)
+        self.assertFalse(assembly.can_retry)
+        self.assertEqual(assembly.assembly_state, "failed")
+        self.assertEqual(assembly.assembly_error, "ffmpeg failed")
 
     @classmethod
     def setUpClass(cls):
@@ -298,6 +331,40 @@ class F115OperationsTests(unittest.TestCase):
         self.assertEqual(window._reopen_result.message, "Retry is required for this execution")
         window._retry_execution()
         self.assertEqual(calls, [("retry", ("p", "e"), {})])
+
+    def test_mainwindow_failed_assembly_offers_only_assembly_retry(self):
+        from orquestador.ui.main_window import MainWindow
+
+        calls = []
+        snapshot = ExecutionSnapshot(
+            "p", "e", "running", assembly_state="failed",
+            assembly_error="ffmpeg failed", can_retry=False,
+            can_retry_assembly=True,
+        )
+
+        class FakeFacade:
+            def refresh(self, project_id=None, execution_id=None):
+                return snapshot
+
+            def retry_assembly(self, *args, **kwargs):
+                calls.append(("retry_assembly", args, kwargs))
+                return OperationResult(True, snapshot, "assembly retried")
+
+        window = MainWindow(FakeFacade())
+        self.addCleanup(window.close)
+        window.project.setText("p")
+        window.execution.setText("e")
+        window.render(snapshot)
+        self.assertTrue(window.retry_assembly.isEnabled())
+        self.assertFalse(window.retry.isEnabled())
+        self.assertIn("ffmpeg failed", window.assembly_status.text())
+
+        window._run = lambda operation, *_args, **_kwargs: setattr(
+            window, "_assembly_result", operation()
+        )
+        window._retry_assembly()
+        self.assertTrue(window._assembly_result.success)
+        self.assertEqual(calls, [("retry_assembly", ("p", "e"), {})])
 
     def test_composed_snapshot_enables_only_retry_for_staged_stale_state(self):
         project = Project()
@@ -568,6 +635,7 @@ class F115OperationsTests(unittest.TestCase):
             AppConfig(root, comfyui_output_root=output_root),
             client_factory=lambda endpoint: Client(endpoint),
             extractor_factory=lambda: Extractor(),
+            assembler_factory=lambda: _TestAssemblyAdapter(),
         )
         self.addCleanup(resources["repository"].close)
         result = facade.resume_execution(project.id, execution.id)

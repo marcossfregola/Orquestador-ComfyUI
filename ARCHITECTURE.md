@@ -24,7 +24,7 @@ Define identidades, invariantes, estados y transiciones de `Project`, `Execution
 
 ### Persistencia
 
-SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación actual está en schema 9: F13.0 añadió `QueueItem` y el control singleton de cola, F13.3 defaults globales, F13.4 presets técnicos, F13.5 plantillas de chunks, F14.1 el nombre humano durable de proyectos y F14.2 el singleton de política de inicio `queue_start_policy`. La migración 8→9 establece `auto` y preserva el control, items y evidencia existentes. El nombre y su clave NFC/casefold son únicos. Los renombres y la asignación transaccional de nombres de clone no cambian ejecuciones ni archivos. Las migraciones futuras deben preservar bases existentes y fallar cerradamente ante corrupción o versiones desconocidas.
+SQLite conserva agregados y evidencia durable con schema versionado y migraciones ordenadas. La implementación local F14.3 avanza schema 9→10 con `execution_assembly_attempts`; la migración sólo crea la tabla y conserva las filas históricas sin fabricar evidencia de finalización. La autoridad durable enlaza estado de ensamblado, rutas contenidas, hashes/probe y procedencia de Attempts/Artifacts. Las versiones anteriores siguen su ruta incremental hasta schema 10 y la carga falla cerradamente ante evidencia nueva inválida.
 
 ### ComfyUI y perfiles
 
@@ -33,6 +33,10 @@ ComfyUI permanece detrás del adaptador programático. Queue/history del backend
 ### Video y artifacts
 
 FFmpeg/FFprobe permanecen detrás del adaptador de video. Chunks, outputs, transiciones N-1 y ensamblado son adicionales y no se sobrescriben silenciosamente.
+
+#### Finalización automática F14.3
+
+`ChainExecutionUseCase` conserva `Execution.running` luego del último chunk y delega el finalizado a `FinalizeExecutionUseCase`. Éste valida procedencia por orden de chunk, SHA-256 de cada output y transitions N−1; usa `FFmpegAssemblyAdapter.stage/inspect/publish`, persiste el identity del staging antes de publicar y comprueba de nuevo el destino antes de cambiar a `succeeded`. El nombre final `assembled-<execution-id>.mp4` es determinista; el staging queda bajo `.orquestador-assembly/<execution-id>/`. La publicación usa hard link no destructivo y bloquea un destino existente sin evidencia coincidente. F13.9 llama la cadena existente para continuar sólo el ensamblado si todos los chunks ya están completos; un retry manual no vuelve a llamar al runner/SubmitBoundary. El QueueItem sólo se libera al conciliar la evidencia final. La proyección Qt muestra estado/error y ofrece retry/export por fachada, sin acceso a FFmpeg/SQLite/ComfyUI.
 
 ### Background jobs
 

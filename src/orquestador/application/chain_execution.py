@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any
 
 from ..domain.core import Lifecycle, MaterializedInputRef, Phase
-from .chunk_execution import ChunkExecutionResult
+from .chunk_execution import ChunkExecutionResult, _copy_execution_state
 from .robust_chunk_execution import RobustChunkExecutionCoordinator
 
 
@@ -35,11 +35,12 @@ class ChainExecutionUseCase:
     ``prompts`` may be a sequence or callable(order, chunk).  A checkpoint is
     persisted after every successful chunk, before the next submit is made.
     """
-    def __init__(self, repository, coordinator, recovery=None, orchestrator=None):
+    def __init__(self, repository, coordinator, recovery=None, orchestrator=None, finalizer=None):
         self.repository = repository
         self.coordinator = coordinator
         self.recovery = recovery
         self.orchestrator = orchestrator
+        self.finalizer = finalizer
 
     def run(self, project, execution, prompts, transition_rebinder=None, transition_materializer=None,
             queue_item_id=None, queue_recovery=False):
@@ -51,6 +52,11 @@ class ChainExecutionUseCase:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='queue recovery requires an active queue claim')
         if queue_item_id is not None and execution.state is not Lifecycle.PENDING and not queue_recovery:
             return ChainExecutionResult(ChainOutcome.BLOCKED, str(execution.id), reason='scheduler claim execution is not pending')
+        if execution.state is Lifecycle.SUCCEEDED:
+            validator=getattr(self.finalizer,'is_durably_complete',None)
+            if callable(validator) and validator(execution):
+                return ChainExecutionResult(ChainOutcome.COMPLETE,str(execution.id))
+            return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),reason='successful execution lacks validated final assembly evidence')
         if execution.state is Lifecycle.PENDING:
             previous_state = execution.state
             execution.transition(Lifecycle.RUNNING)
@@ -297,6 +303,17 @@ class ChainExecutionUseCase:
                 execution.state = fresh.state
                 execution.artifacts = list(fresh.artifacts)
                 execution.errors = list(fresh.errors)
+                execution.assembly_attempts = [replace(attempt) for attempt in fresh.assembly_attempts]
+            artifact = getattr(result, 'artifact', None)
+            if artifact is not None and not any(existing.id==artifact.id for existing in execution.artifacts):
+                try:
+                    self.repository.save(project,[execution],artifacts=(artifact,))
+                    execution.artifacts.append(artifact)
+                except Exception as exc:
+                    return ChainExecutionResult(
+                        ChainOutcome.BLOCKED,str(execution.id),index,
+                        f'completed chunk artifact persistence failed: {exc}',result,
+                    )
             if index < len(execution.chunks) - 1:
                 # F5 creates a source transition with a nullable target. Read
                 # that durable checkpoint back before advancing: the transient
@@ -307,7 +324,6 @@ class ChainExecutionUseCase:
                 source_chunk_id = getattr(returned, 'source_chunk_id', None)
                 source_attempt_id = getattr(returned, 'source_attempt_id', None)
                 source_output = getattr(returned, 'source_output', None)
-                artifact = getattr(result, 'artifact', None)
                 if returned is None and artifact is not None:
                     source_chunk_id = artifact.chunk_id
                     source_attempt_id = artifact.attempt_id
@@ -392,7 +408,26 @@ class ChainExecutionUseCase:
                         ChainOutcome.BLOCKED, str(execution.id), index,
                         'continuity checkpoint is missing or inconsistent', result,
                     )
-        if execution.state is not Lifecycle.SUCCEEDED:
-            execution.transition(Lifecycle.SUCCEEDED)
-            self.repository.save(project, [execution])
+        if self.finalizer is None:
+            return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),reason='durable final assembly service is required')
+        try:
+            finalized=self.finalizer.execute(
+                str(project.id),str(execution.id),
+                queue_item_id=str(queue_item_id) if queue_item_id is not None else None,
+            )
+        except Exception as exc:
+            return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),reason=f'final assembly failed: {exc}')
+        if not getattr(finalized,'success',False):
+            return ChainExecutionResult(
+                ChainOutcome.BLOCKED,str(execution.id),
+                reason=getattr(finalized,'reason','') or 'final assembly did not validate',
+            )
+        try:
+            _,refreshed=self.repository.load(project.id)
+            matches=[item for item in refreshed if str(item.id)==str(execution.id)]
+            if len(matches)!=1 or matches[0].state is not Lifecycle.SUCCEEDED or not matches[0].has_valid_assembly_evidence():
+                return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),reason='durable final assembly evidence is missing or ambiguous')
+            _copy_execution_state(execution,matches[0])
+        except Exception as exc:
+            return ChainExecutionResult(ChainOutcome.BLOCKED,str(execution.id),reason=f'final assembly reload failed: {exc}')
         return ChainExecutionResult(ChainOutcome.COMPLETE, str(execution.id))
