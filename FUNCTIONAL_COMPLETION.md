@@ -1,6 +1,6 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — F14.1 y F14.2 CLOSED; la implementación y el smoke humano de F14.3 están APROBADOS CON OBSERVACIONES. El cierre documental/Git espera auditoría final; F14.4 no iniciada.
+**Estado:** EN CURSO — F14.1, F14.2 y F14.3 CLOSED — APROBADAS. F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. F14.4 es la próxima etapa PLANNED — NO INICIADA — NO AUTORIZADA hasta una nueva tarea explícita. F11.6 sigue pospuesta hasta después de F14.
 **Fecha de decisión:** 2026-09-27.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
@@ -203,7 +203,7 @@ La implementación técnica F14.2 y su comparación diferencial quedan registrad
 
 ## F14.3 — Ensamblado como requisito de finalización real
 
-**Estado:** implementación y smoke humano **APROBADOS CON OBSERVACIONES**; pendiente auditoría Git final y cierre formal. No se inició F14.4.
+**Estado:** **CLOSED — APROBADA**. Implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
 
 ### Problema
 
@@ -240,7 +240,7 @@ chunks completos
 
 La implementación conserva una única autoridad durable por Execution: historial append-only `execution_assembly_attempts` (schema 9→10). El último chunk deja la ejecución `running`; `ChainExecutionUseCase` invoca automáticamente `FinalizeExecutionUseCase`, y F13.9 reingresa esa misma cadena tras recovery. Cada fuente exige Attempt/Artifact únicos, ruta contenida, SHA-256 y checkpoint N−1 exacto hacia el siguiente chunk. FFmpeg/FFprobe validan el staging antes de publicar sin sobrescritura y de persistir `Execution.succeeded`; el QueueItem no se libera sin evidencia final vigente. Los fallos preservan chunks, Attempts y transiciones; retry ejecuta sólo assembly. La UI proyecta estado y delega acciones sin invocar infraestructura.
 
-El smoke real de Windows usó la Execution `31239b42-97c5-4f7d-ad53-70ed80565323` (proyecto `Copia de abs`, dos chunks) y el QueueItem `2bb76b0b-e681-4c8b-848e-da90fa492865`. En schema 10 quedó `AssemblyAttempt #1 succeeded`; el QueueItem pasó a `finished` sólo después de actualizarse la evidencia final válida. El detalle durable/FFprobe, hashes y tiempos está en [TESTING.md](TESTING.md). La persona que ejecutó el smoke confirmó reproducción completa y continuidad/orden visual. No se declara F14.3 CLOSED en esta entrega sin commit/push.
+Las pruebas automáticas focales/integradas y la comparación diferencial fueron aprobadas con `NEW_REGRESSIONS=0`; los resultados están en [TESTING.md](TESTING.md). El smoke humano Windows usó la Execution `31239b42-97c5-4f7d-ad53-70ed80565323` (proyecto `Copia de abs`, dos chunks) y el QueueItem `2bb76b0b-e681-4c8b-848e-da90fa492865`. En schema 10 quedó `AssemblyAttempt #1 succeeded`; el MP4 se reprodujo completo y el orden/continuidad se validaron visualmente. El QueueItem pasó a `finished` sólo después de evidencia final durable válida. Durante assembly hubo cero Attempts de chunk nuevos y cero submits ComfyUI. El retry de assembly fallido no se ejercitó humanamente, pero está cubierto por pruebas automáticas.
 
 ### Aceptación
 
@@ -272,6 +272,8 @@ Validación humana Windows completada y aprobada con observaciones: se ejecutaro
 ---
 
 ## F14.4 — Regresión integral y cierre funcional
+
+**Estado de frontera:** PLANNED — NO INICIADA — NO AUTORIZADA; requiere una nueva tarea explícita.
 
 ### Objetivo
 
@@ -305,8 +307,8 @@ Flujo Windows representativo de punta a punta. No afirmar validación visual de 
 ```text
 F14.1 → auditoría/aprobación
 F14.2 → auditoría/aprobación
-F14.3 → auditoría/aprobación
-F14.4 → auditoría/aprobación
+F14.3 → CLOSED — APROBADA
+F14.4 → PLANNED — NO INICIADA; esperar tarea explícita
 F11.6 después, en una etapa separada
 ```
 

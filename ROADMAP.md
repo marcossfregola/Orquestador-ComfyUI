@@ -243,7 +243,7 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ## F14 — Cierre funcional del producto actual
 
-**EN CURSO — F14.1 y F14.2 CLOSED; la implementación y el smoke humano de F14.3 están APROBADOS CON OBSERVACIONES.** El cierre documental/Git está preparado para auditoría final; no se hizo commit/push y F14.4 no se inició. Contrato: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+**EN CURSO — F14.1, F14.2 y F14.3 CLOSED — APROBADAS.** F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. F14.4 es la próxima etapa **PLANNED — NO INICIADA — NO AUTORIZADA** hasta una nueva tarea explícita. F11.6 continúa pospuesta hasta después de F14. Contrato: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
 
 F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
 
@@ -269,17 +269,17 @@ Implementación: singleton SQLite `queue_start_policy` con migración schema 8�
 
 ### F14.3 — Ensamblado como requisito de finalización real
 
-**Estado:** IMPLEMENTACIÓN TÉCNICA Y SMOKE HUMANO APROBADOS CON OBSERVACIONES — PENDIENTE DE AUDITORÍA GIT FINAL Y CIERRE FORMAL.
+**Estado:** CLOSED — APROBADA. Implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
 
 Completar chunks deja la ejecución pendiente de finalización. Sólo ensamblar y validar el MP4 final permite declarar éxito/liberar la cola. Un fallo de ensamblado preserva chunks y habilita retry exclusivo de ensamblado, sin submit a ComfyUI.
 
-Implementación: schema 10 guarda `AssemblyAttempt`/procedencia; finalización se integra en `ChainExecutionUseCase` y el recovery F13.9, reutiliza `FFmpegAssemblyAdapter`, publica `assembled-<execution-id>.mp4` sin overwrite y requiere hash/FFprobe antes de `Execution.succeeded`. `Retry assembly` no entra al camino de chunk. El smoke Windows real de dos chunks aprobó assembly automático, reproducción del MP4 y continuidad/orden visual; el QueueItem sólo terminó tras evidencia final válida, sin Attempts de chunk ni submits ComfyUI durante assembly. Evidencia e IDs están en [TESTING.md](TESTING.md). No hay commit/push todavía; F14.4 sigue PLANNED — NO INICIADA.
+Schema 10 guarda `AssemblyAttempt`/procedencia; finalización se integra en `ChainExecutionUseCase` y recovery F13.9, reutiliza `FFmpegAssemblyAdapter`, publica `assembled-<execution-id>.mp4` sin overwrite y requiere hash/FFprobe antes de `Execution.succeeded`. Las pruebas automáticas focales/integradas y la comparación diferencial fueron aprobadas con `NEW_REGRESSIONS=0`. El smoke Windows real de dos chunks confirmó ejecución secuencial, assembly automático, reproducción completa del MP4 y continuidad/orden validados visualmente; el QueueItem terminó sólo tras evidencia durable válida. Durante assembly hubo cero Attempts de chunk nuevos y cero submits ComfyUI. El retry de assembly fallido no se ejercitó humanamente, pero está cubierto por pruebas automáticas. Evidencia e IDs: [TESTING.md](TESTING.md).
 
 **Dependencia:** F14.2 cerrada.
 
 ### F14.4 — Regresión integral y cierre funcional
 
-**Estado:** PLANNED — NO INICIADA; explícitamente fuera del trabajo F14.3 actual.
+**Estado:** PLANNED — NO INICIADA — NO AUTORIZADA; requiere una nueva tarea explícita.
 
 Verificar migraciones, Biblioteca por nombre, clone, cola auto/manual, recovery, chaining, ensamblado final y separación entre retry de chunk y retry de ensamblado. Requiere validación Windows representativa y documentación de cierre.
 

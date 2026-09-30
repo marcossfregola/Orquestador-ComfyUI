@@ -555,7 +555,7 @@ Suite completa diferencial con temporales separados, `PYTHONPATH=src`, `QT_QPA_P
 - F14.2 (repetición diferencial final): **803 tests en 69.893 s, 8 failures, 5 errors, 2 skipped**.
 - Comparación por identificador exacto `FAIL`/`ERROR`: baseline **37**, actual **13**; todas las incidencias actuales ya estaban en baseline; **`NEW_REGRESSIONS=0`**. Una primera pasada del árbol actual reportó un error adicional transitorio `WinError 10053` en `test_real_http_transport_and_materialization_cardinality`; la prueba pasó aislada y la repetición de la suite completa quedó sin IDs nuevos.
 
-La suite completa conserva fallos históricos y no se declara globalmente verde. No se ejecutó ComfyUI real ni se produjo video. La UI tuvo prueba automatizada Qt offscreen, pero falta el smoke humano interactivo Windows indicado en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); F14.2 permanece abierta hasta esa validación. F14.3 no se inició.
+Registro histórico previo al smoke humano final de F14.2 y al inicio de F14.3: la suite completa conservaba fallos históricos y no se declaraba globalmente verde. No se había ejecutado ComfyUI real ni producido video. La UI tuvo prueba automatizada Qt offscreen, pero faltaba el smoke humano interactivo Windows indicado en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); en esa fecha F14.2 seguía abierta y F14.3 no se había iniciado.
 
 
 ## F14.2 — validación humana Windows y cierre (2026-09-29)
@@ -576,12 +576,12 @@ El freeze aislado de `Prepare` observado previamente (>30 s) no pudo reproducirs
 
 La suite global continúa conservando fallos históricos ya documentados; no se declara globalmente verde.
 
-**Decisión:** F14.2 CLOSED — APROBADA. F14.3 pasa a ser la próxima slice; todavía no se implementó.
+**Decisión registrada antes de iniciar F14.3:** F14.2 CLOSED — APROBADA; F14.3 pasa a ser la próxima slice.
 
 
-## F14.3 — ensamblado automático como requisito de finalización (implementación 2026-09-29; smoke 2026-09-30)
+## F14.3 — ensamblado automático como requisito de finalización (implementación 2026-09-29; smoke y cierre 2026-09-30)
 
-La implementación y el smoke humano Windows están **APROBADOS CON OBSERVACIONES**. El último chunk conserva la ejecución y el QueueItem activos hasta que la finalización automática verifique el MP4 con FFprobe y guarde procedencia durable. El retry se limita al ensamblado. La migración schema 9→10 preserva filas históricas sin inferir éxito a partir de archivos. F14.4 no se inició. El cierre formal de F14.3 queda pendiente de la auditoría Git final y de un commit autorizado.
+**Estado:** F14.3 — **CLOSED — APROBADA**. Implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. Las pruebas automáticas focales/integradas y la comparación diferencial están aprobadas (`NEW_REGRESSIONS=0`). El smoke humano Windows está aprobado. El retry de assembly fallido no se ejercitó humanamente, pero está cubierto por pruebas automáticas. F14.4 queda **PLANNED — NO INICIADA — NO AUTORIZADA** hasta una nueva tarea explícita; F11.6 sigue pospuesta hasta después de F14.
 
 Evidencia focal:
 
@@ -598,7 +598,7 @@ Suite completa diferencial, `python -B -m unittest discover -s tests -v`, contra
 
 ### Validación humana Windows y verificación técnica posterior (2026-09-30)
 
-La persona que realizó el smoke confirmó una cadena real de dos chunks, ejecutados secuencialmente, con assembly automático. El MP4 final abrió y se reprodujo completo; su orden y continuidad fueron validados visualmente. No se ejercitó un fallo ni retry de assembly.
+La persona que realizó el smoke confirmó una cadena real de dos chunks, ejecutados secuencialmente, con assembly automático. El MP4 final abrió y se reprodujo completo; su orden y continuidad fueron validados visualmente. No se ejercitó humanamente un fallo ni retry de assembly; el retry exclusivo está cubierto por las pruebas automáticas focales.
 
 - SQLite reporta schema 10. Execution 1 `31239b42-97c5-4f7d-ad53-70ed80565323` (`Copia de abs`) terminó `succeeded`; su único QueueItem `2bb76b0b-e681-4c8b-848e-da90fa492865` terminó `finished`.
 - `AssemblyAttempt #1` quedó `succeeded`, sin error, con destino `assembled-31239b42-97c5-4f7d-ad53-70ed80565323.mp4`. La evidencia durable pasó a final a las **18:28:52.417557 ART**; el QueueItem se finalizó a las **18:28:52.426458 ART**, después de esa evidencia.
