@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: **OPEN — NO INICIADA**, pospuesto por decisión de producto hasta cerrar F14; se tratará después como etapa visual separada.
+- F11.6 pulido UX: **PLANNED — NO INICIADA — NO AUTORIZADA**. Es la próxima etapa planificada después del cierre de F14; requiere una nueva tarea explícita y se tratará como etapa visual separada.
 
 ## F12 — first frame como referencia primaria
 
@@ -243,7 +243,7 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ## F14 — Cierre funcional del producto actual
 
-**EN CURSO — F14.1, F14.2 y F14.3 CLOSED — APROBADAS.** F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. F14.4 es la próxima etapa **PLANNED — NO INICIADA — NO AUTORIZADA** hasta una nueva tarea explícita. F11.6 continúa pospuesta hasta después de F14. Contrato: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+**F14 — CLOSED — APROBADO.** F14.1–F14.4 están **CLOSED — APROBADAS**. F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`; el baseline validado de F14.4 es `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6 queda como próxima etapa planificada, pero **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita. Contrato: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); evidencia: [TESTING.md](TESTING.md).
 
 F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
 
@@ -279,13 +279,15 @@ Schema 10 guarda `AssemblyAttempt`/procedencia; finalización se integra en `Cha
 
 ### F14.4 — Regresión integral y cierre funcional
 
-**Estado:** PLANNED — NO INICIADA — NO AUTORIZADA; requiere una nueva tarea explícita.
+**Estado:** **F14.4 — CLOSED — APROBADA (2026-10-01).** **F14 — CLOSED — APROBADO.** Baseline validado: `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 
-Verificar migraciones, Biblioteca por nombre, clone, cola auto/manual, recovery, chaining, ensamblado final y separación entre retry de chunk y retry de ensamblado. Requiere validación Windows representativa y documentación de cierre.
+La regresión focal ejecutó 303 ejecuciones (302 OK, 1 skip, 0 FAIL/ERROR); la integrada ejecutó 301 tests (300 OK, 1 skip, 0 FAIL/ERROR). La suite completa válida del snapshot limpio del baseline registró 816 tests, 8 FAIL, 6 ERROR y 2 skips. Las 14 incidencias coinciden con deuda histórica conocida y `NEW_REGRESSIONS=0`. El smoke integrado real con ComfyUI fue aprobado y la persona reprodujo completo el MP4 final: **VIDEO OK**. Resultados y limitaciones: [TESTING.md](TESTING.md).
+
+La regresión cubrió migraciones hasta schema 10, nombres durables, rename/clone/Biblioteca, cola Auto/Manual, pausa independiente, scheduler/recovery, chaining N−1, retry de chunk, finalización automática, `AssemblyAttempt`, retry exclusivo de assembly, preservación de chunks/transiciones, FFmpeg/FFprobe, ausencia de doble submit y liberación del QueueItem sólo tras evidencia durable final válida.
 
 **Dependencia:** F14.1–F14.3 cerradas.
 
-**Fuera de F14:** F11.6 visual, nuevos modelos/workflows, IA, cloud, multi-GPU, búsqueda/etiquetas avanzadas y cualquier feature no necesaria para cerrar los tres huecos funcionales anteriores.
+**Fuera de F14:** F11.6 visual, nuevos modelos/workflows, IA, cloud, multi-GPU, búsqueda/etiquetas avanzadas y cualquier feature no necesaria para cerrar los tres huecos funcionales anteriores. F11.6 es la próxima etapa planificada, pero sigue **NO INICIADA / NO AUTORIZADA** hasta una tarea explícita.
 
 
 ## Regla de avance

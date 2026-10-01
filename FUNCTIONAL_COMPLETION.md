@@ -1,7 +1,7 @@
 # F14 — Cierre funcional del producto actual
 
-**Estado:** EN CURSO — F14.1, F14.2 y F14.3 CLOSED — APROBADAS. F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. F14.4 es la próxima etapa PLANNED — NO INICIADA — NO AUTORIZADA hasta una nueva tarea explícita. F11.6 sigue pospuesta hasta después de F14.
-**Fecha de decisión:** 2026-09-27.
+**Estado:** **F14 — CLOSED — APROBADO**; F14.1–F14.4 **CLOSED — APROBADAS**. Baseline validado en F14.4: `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6 es la próxima etapa planificada, pero permanece **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
+**Fecha de decisión:** 2026-09-27. **Cierre F14:** 2026-10-01.
 
 Este documento es el contrato ejecutable de F14. El estado vivo continúa en `STATUS.md`, el orden decidido en `ROADMAP.md`, las reglas permanentes en `RULES.md` y la semántica implementada debe quedar actualizada en `ARCHITECTURE.md` y `DATA_MODEL.md` dentro de cada slice.
 
@@ -15,7 +15,7 @@ F14 corrige tres huecos funcionales comprobados en la versión cerrada F13.10:
 2. el scheduler arranca automáticamente y no existe una política elegible auto/manual de inicio;
 3. la ejecución puede considerarse terminada al completar los chunks aunque el MP4 final todavía no haya sido ensamblado y validado.
 
-F11.6, pulido visual/UX, permanece fuera de F14 y se tratará después.
+F11.6, pulido visual/UX, permaneció fuera de F14. Tras este cierre es la próxima etapa planificada, **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
 
 ## No-alcance
 
@@ -273,24 +273,38 @@ Validación humana Windows completada y aprobada con observaciones: se ejecutaro
 
 ## F14.4 — Regresión integral y cierre funcional
 
-**Estado de frontera:** PLANNED — NO INICIADA — NO AUTORIZADA; requiere una nueva tarea explícita.
+**Estado:** **F14.4 — CLOSED — APROBADA. F14 — CLOSED — APROBADO.** Cierre aprobado el 2026-10-01 sobre el baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 
 ### Objetivo
 
-Demostrar que F14.1–F14.3 conviven sin regresiones y declarar cerrado el funcionamiento actual antes de F11.6.
+Se demostró que F14.1–F14.3 conviven sin regresiones nuevas y queda cerrado el funcionamiento F14.
 
 ### Incluye
 
-- suite completa y focales relevantes;
-- migración desde una base representativa anterior;
-- restart/recovery;
-- Biblioteca por nombre;
-- clone;
-- cola auto/manual;
-- generación secuencial;
-- finalización con ensamblado;
-- retry de chunk y retry de ensamblado como autoridades separadas;
-- evidencia documental final.
+- migraciones hasta schema 10, nombres durables, rename/clone y Biblioteca;
+- política Auto/Manual, gate de sesión cerrado tras restart y pausa independiente del modo;
+- scheduler de una sola ejecución, cola, recovery/restart y ausencia de doble submit;
+- chaining por último frame N−1 y retry de chunk;
+- finalización automática con `AssemblyAttempt`, retry exclusivo de assembly y preservación de chunks/transiciones;
+- FFmpeg/FFprobe y liberación de QueueItem sólo tras evidencia durable del MP4 final válido;
+- regresión focal, regresión integrada y suite completa diferencial sobre snapshot limpio;
+- smoke integrado real Windows/ComfyUI y reproducción humana completa del MP4.
+
+### Evidencia automática
+
+- Baterías focales: **303 ejecuciones, 302 OK, 1 skip, 0 FAIL/ERROR**. Incluyeron explícitamente `tests.test_f13_10_runtime_regression` y `tests.test_f13_10_retry_hotfix`.
+- Regresión integrada única F14.1–F14.3 y dependencias relevantes: **301 tests, 300 OK, 1 skip, 0 FAIL/ERROR**.
+- Suite completa canónica sobre snapshot limpio del baseline exacto, con temporales aislados: **816 tests, 8 FAIL, 6 ERROR, 2 skips**. Las 14 incidencias coinciden con deuda histórica conocida; **`NEW_REGRESSIONS=0`**.
+- El primer intento de suite completa desde `git archive` es evidencia inválida: el template H3 quedó alterado byte a byte. Está excluido y no se mezcla con la corrida canónica.
+- Los caminos de retry de chunk y retry exclusivo de assembly están cubiertos automáticamente. No se inyectaron fallos artificiales de chunk ni assembly en el smoke real.
+
+### Smoke integrado real Windows/ComfyUI
+
+La persona aprobó el flujo integrado con ComfyUI real. Se creó, renombró y clonó un proyecto y se verificó la persistencia al reabrirlo. En modo Manual se encolaron dos chunks; tras restart el gate de sesión quedó cerrado. Se comprobó que la pausa y el modo Manual son controles independientes. Al abrir el gate se ejecutó una sola cadena activa: dos chunks secuenciales, un Attempt por chunk y dos jobs ComfyUI únicos, sin doble submit. El segundo chunk encadenó desde el frame N−1 del primero.
+
+El assembly automático produjo `AssemblyAttempt #1 succeeded`. FFprobe validó el MP4 final (H.264, 416×224, 24 fps, 112 frames; SHA-256 `bad2386f2c092657f936913ca9a2d257fc831cc6f19d1760a1eb0e8f3b27a68f`). El QueueItem se finalizó sólo después de la evidencia durable final válida. La persona reprodujo el MP4 completo y confirmó **VIDEO OK**.
+
+El borrador nombrado vacío sin imagen inicial presentó el comportamiento histórico detectado de no poder prepararse. Se clasifica como comportamiento histórico, no como regresión F14.4, y no se corrigió en este cierre.
 
 ### No incluye
 
@@ -298,18 +312,19 @@ Pulido visual F11.6 ni nuevas capacidades.
 
 ### Validación humana final
 
-Flujo Windows representativo de punta a punta. No afirmar validación visual de continuidad/calidad si no fue realizada por la persona.
+Completada y aprobada: la persona reprodujo el MP4 final completo y confirmó **VIDEO OK**.
 
 ---
 
 ## Orden obligatorio
 
 ```text
-F14.1 → auditoría/aprobación
-F14.2 → auditoría/aprobación
+F14.1 → CLOSED — APROBADA
+F14.2 → CLOSED — APROBADA
 F14.3 → CLOSED — APROBADA
-F14.4 → PLANNED — NO INICIADA; esperar tarea explícita
-F11.6 después, en una etapa separada
+F14.4 → CLOSED — APROBADA
+F14 → CLOSED — APROBADO
+F11.6 → siguiente etapa planificada; NO INICIADA / NO AUTORIZADA hasta tarea explícita
 ```
 
 Codex no debe avanzar automáticamente de una slice a la siguiente.

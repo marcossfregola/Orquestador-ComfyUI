@@ -1,10 +1,10 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-09-30
+**Última actualización:** 2026-10-01
 **Implementación F14.2:** `8b7258304eca384d20d4721f35639268a6036e01`; diagnóstico documental posterior `5a17e450982a67360bf08f4740528c0f90500eb9`; cierre humano aprobado el 2026-09-29.
-**Baseline F14.3:** `5bb63389ff3af7de1d81581fae15de0b1f5327cb` (igual a `origin/main` al iniciar el trabajo).
+**Baseline validado F14.4:** `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 **Implementación F14.3 publicada:** `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
-**Estado vivo:** F13.0–F13.10 y F14.1–F14.3 están **CLOSED — APROBADAS**. F14.4 es la próxima etapa, **PLANNED — NO INICIADA — NO AUTORIZADA** hasta una nueva tarea explícita. F11.6 continúa pospuesta hasta después de F14.
+**Estado vivo:** F13.0–F13.10 y F14.1–F14.4 están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6 es la próxima etapa planificada, **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -51,7 +51,7 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F14 — cierre funcional del producto actual — está **EN CURSO**. F14.1, F14.2 y F14.3 están **CLOSED — APROBADAS**; F14.3 se publicó en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. La próxima etapa es F14.4, **PLANNED — NO INICIADA — NO AUTORIZADA**; esperar una nueva tarea explícita. F11.6 continúa pospuesta hasta después de F14. El contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md).
+F14 — cierre funcional del producto actual — está **CLOSED — APROBADO**. F14.1–F14.4 están **CLOSED — APROBADAS** sobre el baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6 es la próxima etapa planificada, pero está **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita. El contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md) y la evidencia de pruebas en [TESTING.md](TESTING.md).
 
 Orden aprobado:
 
@@ -59,11 +59,11 @@ Orden aprobado:
 1. **F14.1 — CLOSED — APROBADA**: nombre durable/rename/clone verificados con pruebas automáticas y smoke humano Windows del 2026-09-28; evidencia en [TESTING.md](TESTING.md).
 2. **F14.2 — CLOSED — APROBADA**: política durable auto/manual verificada con pruebas automáticas y smoke humano Windows con ComfyUI real; no se observó doble submit ni paralelismo indebido.
 3. **F14.3 — CLOSED — APROBADA**: implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`; pruebas automáticas y diferencial aprobados (`NEW_REGRESSIONS=0`) y smoke humano Windows aprobado. La evidencia detallada permanece en [TESTING.md](TESTING.md).
-4. **F14.4 — PLANNED — NO INICIADA — NO AUTORIZADA**: es la próxima etapa y requiere una nueva tarea explícita.
+4. **F14.4 — CLOSED — APROBADA**: regresión integrada F14.1–F14.3 sin regresiones nuevas y smoke real Windows/ComfyUI aprobado; evidencia y clasificación de deuda histórica en [TESTING.md](TESTING.md).
 
-F11.6 permanece **OPEN — NO INICIADA**, expresamente pospuesta por decisión de producto hasta cerrar F14. No se agregan características nuevas ni pulido visual dentro de F14.
+**F14 — CLOSED — APROBADO.** F11.6 pasa a ser la próxima etapa planificada, pero permanece **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita. No se agregaron características nuevas ni pulido visual dentro de F14.
 
-F14.2 y F14.3 están **CLOSED — APROBADAS**. F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. F14.4 permanece **PLANNED — NO INICIADA — NO AUTORIZADA**, a la espera de una tarea explícita.
+**Cierre F14.4 (2026-10-01):** focales 303 ejecuciones (302 OK, 1 skip, 0 FAIL/ERROR); integrada 301 tests (300 OK, 1 skip, 0 FAIL/ERROR); suite completa válida del baseline limpio 816 tests (8 FAIL, 6 ERROR, 2 skips). Las 14 incidencias de suite completa coinciden con deuda histórica conocida; `NEW_REGRESSIONS=0`. Smoke integrado real con ComfyUI aprobado y reproducción humana completa del MP4: **VIDEO OK**. Detalle en [TESTING.md](TESTING.md).
 
 ## Alcance y evidencia no ejercitada en el cierre F13.6
 
@@ -96,7 +96,7 @@ La validación humana aclaró el contrato definitivo de `Crear a partir de esta`
 7. el nuevo proyecto debe quedar seleccionado/abierto para poder empezar a trabajar inmediatamente sobre él;
 8. `Renombrar proyecto` conserva su función administrativa separada para proyectos ya existentes.
 
-La UI ahora solicita el nombre antes del dispatch; la frontera de aplicación lo entrega al clone canónico y SQLite normaliza, verifica unicidad mediante el índice durable y persiste el proyecto con ejecución/chunks en una transacción. Cancelar retorna antes de llamar al caso de uso. La ruta de duplicación de cola mantiene el nombre automático con sufijo. Las pruebas y la comparación diferencial están registradas en [TESTING.md](TESTING.md). No se acepta “crear copia automática → renombrarla después”. F14.1 sigue pendiente del smoke humano indicado allí; F14.2 permanece NO INICIADA.
+La UI ahora solicita el nombre antes del dispatch; la frontera de aplicación lo entrega al clone canónico y SQLite normaliza, verifica unicidad mediante el índice durable y persiste el proyecto con ejecución/chunks en una transacción. Cancelar retorna antes de llamar al caso de uso. La ruta de duplicación de cola mantiene el nombre automático con sufijo. Las pruebas y la comparación diferencial están registradas en [TESTING.md](TESTING.md). No se acepta “crear copia automática → renombrarla después”. Al redactar esta nota, F14.1 seguía pendiente del smoke humano y F14.2 no estaba iniciada; el cierre posterior aprobado está registrado abajo.
 
 
 ### Cierre F14.1 — validación humana aprobada
@@ -129,4 +129,4 @@ Se observó que el render de preview carga QPixmap sincrónicamente y puede caus
 
 El incidente no reapareció en el smoke humano posterior tras reinicio de Windows: `Prepare` volvió a operar normalmente y la prueba real de cola pudo completarse. La causa raíz del freeze aislado sigue sin demostrarse; si reaparece se capturará stack/dump antes de cualquier corrección. No se modifica producción por una hipótesis no reproducida.
 
-F14.2 y F14.3 quedan **CLOSED — APROBADAS**; F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. F14.4 permanece **PLANNED — NO INICIADA — NO AUTORIZADA** hasta nueva tarea explícita. F11.6 sigue pospuesta hasta después de F14.
+Estado histórico al cerrar F14.3 (2026-09-30): F14.2 y F14.3 estaban **CLOSED — APROBADAS**; F14.4 aún estaba planificada. El estado vigente posterior es F14 completo **CLOSED — APROBADO** según el cierre F14.4 del 2026-10-01. F11.6 es la siguiente etapa planificada, pero continúa **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.

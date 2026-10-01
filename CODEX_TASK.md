@@ -1,23 +1,19 @@
-# CODEX_TASK — frontera F14.3 / F14.4
+# CODEX_TASK — frontera F14 / F11.6
 
 ## Estado vigente
 
-- **F14.3 — CLOSED — APROBADA.**
-- Implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
-- Las pruebas automáticas y la comparación diferencial están aprobadas; `NEW_REGRESSIONS=0`.
-- El smoke humano Windows está aprobado: cadena real de dos chunks secuenciales, assembly automático, MP4 final reproducido completo y orden/continuidad validados visualmente.
-- SQLite schema 10 registró `AssemblyAttempt #1 succeeded`. El QueueItem se finalizó sólo después de evidencia durable final válida.
-- Durante assembly hubo cero Attempts de chunk nuevos y cero submits a ComfyUI.
-- El retry de assembly fallido no se ejercitó humanamente; está cubierto por pruebas automáticas.
+- **F14.4 — CLOSED — APROBADA.**
+- **F14 — CLOSED — APROBADO.**
+- Baseline de código validado: `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
+- Baterías focales: **303 ejecuciones, 302 OK, 1 skip, 0 FAIL/ERROR**.
+- Regresión integrada F14.1–F14.3: **301 tests, 300 OK, 1 skip, 0 FAIL/ERROR**.
+- Suite completa canónica: **816 tests, 8 FAIL, 6 ERROR, 2 skips**. Las 14 incidencias son deuda histórica conocida y no hubo regresiones nuevas.
+- El smoke integrado real con ComfyUI fue aprobado; el MP4 final se reprodujo completo y la persona confirmó **VIDEO OK**.
 
-El detalle y la procedencia de la evidencia permanecen en `STATUS.md`, `ROADMAP.md`, `FUNCTIONAL_COMPLETION.md` y `TESTING.md`.
+La evidencia, el tratamiento de la primera corrida inválida de `git archive` y los detalles del smoke permanecen en `TESTING.md`.
 
-## Próxima etapa
+## Próxima etapa y frontera de autorización
 
-**F14.4 — PLANNED — NO INICIADA — NO AUTORIZADA.** Es la próxima etapa del roadmap, pero este archivo no autoriza iniciarla. Esperar una nueva tarea explícita antes de inspeccionar para implementación, modificar archivos, ejecutar pruebas de F14.4 o preparar su publicación.
+**F11.6 — PLANNED — NO INICIADA — NO AUTORIZADA.** Es la próxima etapa planificada después del cierre de F14, pero esta frontera no autoriza iniciarla. Esperar una nueva tarea explícita antes de inspección orientada a implementación, modificación de archivos, ejecución de pruebas de F11.6 o preparación de publicación.
 
-F11.6 continúa pospuesta hasta después de F14 y requiere su propia autorización.
-
-## Alcance de esta frontera
-
-Este archivo sólo registra el estado de cierre de F14.3 y el límite de autorización siguiente. No contiene una tarea activa de implementación para F14.3 ni una autorización implícita para avanzar a F14.4.
+No queda una tarea activa de implementación F14. No iniciar F11.6 ni inferir autorización a partir de este estado documental.

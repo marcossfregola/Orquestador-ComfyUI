@@ -1,6 +1,6 @@
 # Modelo de dominio
 
-Este documento es la autoridad de semántica, relaciones, estados e invariantes. La sección F14.3 describe el modelo implementado en el working tree; el smoke humano Windows está aprobado con observaciones y el cierre formal espera la auditoría Git final.
+Este documento es la autoridad de semántica, relaciones, estados e invariantes. La sección F14.3 describe el modelo implementado y publicado en schema 10. F14.3 y F14.4 están **CLOSED — APROBADAS**; el baseline de código validado para el cierre F14 es `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 
 ## Modelo implementado en HEAD auditado
 
@@ -254,7 +254,7 @@ La UI no agrega una tabla ni un lifecycle paralelo: `QueueDashboardUseCase` lee 
 
 ## Persistencia y compatibilidad
 
-SQLite está en schema 10 en la implementación F14.3 del working tree. F13.0 elevó el schema a 4; F13.3 añadió `global_defaults` en schema 5; F13.4 añadió `technical_presets` en schema 6; F13.5 añadió `chunk_templates` en schema 7; F14.1 añadió nombres de proyecto mediante 7→8; F14.2 añadió `queue_start_policy` mediante 8→9; F14.3 añade `execution_assembly_attempts` mediante 9→10. Esta última migración no cambia las ejecuciones/chunks/attempts/artifacts existentes ni infiere resultados assembly. Las migraciones ordenadas mantienen el camino desde schema 1/2 hasta la versión actual; los valores iniciales de defaults y política preservan el comportamiento vigente.
+SQLite se mantiene en schema 10 en el baseline validado para el cierre F14 (`ea2d50deeb59f185fddeee142e4feb39e6f2b258`). F13.0 elevó el schema a 4; F13.3 añadió `global_defaults` en schema 5; F13.4 añadió `technical_presets` en schema 6; F13.5 añadió `chunk_templates` en schema 7; F14.1 añadió nombres de proyecto mediante 7→8; F14.2 añadió `queue_start_policy` mediante 8→9; F14.3 añade `execution_assembly_attempts` mediante 9→10. Esta última migración no cambia las ejecuciones/chunks/attempts/artifacts existentes ni infiere resultados assembly. Las migraciones ordenadas mantienen el camino desde schema 1/2 hasta la versión actual; los valores iniciales de defaults y política preservan el comportamiento vigente.
 
 El orden de migración debe permitir que bases schema 1/2 sigan alcanzando el schema nuevo mediante las migraciones existentes 2 y 3.
 

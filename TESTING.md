@@ -581,7 +581,7 @@ La suite global continúa conservando fallos históricos ya documentados; no se 
 
 ## F14.3 — ensamblado automático como requisito de finalización (implementación 2026-09-29; smoke y cierre 2026-09-30)
 
-**Estado:** F14.3 — **CLOSED — APROBADA**. Implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. Las pruebas automáticas focales/integradas y la comparación diferencial están aprobadas (`NEW_REGRESSIONS=0`). El smoke humano Windows está aprobado. El retry de assembly fallido no se ejercitó humanamente, pero está cubierto por pruebas automáticas. F14.4 queda **PLANNED — NO INICIADA — NO AUTORIZADA** hasta una nueva tarea explícita; F11.6 sigue pospuesta hasta después de F14.
+**Estado al cierre de F14.3 (2026-09-30):** F14.3 — **CLOSED — APROBADA**. Implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`. Las pruebas automáticas focales/integradas y la comparación diferencial quedaron aprobadas (`NEW_REGRESSIONS=0`). En ese corte F14.4 estaba planificada y F11.6 pospuesta. El cierre posterior F14.4 queda registrado al final de este documento.
 
 Evidencia focal:
 
@@ -607,3 +607,34 @@ La persona que realizó el smoke confirmó una cadena real de dos chunks, ejecut
 - El frame de continuidad N−1 (293/294) del primer chunk sigue materializado y su hash coincide con SQLite. Cada chunk conserva sólo su Attempt #1; el manifest de assembly referencia esos dos Attempts. ComfyUI `/history` conserva sólo los dos prompts enlazados: el segundo terminó a las **18:28:51.362 ART**, assembly empezó a las **18:28:52.204014 ART** y terminó a las **18:28:52.417557 ART**. No hubo Attempts de chunk nuevos ni submits ComfyUI durante assembly. `/queue` quedó vacía.
 
 La verificación fue de sólo lectura y no repitió suites. El retry de assembly ante fallo continúa sin validación humana en este smoke exitoso.
+
+
+## F14.4 — regresión integral y cierre funcional (2026-10-01)
+
+**Estado:** **F14.4 — CLOSED — APROBADA. F14 — CLOSED — APROBADO.** Baseline de código validado: `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. No se requirieron cambios de producción, tests ni configuración funcional.
+
+### Baterías automáticas
+
+- Focales de persistencia/migraciones, F14.1 nombres/clone/Biblioteca, F14.2 política Auto/Manual, F13.7–F13.10 cola/scheduler/recovery, F5/F6/F7 chaining/retry, F8/F14.3 assembly/finalización y F11.5 operaciones: **303 ejecuciones, 302 OK, 1 skip, 0 FAIL/ERROR**. Se incluyeron explícitamente `tests.test_f13_10_runtime_regression` y `tests.test_f13_10_retry_hotfix`.
+- Regresión integrada única de F14.1–F14.3 y dependencias relevantes: **301 tests, 300 OK, 1 skip, 0 FAIL/ERROR**.
+- `python -B -m compileall -q src tests` y `git diff --check` terminaron correctamente en la corrida F14.4.
+
+### Suite completa diferencial canónica
+
+Se ejecutó `python -B -m unittest discover -s tests -v` sobre un snapshot limpio del baseline exacto `ea2d50deeb59f185fddeee142e4feb39e6f2b258`, con temporales aislados: **816 tests, 8 FAIL, 6 ERROR, 2 skips**. Las **14 incidencias** corresponden a deuda histórica ya conocida en el repositorio; comparación por IDs: **`NEW_REGRESSIONS=0`**. La suite completa conserva estas incidencias históricas y no se declara globalmente verde.
+
+El primer intento de full-suite basado en `git archive` es evidencia inválida: el procedimiento alteró byte a byte el template H3. No se mezcla ni se compara con la corrida canónica válida del snapshot limpio exacto.
+
+El comportamiento observado al preparar un borrador nombrado vacío sin imagen inicial (Prepare no puede completarse) es histórico y previo a F14.4; se clasifica como **comportamiento histórico detectado, no regresión F14.4**. No se modificó.
+
+### Smoke integrado real Windows/ComfyUI
+
+Smoke aprobado con ComfyUI real. Se creó, renombró y clonó un proyecto; los nombres durables persistieron tras reabrir. Se encolaron dos chunks en modo Manual; tras reiniciar, el gate de despacho de sesión quedó cerrado. Se confirmó que el estado de pausa es independiente del modo Manual. Tras abrir el gate se ejecutó una sola cadena activa, con dos chunks secuenciales, un Attempt por chunk y dos jobs ComfyUI únicos; no hubo doble submit.
+
+El chaining del segundo chunk usó el frame N−1 del primero (salida de ComfyUI 389→390). Se preservaron los outputs, Attempts y transiciones de ambos chunks. El assembly automático registró `AssemblyAttempt #1 succeeded` con ambas fuentes ordenadas. FFmpeg/FFprobe reales validaron el MP4 final: H.264, 416×224, 24 fps, 112 frames, SHA-256 `bad2386f2c092657f936913ca9a2d257fc831cc6f19d1760a1eb0e8f3b27a68f`. El QueueItem pasó a finalizado después de quedar durable la evidencia válida del MP4 final. La persona reprodujo el MP4 completo y confirmó **VIDEO OK**.
+
+No se inyectaron fallos artificiales de chunk ni assembly: retry de chunk y retry exclusivo de assembly están cubiertos por las pruebas automáticas; el retry de assembly no crea Attempts de chunks ni jobs ComfyUI.
+
+### Frontera posterior
+
+F14 queda completamente cerrada. F11.6 es la próxima etapa planificada, pero permanece **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
