@@ -258,7 +258,7 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(panel._current_execution().project_id, project_id)
         self.assertEqual(panel._current_execution().execution_id, self.draft.execution_id)
         self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
-        self.assertIn("Proyecto: Playa al atardecer", panel.execution_list.currentItem().text())
+        self.assertTrue(panel.execution_list.currentItem().text().startswith("Playa al atardecer · Ejecución "))
 
     def test_project_sort_defaults_to_name_ascending_and_persists_on_refresh(self):
         panel = self.window.library_panel
