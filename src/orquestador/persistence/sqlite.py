@@ -827,6 +827,8 @@ class SQLiteProjectRepository:
      raise PersistenceConflictError('project has live queue work')
     if self.db.execute("SELECT 1 FROM execution_assembly_attempts WHERE execution_id=? AND state IN ('pending','assembling') LIMIT 1",(execution_id,)).fetchone():
      raise PersistenceConflictError('project has active or recovery-relevant execution')
+    if self.db.execute("SELECT 1 FROM attempts a JOIN chunks c ON c.id=a.chunk_id WHERE c.execution_id=? AND a.state IN ('pending','running') LIMIT 1",(execution_id,)).fetchone():
+     raise PersistenceConflictError('project has active or recovery-relevant execution')
     if state in {Lifecycle.RUNNING,Lifecycle.UNKNOWN}:
      raise PersistenceConflictError('project has active or recovery-relevant execution')
     if state is Lifecycle.PENDING and not self._queue_execution_is_editable_virgin(execution_id):

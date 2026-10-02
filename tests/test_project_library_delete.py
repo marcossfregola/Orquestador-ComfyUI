@@ -12,6 +12,7 @@ from orquestador.domain import (
     Artifact,
     Chunk,
     Evidence,
+    ErrorRecord,
     Execution,
     ExecutionId,
     Lifecycle,
@@ -192,6 +193,32 @@ class ProjectLibraryDeleteTests(unittest.TestCase):
         with self.assertRaisesRegex(PreparationLibraryError, "active or recovery-relevant"):
             self.library.delete_project(recovery.project_id)
         self.assertEqual(self.durable_rows(), before)
+
+    def test_delete_blocks_failed_execution_with_staged_retry_attempt(self):
+        project = Project(ProjectId("retry-project"), name="Retry project")
+        execution = Execution(project.id, ExecutionId("retry-execution"))
+        chunk = Chunk(order=0)
+        execution.add_chunk(chunk)
+        execution.transition(Lifecycle.RUNNING)
+        chunk.transition(Lifecycle.RUNNING)
+        first = chunk.new_attempt()
+        first.transition(Lifecycle.RUNNING)
+        first.transition(
+            Lifecycle.FAILED,
+            error=ErrorRecord("backend_failed", "first attempt failed"),
+        )
+        chunk.transition(Lifecycle.FAILED)
+        execution.transition(Lifecycle.FAILED)
+        staged = chunk.new_attempt()
+        self.assertEqual(staged.state, Lifecycle.PENDING)
+        self.repository.save(project, [execution])
+        before = self.durable_rows()
+
+        with self.assertRaisesRegex(PreparationLibraryError, "active or recovery-relevant"):
+            self.library.delete_project(project.id.value)
+
+        self.assertEqual(self.durable_rows(), before)
+        self.assertEqual(self.repository.get_project_name(project.id.value), "Retry project")
 
 
 if __name__ == "__main__":
