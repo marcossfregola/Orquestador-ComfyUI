@@ -652,3 +652,15 @@ Evidencia automática final sobre la rama de trabajo:
 - El workflow temporal usado para ejecutar esta validación fue retirado de la rama después de conservar la evidencia del run exitoso; no forma parte del diff final de producto.
 
 Validación humana Windows separada: **APROBADA**. En un worktree/runtime aislado se verificó la presencia de **Eliminar proyecto**, cancelación con **No** sin cambios, confirmación con **Sí** eliminando el proyecto de Biblioteca, limpieza de la selección y mensaje visible **Proyecto eliminado**. No se ejecutó ComfyUI ni generación de video para esta validación.
+
+## Biblioteca — orden y simplificación visual (2026-10-02)
+
+**Estado:** CLOSED — APROBADA.
+
+La Biblioteca incorpora un selector de orden de proyectos con `Nombre (A → Z)` como valor predeterminado y `Nombre (Z → A)` como alternativa. El criterio es exclusivamente de presentación: no modifica ProjectId, orden durable, cola, configuración ni persistencia. La selección se conserva al refrescar y renombrar, y el selector queda protegido frente a cambios accidentales por rueda durante el scroll.
+
+La etiqueta visible de cada fila deja de anteponer `Proyecto:`. Cuando un proyecto contiene una única ejecución, también se oculta el rótulo redundante `Ejecución 1`; si el proyecto contiene dos o más ejecuciones, se muestran sus números para mantenerlas inequívocas.
+
+Se agregaron pruebas Qt focales para el orden A→Z/Z→A, conservación del criterio tras refresh/rename y la presentación condicional de números de ejecución. En este cierre no se registra una nueva corrida automática independiente porque no se recibió su salida textual como evidencia; la cobertura queda versionada en el repositorio.
+
+Validación humana Windows separada: **APROBADA por el usuario** sobre la rama de trabajo. Se verificó visualmente la presentación simplificada y el comportamiento de orden de proyectos. No se ejecutó ComfyUI ni generación de video como parte de esta mejora visual.
