@@ -246,6 +246,14 @@ class PreparationLibraryUseCase:
         except (PersistenceError, OSError, TypeError, ValueError) as exc:
             self._failure("project rename", exc)
 
+    def delete_project(self, project_id):
+        """Delete one non-live project while preserving all physical files."""
+        project_key = self._id(project_id, "project")
+        try:
+            return self.repository.delete_project(project_key)
+        except (PersistenceError, OSError, TypeError, ValueError) as exc:
+            self._failure("project delete", exc)
+
     def clone(self, project_id, execution_id, *, target_name=None):
         """Create a fresh configuration-only draft through the canonical F13.2 case."""
         source = self._selected_execution(project_id, execution_id)

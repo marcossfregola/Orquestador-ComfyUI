@@ -720,6 +720,14 @@ class MainWindow(QMainWindow):
             return
         if isinstance(r, LibraryOperationResult):
             self.library_panel.handle_result(r)
+            if r.success and self._operation_kind == "library_project_delete":
+                deleted_project = str(r.detail or "")
+                self._project_display_names.pop(deleted_project, None)
+                if self.project.text().strip() == deleted_project:
+                    self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
+                    self.project.blockSignals(True); self.project.clear(); self.project.blockSignals(False)
+                    self.execution.blockSignals(True); self.execution.clear(); self.execution.blockSignals(False)
+                    self.render(self.facade.refresh())
             if r.selection is not None:
                 self._project_display_names[r.selection.project_id] = getattr(
                     r.selection, "project_name", ""

@@ -197,8 +197,11 @@ class PreparationLibraryPanel(QWidget):
         self.project_name_edit.setPlaceholderText("Nombre del proyecto seleccionado")
         self.rename_project_button = QPushButton("Renombrar proyecto")
         self.rename_project_button.setObjectName("libraryRenameProjectButton")
+        self.delete_project_button = QPushButton("Eliminar proyecto")
+        self.delete_project_button.setObjectName("libraryDeleteProjectButton")
         rename_row.addWidget(self.project_name_edit)
         rename_row.addWidget(self.rename_project_button)
+        rename_row.addWidget(self.delete_project_button)
         work_form.addLayout(rename_row)
         self.execution_list = QListWidget()
         self.execution_list.setObjectName("libraryExecutionList")
@@ -355,6 +358,7 @@ class PreparationLibraryPanel(QWidget):
         self.refresh_button.clicked.connect(self.refresh)
         self.create_draft_button.clicked.connect(self.create_draft)
         self.rename_project_button.clicked.connect(self.rename_project)
+        self.delete_project_button.clicked.connect(self.delete_project)
         self.open_button.clicked.connect(self.open_selected)
         self.clone_button.clicked.connect(self.clone_selected)
         self.save_globals_button.clicked.connect(self.save_global_defaults)
@@ -749,6 +753,8 @@ class PreparationLibraryPanel(QWidget):
                 self._selection = None
             if self._selection is not None:
                 self.project_name_edit.setText(getattr(self._selection, "project_name", ""))
+            else:
+                self.project_name_edit.clear()
             preset_item = self._find_data_item(self.preset_list, selected_preset)
             if preset_item is not None:
                 self.preset_list.setCurrentItem(preset_item)
@@ -845,6 +851,30 @@ class PreparationLibraryPanel(QWidget):
             ),
             "library_project_rename",
             "Proyecto renombrado",
+        )
+
+    def delete_project(self):
+        selection = self._current_execution()
+        if selection is None:
+            return
+        project_name = self.display_project_name(selection.project_id, selection.project_name)
+        answer = _widgets.QMessageBox.question(
+            self,
+            "Eliminar proyecto",
+            (
+                f'¿Eliminar el proyecto "{project_name}" de la Biblioteca?\n\n'
+                "Se eliminarán su configuración e historial durable. "
+                "Los videos, chunks, frames y demás archivos físicos no se borrarán."
+            ),
+            _widgets.QMessageBox.StandardButton.Yes | _widgets.QMessageBox.StandardButton.No,
+            _widgets.QMessageBox.StandardButton.No,
+        )
+        if answer != _widgets.QMessageBox.StandardButton.Yes:
+            return
+        self._dispatch(
+            lambda: self.facade.delete_library_project(selection.project_id),
+            "library_project_delete",
+            "Proyecto eliminado",
         )
 
     def clone_selected(self):
@@ -1055,6 +1085,7 @@ class PreparationLibraryPanel(QWidget):
             and self.project_name_edit.text().strip()
             != getattr(selection, "project_name", "")
         )
+        self.delete_project_button.setEnabled(ready and selection is not None)
         self.execution_list.setEnabled(loaded and not self._busy)
         self.open_button.setEnabled(ready and selection is not None and selection.can_open)
         self.clone_button.setEnabled(ready and selection is not None and selection.can_clone)

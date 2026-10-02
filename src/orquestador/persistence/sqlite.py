@@ -808,6 +808,43 @@ class SQLiteProjectRepository:
    if 'projects.name_key' in str(exc): raise PersistenceConflictError('project name conflict') from exc
    raise
   return display
+ def delete_project(self,project_id):
+  """Delete one durable project without touching any physical artifacts."""
+  project_key=str(project_id).strip()
+  if not project_key: raise PersistenceDataError('project id must be nonblank')
+  def action():
+   if self.db.execute('SELECT 1 FROM projects WHERE id=?',(project_key,)).fetchone() is None:
+    raise PersistenceError('project not found')
+   execution_rows=self.db.execute('SELECT id,state FROM executions WHERE project_id=? ORDER BY id',(project_key,)).fetchall()
+   execution_ids=[row[0] for row in execution_rows]
+   _,active=self._queue_control_and_active()
+   if active is not None and str(active.execution_id) in execution_ids:
+    raise PersistenceConflictError('project has active queue work')
+   for execution_id,state_value in execution_rows:
+    try: state=Lifecycle(state_value)
+    except (TypeError,ValueError) as exc: raise PersistenceDataError('project execution state is invalid') from exc
+    if self.db.execute("SELECT 1 FROM queue_items WHERE execution_id=? AND state IN ('queued','active') LIMIT 1",(execution_id,)).fetchone():
+     raise PersistenceConflictError('project has live queue work')
+    if self.db.execute("SELECT 1 FROM execution_assembly_attempts WHERE execution_id=? AND state IN ('pending','assembling') LIMIT 1",(execution_id,)).fetchone():
+     raise PersistenceConflictError('project has active or recovery-relevant execution')
+    if state in {Lifecycle.RUNNING,Lifecycle.UNKNOWN}:
+     raise PersistenceConflictError('project has active or recovery-relevant execution')
+    if state is Lifecycle.PENDING and not self._queue_execution_is_editable_virgin(execution_id):
+     raise PersistenceConflictError('project has active or recovery-relevant execution')
+   if execution_ids:
+    marks=','.join('?'*len(execution_ids)); args=tuple(execution_ids)
+    self.db.execute(f'DELETE FROM execution_assembly_attempts WHERE execution_id IN ({marks})',args)
+    self.db.execute(f'DELETE FROM queue_items WHERE execution_id IN ({marks})',args)
+    self.db.execute(f'DELETE FROM transitions WHERE execution_id IN ({marks})',args)
+    self.db.execute(f'DELETE FROM artifacts WHERE execution_id IN ({marks})',args)
+    self.db.execute(f'DELETE FROM errors WHERE execution_id IN ({marks})',args)
+    self.db.execute(f'DELETE FROM attempts WHERE chunk_id IN (SELECT id FROM chunks WHERE execution_id IN ({marks}))',args)
+    self.db.execute(f'DELETE FROM chunks WHERE execution_id IN ({marks})',args)
+    self.db.execute(f'DELETE FROM executions WHERE id IN ({marks})',args)
+   if self.db.execute('DELETE FROM projects WHERE id=?',(project_key,)).rowcount!=1:
+    raise PersistenceConflictError('project deletion lost its durable target')
+   return project_key
+  return self._queue_transaction(action)
  def load_transitions(self, execution_id):
   """Read durable transition frames without exposing storage details to application code."""
   rows=self.db.execute('SELECT project_id,execution_id,target_chunk_id,source_chunk_id,source_attempt_id,source_output,frame_index,frame_count,materialized_type,materialized_subfolder,materialized_name,materialized_source_sha256 FROM transitions WHERE execution_id=? ORDER BY frame_index',(str(execution_id),)).fetchall()
