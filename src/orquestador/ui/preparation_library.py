@@ -212,6 +212,7 @@ class PreparationLibraryPanel(QWidget):
         self.project_sort.addItem("Nombre (A → Z)", "name_asc")
         self.project_sort.addItem("Nombre (Z → A)", "name_desc")
         sort_row.addWidget(self.project_sort)
+        self._wheel_click_policy.protect(self.project_sort)
         sort_row.addStretch(1)
         work_form.addLayout(sort_row)
         self.execution_list = QListWidget()
