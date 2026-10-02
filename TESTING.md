@@ -638,3 +638,17 @@ No se inyectaron fallos artificiales de chunk ni assembly: retry de chunk y retr
 ### Frontera posterior
 
 F14 queda completamente cerrada. F11.6 es la próxima etapa planificada, pero permanece **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
+
+## Biblioteca — eliminación segura de proyectos (2026-10-02)
+
+**Estado:** CLOSED — APROBADA.
+
+Se agregó eliminación de proyectos desde Biblioteca sin introducir borrado de archivos físicos. El flujo requiere confirmación humana; cancelar conserva el proyecto y confirmar elimina el estado durable propio del proyecto y refresca la selección. Persistencia ejecuta el borrado en una única transacción y falla cerradamente si existe cola viva, ejecución o attempt activo, o ensamblado/recovery relevante.
+
+Evidencia automática final sobre la rama de trabajo:
+
+- `python -m unittest tests.test_project_library_delete tests.test_f13_6_library_gui tests.test_f14_1_project_names tests.test_f13_7_queue_operations tests.test_f13_10_queue_gui tests.test_persistence` → **Ran 57 tests — OK**.
+- La suite cubrió borrado de borrador, históricos terminales, preservación de archivo físico testigo, ausencia de huérfanos, rollback ante `queued/active`, bloqueo de `running/unknown`, attempts `pending/running`, ensamblado `pending/assembling`, regresión de rename, cola y persistencia.
+- El workflow temporal usado para ejecutar esta validación fue retirado de la rama después de conservar la evidencia del run exitoso; no forma parte del diff final de producto.
+
+Validación humana Windows separada: **APROBADA**. En un worktree/runtime aislado se verificó la presencia de **Eliminar proyecto**, cancelación con **No** sin cambios, confirmación con **Sí** eliminando el proyecto de Biblioteca, limpieza de la selección y mensaje visible **Proyecto eliminado**. No se ejecutó ComfyUI ni generación de video para esta validación.

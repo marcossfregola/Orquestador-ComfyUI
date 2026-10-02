@@ -260,6 +260,47 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
         self.assertIn("Proyecto: Playa al atardecer", panel.execution_list.currentItem().text())
 
+    def test_delete_project_requires_confirmation_and_clears_deleted_selection(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from orquestador.ui import preparation_library as library_ui
+
+        panel = self.window.library_panel
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+        self.select_execution("visible-project", self.draft.execution_id)
+        QTest.mouseClick(panel.open_button, Qt.LeftButton)
+        self.wait_for_worker()
+        project_id = panel._current_execution().project_id
+        self.assertEqual(self.window.project.text(), project_id)
+        self.assertTrue(panel.delete_project_button.isEnabled())
+
+        with patch.object(
+            library_ui._widgets.QMessageBox,
+            "question",
+            return_value=library_ui._widgets.QMessageBox.StandardButton.No,
+        ) as prompt:
+            QTest.mouseClick(panel.delete_project_button, Qt.LeftButton)
+        prompt.assert_called_once()
+        self.assertIn(project_id, {str(item) for item in self.resources["repository"].list_project_ids()})
+
+        with patch.object(
+            library_ui._widgets.QMessageBox,
+            "question",
+            return_value=library_ui._widgets.QMessageBox.StandardButton.Yes,
+        ) as prompt:
+            QTest.mouseClick(panel.delete_project_button, Qt.LeftButton)
+            self.wait_for_worker()
+        prompt.assert_called_once()
+        self.assertEqual(panel.status.text(), "Proyecto eliminado")
+        self.assertNotIn(project_id, {str(item) for item in self.resources["repository"].list_project_ids()})
+        self.assertIsNone(panel._current_execution())
+        self.assertEqual(panel.project_name_edit.text(), "")
+        self.assertEqual(self.window.project.text(), "")
+        self.assertEqual(self.window.execution.text(), "")
+        self.assertEqual(panel.status.text(), "Proyecto eliminado")
+
     def test_clone_name_prompt_cancel_creates_no_durable_or_file_state(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest

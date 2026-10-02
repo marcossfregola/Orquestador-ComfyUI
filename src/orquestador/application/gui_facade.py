@@ -223,6 +223,8 @@ class GuiFacade:
             selection=(project_id, execution_id),
             refresh_selection=True,
         )
+    def delete_library_project(self, project_id):
+        return self._library_call("delete_project", project_id)
     def clone_library_execution(self, project_id, execution_id, target_name):
         if self._library is None or not callable(getattr(self._library, "clone", None)):
             return LibraryOperationResult(False, message="preparation library clone unavailable")

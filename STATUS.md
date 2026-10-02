@@ -1,10 +1,11 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-10-01
+**Última actualización:** 2026-10-02
 **Implementación F14.2:** `8b7258304eca384d20d4721f35639268a6036e01`; diagnóstico documental posterior `5a17e450982a67360bf08f4740528c0f90500eb9`; cierre humano aprobado el 2026-09-29.
 **Baseline validado F14.4:** `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 **Implementación F14.3 publicada:** `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
 **Estado vivo:** F13.0–F13.10 y F14.1–F14.4 están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6 es la próxima etapa planificada, **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
+**Mejora de Biblioteca cerrada 2026-10-02:** eliminación segura de proyectos **CLOSED — APROBADA**; requiere confirmación humana, elimina sólo estado durable propio del proyecto, preserva archivos físicos y bloquea trabajos vivos/recovery relevante.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
@@ -14,6 +15,7 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 - F11.0–F11.5 están cerradas según la evidencia histórica. F11.6, pulido UX final, no está cerrado.
 - La GUI PySide6 permite preparar y reabrir una ejecución pendiente, editar imagen inicial, referencias, prompts, chunks y parámetros, iniciar la cadena y operar recovery/retry/cancelación segura/ensamblado mediante casos de uso.
 - `ProjectId` es identidad técnica opaca, global e inmutable, separada del nombre humano durable de `Project`. Biblioteca y Cola muestran, ordenan y permiten seleccionar mediante ese nombre; la GUI conserva IDs técnicos internamente. Renombrar no altera ejecuciones ni evidencia.
+- La Biblioteca también permite eliminar un proyecto con confirmación explícita. El borrado es transaccional sobre SQLite: retira proyecto, ejecuciones y estado durable asociado sólo cuando no hay `QueueItem` vivo, ejecución/attempt activo o recovery/assembly relevante. No elimina MP4, chunks, frames ni otros archivos físicos.
 - La preparación sin `ExecutionId` crea un UUID cuando no existe candidato y reutiliza una única ejecución H3 pendiente, virgen y editable. Si hay más de una candidata, falla cerradamente y exige selección explícita.
 - La reapertura rehidrata imagen inicial y preview, referencias, prompts, cantidad/orden de chunks, parámetros globales y overrides. No crea otra ejecución al volver a preparar la candidata seleccionada.
 - El código de F14.3 lleva SQLite a schema 10 mediante migración 9→10, que agrega `execution_assembly_attempts` sin inferir registros para ejecuciones históricas. Mantiene las migraciones previas: F13.0 `queue_items`/`queue_control`; F13.3 `global_defaults`; F13.4 `technical_presets`; F13.5 `chunk_templates`; F14.1 nombre durable de proyecto 7→8; F14.2 `queue_start_policy` 8→9 con `auto` predeterminado.
