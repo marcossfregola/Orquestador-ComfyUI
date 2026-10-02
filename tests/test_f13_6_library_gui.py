@@ -308,6 +308,13 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(visible_project_names(), ["Zulu", "Medio", "Alpha"])
         self.assertEqual(panel._current_execution().project_id, "visible-project")
 
+        panel.project_name_edit.setText("Aaron")
+        panel.rename_project_button.click()
+        self.wait_for_worker()
+        self.assertEqual(panel.project_sort.currentData(), "name_desc")
+        self.assertEqual(visible_project_names(), ["Zulu", "Alpha", "Aaron"])
+        self.assertEqual(panel._current_execution().project_id, "visible-project")
+
     def test_delete_project_requires_confirmation_and_clears_deleted_selection(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
