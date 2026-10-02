@@ -432,12 +432,25 @@ class PreparationLibraryPanel(QWidget):
             return "Proyecto generado"
         return str(project_id).strip() or "Proyecto sin nombre"
 
+    def _project_execution_count(self, project_id):
+        if self._snapshot is None:
+            return None
+        project = next(
+            (item for item in self._snapshot.projects if item.project_id == project_id),
+            None,
+        )
+        return None if project is None else len(project.executions)
+
+    def _execution_display_suffix(self, project_id, execution_number):
+        count = self._project_execution_count(project_id)
+        return "" if count == 1 else f" · Ejecución {execution_number}"
+
     def display_selection(self, selection):
         if selection is None:
             return "ninguna"
         return (
-            f"{self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))} · "
-            f"Ejecución {selection.execution_number} · "
+            f"{self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))}"
+            f"{self._execution_display_suffix(selection.project_id, selection.execution_number)} · "
             f"{self._state_label(selection.classification)}"
         )
 
@@ -735,10 +748,16 @@ class PreparationLibraryPanel(QWidget):
                     self.execution_list.addItem(
                         f"{self.display_project_name(project.project_id, getattr(project, 'name', None))} · sin ejecuciones"
                     )
+                multiple_executions = len(project.executions) > 1
                 for execution in project.executions:
+                    execution_label = (
+                        f" · Ejecución {execution.execution_number}"
+                        if multiple_executions
+                        else ""
+                    )
                     text = (
-                        f"{self.display_project_name(project.project_id, getattr(project, 'name', None))} · "
-                        f"Ejecución {execution.execution_number} · "
+                        f"{self.display_project_name(project.project_id, getattr(project, 'name', None))}"
+                        f"{execution_label} · "
                         f"{self._state_label(execution.classification)}"
                     )
                     item = QListWidgetItem(text)
