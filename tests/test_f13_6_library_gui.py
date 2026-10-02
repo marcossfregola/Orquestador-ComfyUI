@@ -293,6 +293,7 @@ class F136QtLibraryTests(unittest.TestCase):
             QTest.mouseClick(panel.delete_project_button, Qt.LeftButton)
             self.wait_for_worker()
         prompt.assert_called_once()
+        self.assertEqual(panel.status.text(), "Proyecto eliminado")
         self.assertNotIn(project_id, {str(item) for item in self.resources["repository"].list_project_ids()})
         self.assertIsNone(panel._current_execution())
         self.assertEqual(panel.project_name_edit.text(), "")
