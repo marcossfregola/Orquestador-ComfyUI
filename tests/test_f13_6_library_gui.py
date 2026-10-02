@@ -258,7 +258,42 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(panel._current_execution().project_id, project_id)
         self.assertEqual(panel._current_execution().execution_id, self.draft.execution_id)
         self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
-        self.assertTrue(panel.execution_list.currentItem().text().startswith("Playa al atardecer · Ejecución "))
+        self.assertEqual(panel.execution_list.currentItem().text(), "Playa al atardecer · Borrador editable")
+
+    def test_single_execution_hides_number_and_multiple_executions_show_it(self):
+        panel = self.window.library_panel
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+
+        first = self.select_execution("visible-project", self.draft.execution_id)
+        self.assertEqual(first.text(), "visible-project · Borrador editable")
+        self.assertEqual(
+            panel.selection_context.text(),
+            "Selección actual: visible-project · Borrador editable",
+        )
+
+        second = self.drafts.create(
+            "visible-project",
+            execution_id="second-execution",
+            defaults={},
+            chunks=({"prompt": "three"}, {"prompt": "four"}),
+        )
+        panel.refresh_button.click()
+        self.wait_for_worker()
+
+        first = self.select_execution("visible-project", self.draft.execution_id)
+        self.assertEqual(first.text(), "visible-project · Ejecución 1 · Borrador editable")
+        self.assertEqual(
+            panel.selection_context.text(),
+            "Selección actual: visible-project · Ejecución 1 · Borrador editable",
+        )
+        second_item = self.select_execution("visible-project", second.execution_id)
+        self.assertEqual(second_item.text(), "visible-project · Ejecución 2 · Borrador editable")
+        self.assertEqual(
+            panel.selection_context.text(),
+            "Selección actual: visible-project · Ejecución 2 · Borrador editable",
+        )
 
     def test_project_sort_defaults_to_name_ascending_and_persists_on_refresh(self):
         panel = self.window.library_panel
