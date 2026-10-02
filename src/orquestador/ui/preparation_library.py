@@ -31,6 +31,7 @@ _widgets = import_module("PySide6.QtWidgets")
     QCheckBox,
     QScrollArea,
     QTabWidget,
+    QComboBox,
 ) = (
     _widgets.QWidget,
     _widgets.QVBoxLayout,
@@ -48,6 +49,7 @@ _widgets = import_module("PySide6.QtWidgets")
     _widgets.QCheckBox,
     _widgets.QScrollArea,
     _widgets.QTabWidget,
+    _widgets.QComboBox,
 )
 _core = import_module("PySide6.QtCore")
 Qt = _core.Qt
@@ -203,6 +205,16 @@ class PreparationLibraryPanel(QWidget):
         rename_row.addWidget(self.rename_project_button)
         rename_row.addWidget(self.delete_project_button)
         work_form.addLayout(rename_row)
+        sort_row = QHBoxLayout()
+        sort_row.addWidget(QLabel("Ordenar proyectos:"))
+        self.project_sort = QComboBox()
+        self.project_sort.setObjectName("libraryProjectSort")
+        self.project_sort.addItem("Nombre (A → Z)", "name_asc")
+        self.project_sort.addItem("Nombre (Z → A)", "name_desc")
+        sort_row.addWidget(self.project_sort)
+        self._wheel_click_policy.protect(self.project_sort)
+        sort_row.addStretch(1)
+        work_form.addLayout(sort_row)
         self.execution_list = QListWidget()
         self.execution_list.setObjectName("libraryExecutionList")
         self.execution_list.setMinimumHeight(150)
@@ -359,6 +371,7 @@ class PreparationLibraryPanel(QWidget):
         self.create_draft_button.clicked.connect(self.create_draft)
         self.rename_project_button.clicked.connect(self.rename_project)
         self.delete_project_button.clicked.connect(self.delete_project)
+        self.project_sort.currentIndexChanged.connect(self._project_sort_changed)
         self.open_button.clicked.connect(self.open_selected)
         self.clone_button.clicked.connect(self.clone_selected)
         self.save_globals_button.clicked.connect(self.save_global_defaults)
@@ -419,12 +432,25 @@ class PreparationLibraryPanel(QWidget):
             return "Proyecto generado"
         return str(project_id).strip() or "Proyecto sin nombre"
 
+    def _project_execution_count(self, project_id):
+        if self._snapshot is None:
+            return None
+        project = next(
+            (item for item in self._snapshot.projects if item.project_id == project_id),
+            None,
+        )
+        return None if project is None else len(project.executions)
+
+    def _execution_display_suffix(self, project_id, execution_number):
+        count = self._project_execution_count(project_id)
+        return "" if count == 1 else f" · Ejecución {execution_number}"
+
     def display_selection(self, selection):
         if selection is None:
             return "ninguna"
         return (
-            f"Proyecto: {self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))} · "
-            f"Ejecución {selection.execution_number} · "
+            f"{self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))}"
+            f"{self._execution_display_suffix(selection.project_id, selection.execution_number)} · "
             f"{self._state_label(selection.classification)}"
         )
 
@@ -663,6 +689,18 @@ class PreparationLibraryPanel(QWidget):
                 self._set_template_prompts(template.prompts)
         self._update_controls()
 
+    def _project_sort_changed(self, *_):
+        if self._rendering or self._snapshot is None:
+            return
+        self.render(self._snapshot)
+
+    def _project_sort_key(self, project):
+        name = self.display_project_name(
+            project.project_id,
+            getattr(project, "name", None),
+        )
+        return (name.casefold(), name, project.project_id)
+
     def _find_execution_item(self, selection):
         if selection is None:
             return None
@@ -700,22 +738,26 @@ class PreparationLibraryPanel(QWidget):
                 project.project_id: getattr(project, "name", "")
                 for project in projects
             }
-            if focus_new_entry and selected_execution is not None:
-                projects.sort(
-                    key=lambda project: (
-                        project.project_id != selected_execution.project_id,
-                        self.display_project_name(project.project_id, getattr(project, "name", None)).casefold(),
-                    )
-                )
+            sort_mode = self.project_sort.currentData() or "name_asc"
+            projects.sort(
+                key=self._project_sort_key,
+                reverse=(sort_mode == "name_desc"),
+            )
             for project in projects:
                 if not project.executions:
                     self.execution_list.addItem(
-                        f"Proyecto: {self.display_project_name(project.project_id, getattr(project, 'name', None))} · sin ejecuciones"
+                        f"{self.display_project_name(project.project_id, getattr(project, 'name', None))} · sin ejecuciones"
                     )
+                multiple_executions = len(project.executions) > 1
                 for execution in project.executions:
+                    execution_label = (
+                        f" · Ejecución {execution.execution_number}"
+                        if multiple_executions
+                        else ""
+                    )
                     text = (
-                        f"Proyecto: {self.display_project_name(project.project_id, getattr(project, 'name', None))} · "
-                        f"Ejecución {execution.execution_number} · "
+                        f"{self.display_project_name(project.project_id, getattr(project, 'name', None))}"
+                        f"{execution_label} · "
                         f"{self._state_label(execution.classification)}"
                     )
                     item = QListWidgetItem(text)
@@ -784,9 +826,15 @@ class PreparationLibraryPanel(QWidget):
         self._update_selection_context()
         self.status.setText("Biblioteca cargada")
         self._update_controls()
-        # A new draft/clone is deliberately placed at the top of the list and
-        # shown from the top.  Ordinary refreshes retain the user's position.
-        self._restore_scroll_position(0 if focus_new_entry else previous_scroll)
+        # Sorting is a view preference: new/renamed/cloned projects keep the
+        # chosen order instead of jumping to the top.  A freshly selected row
+        # is only scrolled into view; ordinary refreshes retain scroll position.
+        if focus_new_entry:
+            current = self._find_execution_item(self._selection)
+            if current is not None:
+                self.execution_list.scrollToItem(current)
+        else:
+            self._restore_scroll_position(previous_scroll)
 
     def handle_result(self, result):
         if not isinstance(result, LibraryOperationResult):
