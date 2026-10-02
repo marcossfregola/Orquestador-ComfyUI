@@ -260,6 +260,54 @@ class F136QtLibraryTests(unittest.TestCase):
         self.assertEqual(panel._current_execution().project_name, "Playa al atardecer")
         self.assertIn("Proyecto: Playa al atardecer", panel.execution_list.currentItem().text())
 
+    def test_project_sort_defaults_to_name_ascending_and_persists_on_refresh(self):
+        panel = self.window.library_panel
+        self.resources["repository"].rename_project("visible-project", "Medio")
+        self.drafts.create(
+            "sort-alpha",
+            execution_id="sort-alpha-execution",
+            project_name="Alpha",
+            defaults={},
+            chunks=({"prompt": "one"}, {"prompt": "two"}),
+        )
+        self.drafts.create(
+            "sort-zulu",
+            execution_id="sort-zulu-execution",
+            project_name="Zulu",
+            defaults={},
+            chunks=({"prompt": "one"}, {"prompt": "two"}),
+        )
+
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+
+        def visible_project_names():
+            result = []
+            seen = set()
+            for index in range(panel.execution_list.count()):
+                value = panel.execution_list.item(index).data(256)
+                if not hasattr(value, "project_id") or value.project_id in seen:
+                    continue
+                seen.add(value.project_id)
+                result.append(value.project_name)
+            return result
+
+        self.assertEqual(panel.project_sort.currentData(), "name_asc")
+        self.assertEqual(visible_project_names(), ["Alpha", "Medio", "Zulu"])
+
+        panel.project_sort.setCurrentIndex(1)
+        self.app.processEvents()
+        self.assertEqual(panel.project_sort.currentData(), "name_desc")
+        self.assertEqual(visible_project_names(), ["Zulu", "Medio", "Alpha"])
+
+        self.select_execution("visible-project", self.draft.execution_id)
+        panel.refresh_button.click()
+        self.wait_for_worker()
+        self.assertEqual(panel.project_sort.currentData(), "name_desc")
+        self.assertEqual(visible_project_names(), ["Zulu", "Medio", "Alpha"])
+        self.assertEqual(panel._current_execution().project_id, "visible-project")
+
     def test_delete_project_requires_confirmation_and_clears_deleted_selection(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
