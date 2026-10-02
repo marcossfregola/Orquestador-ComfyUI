@@ -436,7 +436,7 @@ class PreparationLibraryPanel(QWidget):
         if selection is None:
             return "ninguna"
         return (
-            f"Proyecto: {self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))} · "
+            f"{self.display_project_name(selection.project_id, getattr(selection, 'project_name', None))} · "
             f"Ejecución {selection.execution_number} · "
             f"{self._state_label(selection.classification)}"
         )
@@ -733,11 +733,11 @@ class PreparationLibraryPanel(QWidget):
             for project in projects:
                 if not project.executions:
                     self.execution_list.addItem(
-                        f"Proyecto: {self.display_project_name(project.project_id, getattr(project, 'name', None))} · sin ejecuciones"
+                        f"{self.display_project_name(project.project_id, getattr(project, 'name', None))} · sin ejecuciones"
                     )
                 for execution in project.executions:
                     text = (
-                        f"Proyecto: {self.display_project_name(project.project_id, getattr(project, 'name', None))} · "
+                        f"{self.display_project_name(project.project_id, getattr(project, 'name', None))} · "
                         f"Ejecución {execution.execution_number} · "
                         f"{self._state_label(execution.classification)}"
                     )
