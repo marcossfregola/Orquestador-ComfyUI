@@ -6,6 +6,7 @@
 **Implementación F14.3 publicada:** `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
 **Estado vivo:** F13.0–F13.10 y F14.1–F14.4 están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6 es la próxima etapa planificada, **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
 **Mejora de Biblioteca cerrada 2026-10-02:** eliminación segura de proyectos **CLOSED — APROBADA**; requiere confirmación humana, elimina sólo estado durable propio del proyecto, preserva archivos físicos y bloquea trabajos vivos/recovery relevante.
+**Mejora visual de Biblioteca cerrada 2026-10-02:** orden por nombre A→Z/Z→A, eliminación del prefijo redundante `Proyecto:` y ocultación del rótulo `Ejecución 1` cuando el proyecto sólo tiene una ejecución. Si existen varias ejecuciones, sus números vuelven a mostrarse. **CLOSED — APROBADA** por validación humana Windows.
 
 Este documento es la autoridad única de estado vivo. El detalle histórico de evidencia permanece en [TESTING.md](TESTING.md), [COMFYUI_INTEGRATION.md](COMFYUI_INTEGRATION.md) y Git.
 
