@@ -155,6 +155,7 @@ class ProjectLibraryDeleteTests(unittest.TestCase):
             selection.project_id, selection.execution_id
         )
         before = self.durable_rows()
+        original_name = self.repository.get_project_name(selection.project_id)
 
         with self.assertRaisesRegex(PreparationLibraryError, "live queue work"):
             self.library.delete_project(selection.project_id)
@@ -162,7 +163,7 @@ class ProjectLibraryDeleteTests(unittest.TestCase):
         self.assertEqual(self.durable_rows(), before)
         self.assertEqual(
             self.repository.get_project_name(selection.project_id),
-            selection.project_name,
+            original_name,
         )
 
     def test_delete_blocks_running_and_pending_recovery_evidence(self):
