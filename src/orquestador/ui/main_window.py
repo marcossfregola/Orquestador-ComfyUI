@@ -915,9 +915,14 @@ class MainWindow(QMainWindow):
         result=PreferencesDialog(self).exec()
         if result==QDialog.Accepted:
             after=resolve_folder(OUTPUT_KEY,project_root=self.project_root)
-            self._set_final_output_folder(after)
-            if after!=before:
-                self._invalidate()
+            if self._auth_can_edit:
+                self._set_final_output_folder(after)
+                if after!=before:
+                    self._invalidate()
+            else:
+                frozen=getattr(self._last_snapshot,"final_output_folder","") if self._last_snapshot is not None else ""
+                if isinstance(frozen,str) and frozen.strip():
+                    self._set_final_output_folder(frozen)
     def closeEvent(self,e):
         if self._busy: e.ignore(); self.status.setText("Operation active; wait for completion")
         else:
