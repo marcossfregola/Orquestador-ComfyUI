@@ -59,11 +59,11 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
             final_output_filename("Mi Proyecto","CON")
 
     def test_preflight_validates_final_destination_without_persisting(self):
-        before=self.repo.load(self.project.id)[1][0].defaults
+        before=tuple(self.repo.load(self.project.id)[1])
         result=PreflightGuiUseCase(self.repo,self.root)(**self.candidate())
         self.assertTrue(result["valid"])
-        after=self.repo.load(self.project.id)[1][0].defaults
-        self.assertEqual(dict(after),dict(before))
+        after=tuple(self.repo.load(self.project.id)[1])
+        self.assertEqual(after,before)
         with self.assertRaisesRegex(PreparationError,"invalid Windows"):
             PreflightGuiUseCase(self.repo,self.root)(
                 **self.candidate(final_output_name="malo?.mp4")
@@ -118,7 +118,7 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
 
         self.repo.rename_project(self.project.id, "Otro nombre de proyecto")
         use(
-            project_id=self.project.id,
+            project_id=str(self.project.id),
             execution_id=None,
             initial_image=str(self.input),
             references=[],
