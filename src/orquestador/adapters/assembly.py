@@ -1,7 +1,7 @@
 """Fail-closed FFmpeg/FFprobe boundary for final video assembly."""
 from pathlib import Path
 from dataclasses import dataclass
-import hashlib, json, subprocess, tempfile, os
+import hashlib, json, subprocess, tempfile, os, shutil
 from uuid import uuid4
 
 class AssemblyError(RuntimeError):
@@ -85,6 +85,71 @@ class FFmpegAssemblyAdapter:
         except FileExistsError as exc:raise AssemblyError('destination appeared during assembly') from exc
         except OSError as exc:raise AssemblyError(f'non-overwriting publication unavailable: {exc}') from exc
         return target
+
+    def publish_external(self, source, destination, *, expected_sha256):
+        """Publish a validated MP4 to a user folder without overwriting.
+
+        Existing identical bytes are adopted so a crash after the external
+        copy but before durable success can recover idempotently.
+        """
+        source=Path(source); target=Path(destination)
+        if source.suffix.lower()!='.mp4' or target.suffix.lower()!='.mp4':
+            raise AssemblyError('final video publication paths must be MP4')
+        sha,_=self.inspect(source)
+        if sha!=expected_sha256:
+            raise AssemblyError('final video source identity mismatch')
+        if not target.parent.is_dir():
+            raise AssemblyError('final video folder is missing or inaccessible')
+        if target.exists():
+            existing_sha,_=self.inspect(target)
+            if existing_sha==expected_sha256:
+                return target
+            raise AssemblyError('final video destination already exists with different content')
+        temp=target.with_name(f'.{target.name}.{uuid4().hex}.publishing')
+        created_target=False
+        try:
+            shutil.copy2(source,temp)
+            copied_sha,_=self.inspect(temp)
+            if copied_sha!=expected_sha256:
+                raise AssemblyError('final video publication copy failed integrity validation')
+            try:
+                os.link(temp,target)
+            except FileExistsError:
+                existing_sha,_=self.inspect(target)
+                if existing_sha!=expected_sha256:
+                    raise AssemblyError('final video destination appeared with different content')
+            except OSError:
+                # Some user-selected filesystems do not support hard links.
+                # Fall back to an exclusive create so an existing destination
+                # is still never replaced.
+                try:
+                    with temp.open('rb') as src, target.open('xb') as dst:
+                        created_target=True
+                        shutil.copyfileobj(src,dst,1024*1024)
+                        dst.flush()
+                        os.fsync(dst.fileno())
+                except FileExistsError:
+                    existing_sha,_=self.inspect(target)
+                    if existing_sha!=expected_sha256:
+                        raise AssemblyError('final video destination appeared with different content')
+                if created_target:
+                    final_sha,_=self.inspect(target)
+                    if final_sha!=expected_sha256:
+                        raise AssemblyError('final video publication failed integrity validation')
+            return target
+        except AssemblyError:
+            if created_target:
+                try: target.unlink()
+                except FileNotFoundError: pass
+            raise
+        except Exception as exc:
+            if created_target:
+                try: target.unlink()
+                except FileNotFoundError: pass
+            raise AssemblyError(f'final video publication failed: {exc}') from exc
+        finally:
+            try: temp.unlink()
+            except FileNotFoundError: pass
 
     def assemble(self, sources, destination, *, reencode=False):
         srcs=tuple(Path(s) for s in sources); dst=Path(destination)
