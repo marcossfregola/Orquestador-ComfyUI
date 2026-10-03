@@ -17,6 +17,7 @@ from ..profiles.minimax_h3 import (
     rebind_first_frame,
 )
 from ..persistence.sqlite import PersistenceError
+from .final_output import FINAL_OUTPUT_FOLDER_KEY, FINAL_OUTPUT_FILENAME_KEY
 
 
 class StartPreparationError(ValueError):
@@ -320,12 +321,17 @@ class StartGuiChainUseCase:
                     **chunk_values,
                 )
             )
-        # Legacy executions may be missing newly introduced default keys.  A
-        # canonical rewrite is safe here because ``selected`` is exactly the
-        # durable configuration, never a transient start override.
-        if dict(execution.defaults) != selected.to_mapping():
+        # Legacy executions may be missing newly introduced generation keys.
+        # Canonicalization must preserve non-generation execution metadata,
+        # including the frozen final-video publication target captured by
+        # Prepare.
+        canonical_defaults = selected.to_mapping()
+        for key in (FINAL_OUTPUT_FOLDER_KEY, FINAL_OUTPUT_FILENAME_KEY):
+            if key in execution.defaults:
+                canonical_defaults[key] = execution.defaults[key]
+        if dict(execution.defaults) != canonical_defaults:
             previous_defaults = execution.defaults
-            execution.defaults = selected.to_mapping()
+            execution.defaults = canonical_defaults
             try:
                 self.repository.save(project, executions)
             except Exception as exc:
