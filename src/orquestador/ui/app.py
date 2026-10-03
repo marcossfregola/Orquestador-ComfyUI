@@ -30,6 +30,11 @@ from ..application.queue_dashboard import QueueDashboardUseCase
 from ..application.queue_dispatch import QueueDispatchSession
 from ..application.scheduler import SchedulerBackgroundRunner, SchedulerExecutionBoundary, SchedulerInstanceLock, SingleExecutionScheduler
 from ..application.queue_recovery import ActiveQueueRecoveryUseCase
+from ..application.final_output import (
+    FINAL_OUTPUT_FOLDER_KEY,
+    FINAL_OUTPUT_FILENAME_KEY,
+    final_output_target,
+)
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
 
@@ -219,12 +224,27 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                 else "runtime evidence locks editing"
             )
         )
+        durable_defaults = dict(e.defaults)
+        final_output = None
+        if final_attempt is not None and final_attempt.state is AssemblyState.SUCCEEDED:
+            if FINAL_OUTPUT_FOLDER_KEY in durable_defaults and FINAL_OUTPUT_FILENAME_KEY in durable_defaults:
+                try:
+                    final_output = str(final_output_target(
+                        durable_defaults,
+                        project_name=project.name,
+                        project_root=cfg.project_root,
+                    ))
+                except Exception:
+                    final_output = final_attempt.destination_uri
+            else:
+                final_output = final_attempt.destination_uri
         snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else "", "can_edit":editable, "edit_reason":edit_reason,
                     "assembly_state":e.assembly_state.value if e.assembly_state is not None else "",
                     "assembly_error":final_attempt.error if final_attempt is not None else "",
-                    "final_output":final_attempt.destination_uri if final_attempt is not None and final_attempt.state is AssemblyState.SUCCEEDED else None}
-        snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
-        durable_defaults = dict(e.defaults)
+                    "final_output":final_output,
+                    "final_output_name":durable_defaults.get(FINAL_OUTPUT_FILENAME_KEY, ""),
+                    "final_output_folder":durable_defaults.get(FINAL_OUTPUT_FOLDER_KEY, "")}
+        snapshot["reference_slots"] = tuple(map(str, durable_defaults.get("references", ())))
         # A persisted execution is authoritative even when it has not yet
         # received an input.  Spell that absence as an empty value so opening
         # a new library draft cannot retain an image from a previously viewed
