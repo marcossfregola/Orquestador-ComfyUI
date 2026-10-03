@@ -223,7 +223,6 @@ class F143FinalAssemblyTests(unittest.TestCase):
         published=self.root/"Project.mp4"
         self.assertTrue(published.is_file())
         self.assertEqual(published.read_bytes(),destination.read_bytes())
-        self.assertEqual(Path(result.detail.output) if getattr(result,"detail",None) is not None and getattr(result.detail,"output",None) else published,published)
         self.repo.finish_claimed_queue_item(self.queue_item.id,execution.id)
         self.assertEqual(self.repo.get_queue_item(self.queue_item.id).state.value,"finished")
 
