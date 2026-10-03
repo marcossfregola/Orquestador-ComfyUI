@@ -14,7 +14,7 @@ from orquestador.application.prepare_gui import (
     PreflightGuiUseCase,
     PreparationError,
 )
-from orquestador.application.preparation_library import PreparationLibraryUseCase
+from orquestador.domain.core import Project, ProjectId
 from orquestador.persistence.sqlite import SQLiteProjectRepository
 
 
@@ -27,8 +27,8 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
         self.output=self.root/"finals"
         self.output.mkdir()
         self.repo=SQLiteProjectRepository(self.root)
-        self.library=PreparationLibraryUseCase(self.repo)
-        self.selection=self.library.create_named_draft("Mi Proyecto")
+        self.project=Project(ProjectId("project"),name="Mi Proyecto")
+        self.repo.save(self.project,[])
 
     def tearDown(self):
         self.repo.close()
@@ -36,8 +36,8 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
 
     def candidate(self, **updates):
         values=dict(
-            project_id=self.selection.project_id,
-            execution_id=self.selection.execution_id,
+            project_id=str(self.project.id),
+            execution_id=None,
             initial_image=str(self.input),
             references=[],
             prompts=["uno","dos"],
@@ -59,10 +59,10 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
             final_output_filename("Mi Proyecto","CON")
 
     def test_preflight_validates_final_destination_without_persisting(self):
-        before=self.repo.load(self.selection.project_id)[1][0].defaults
+        before=self.repo.load(self.project.id)[1][0].defaults
         result=PreflightGuiUseCase(self.repo,self.root)(**self.candidate())
         self.assertTrue(result["valid"])
-        after=self.repo.load(self.selection.project_id)[1][0].defaults
+        after=self.repo.load(self.project.id)[1][0].defaults
         self.assertEqual(dict(after),dict(before))
         with self.assertRaisesRegex(PreparationError,"invalid Windows"):
             PreflightGuiUseCase(self.repo,self.root)(
@@ -76,7 +76,7 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
     def test_prepare_freezes_folder_and_resolved_filename_in_execution_defaults(self):
         use=PrepareGuiUseCase(self.repo,self.root,lambda *_: {"ok":True})
         use(**self.candidate())
-        _,executions=self.repo.load(self.selection.project_id)
+        _,executions=self.repo.load(self.project.id)
         execution=executions[0]
         self.assertEqual(
             execution.defaults[FINAL_OUTPUT_FOLDER_KEY],
@@ -91,9 +91,9 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
             "project",
         )
 
-        self.repo.rename_project(self.selection.project_id, "Proyecto Renombrado")
+        self.repo.rename_project(self.project.id, "Proyecto Renombrado")
         use(**self.candidate())
-        _,executions=self.repo.load(self.selection.project_id)
+        _,executions=self.repo.load(self.project.id)
         execution=executions[0]
         self.assertEqual(
             execution.defaults[FINAL_OUTPUT_FILENAME_KEY],
@@ -105,7 +105,7 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
         )
 
         use(**self.candidate(final_output_name="Entrega final"))
-        _,executions=self.repo.load(self.selection.project_id)
+        _,executions=self.repo.load(self.project.id)
         execution=executions[0]
         self.assertEqual(
             execution.defaults[FINAL_OUTPUT_FILENAME_KEY],
@@ -116,17 +116,17 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
             "custom",
         )
 
-        self.repo.rename_project(self.selection.project_id, "Otro nombre de proyecto")
+        self.repo.rename_project(self.project.id, "Otro nombre de proyecto")
         use(
-            project_id=self.selection.project_id,
-            execution_id=self.selection.execution_id,
+            project_id=self.project.id,
+            execution_id=None,
             initial_image=str(self.input),
             references=[],
             prompts=["uno","dos"],
             chunk_count=2,
             final_output_folder=str(self.output),
         )
-        _,executions=self.repo.load(self.selection.project_id)
+        _,executions=self.repo.load(self.project.id)
         self.assertEqual(
             executions[0].defaults[FINAL_OUTPUT_FILENAME_KEY],
             "Entrega final.mp4",
@@ -139,10 +139,10 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
     def test_invalid_reprepare_does_not_replace_prior_publication_snapshot(self):
         use=PrepareGuiUseCase(self.repo,self.root,lambda *_: {"ok":True})
         use(**self.candidate(final_output_name="Valido"))
-        before=dict(self.repo.load(self.selection.project_id)[1][0].defaults)
+        before=dict(self.repo.load(self.project.id)[1][0].defaults)
         with self.assertRaises(PreparationError):
             use(**self.candidate(final_output_name="invalido*"))
-        after=dict(self.repo.load(self.selection.project_id)[1][0].defaults)
+        after=dict(self.repo.load(self.project.id)[1][0].defaults)
         self.assertEqual(after,before)
 
 
