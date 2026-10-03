@@ -34,6 +34,7 @@ from ..application.final_output import (
     FINAL_OUTPUT_FOLDER_KEY,
     FINAL_OUTPUT_FILENAME_KEY,
     final_output_target,
+    requested_final_output_name,
 )
 from ..persistence.sqlite import SQLiteProjectRepository, PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
@@ -242,7 +243,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     "assembly_state":e.assembly_state.value if e.assembly_state is not None else "",
                     "assembly_error":final_attempt.error if final_attempt is not None else "",
                     "final_output":final_output,
-                    "final_output_name":durable_defaults.get(FINAL_OUTPUT_FILENAME_KEY, ""),
+                    "final_output_name":requested_final_output_name(durable_defaults) or "",
                     "final_output_folder":durable_defaults.get(FINAL_OUTPUT_FOLDER_KEY, "")}
         snapshot["reference_slots"] = tuple(map(str, durable_defaults.get("references", ())))
         # A persisted execution is authoritative even when it has not yet
