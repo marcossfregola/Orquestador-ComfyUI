@@ -81,6 +81,17 @@ class _AssemblyAdapter:
         os.link(staged, destination)
         return Path(destination)
 
+    def publish_external(self, source, destination, *, expected_sha256):
+        source, destination = Path(source), Path(destination)
+        if self._hash(source) != expected_sha256:
+            raise RuntimeError("invalid external assembly source")
+        if destination.exists():
+            if self._hash(destination) == expected_sha256:
+                return destination
+            raise RuntimeError("external assembly destination collision")
+        destination.write_bytes(source.read_bytes())
+        return destination
+
 
 def _chain(repository, coordinator, **kwargs):
     finalizer = FinalizeExecutionUseCase(repository, _AssemblyAdapter(), repository.root)
