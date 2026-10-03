@@ -17,7 +17,11 @@ from ..profiles.minimax_h3 import (
     rebind_first_frame,
 )
 from ..persistence.sqlite import PersistenceError
-from .final_output import FINAL_OUTPUT_FOLDER_KEY, FINAL_OUTPUT_FILENAME_KEY
+from .final_output import (
+    FINAL_OUTPUT_FOLDER_KEY,
+    FINAL_OUTPUT_FILENAME_KEY,
+    FINAL_OUTPUT_NAME_MODE_KEY,
+)
 
 
 class StartPreparationError(ValueError):
@@ -326,7 +330,7 @@ class StartGuiChainUseCase:
         # including the frozen final-video publication target captured by
         # Prepare.
         canonical_defaults = selected.to_mapping()
-        for key in (FINAL_OUTPUT_FOLDER_KEY, FINAL_OUTPUT_FILENAME_KEY):
+        for key in (FINAL_OUTPUT_FOLDER_KEY, FINAL_OUTPUT_FILENAME_KEY, FINAL_OUTPUT_NAME_MODE_KEY):
             if key in execution.defaults:
                 canonical_defaults[key] = execution.defaults[key]
         if dict(execution.defaults) != canonical_defaults:
