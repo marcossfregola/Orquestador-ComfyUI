@@ -105,7 +105,7 @@ class FFmpegAssemblyAdapter:
             if existing_sha==expected_sha256:
                 return target
             raise AssemblyError('final video destination already exists with different content')
-        temp=target.with_name(f'.{target.name}.{uuid4().hex}.publishing')
+        temp=target.with_name(f'.{target.stem}.{uuid4().hex}.publishing.mp4')
         created_target=False
         try:
             shutil.copy2(source,temp)
