@@ -130,6 +130,22 @@ class F111BGuiPreparationTests(unittest.TestCase):
         w.chunk_count.setCurrentText("3"); self.app.processEvents(); w.tabs.setCurrentIndex(2); w.chunk_tabs.setCurrentIndex(2); w.prompts[2].setText("third"); self.assertTrue(w.prompts[2].isVisible()); self.assertTrue(w.prompts[2].isEnabled()); self.assertEqual(w._inputs()["prompts"], ["","","third"])
         w.chunk_count.setCurrentText("2"); self.app.processEvents(); self.assertEqual(len(w.prompts),2); self.assertEqual(w.chunk_tabs.count(),2); self.assertEqual(len(w._inputs()["prompts"]),2)
 
+    def test_gui_final_video_name_and_folder_are_part_of_prepare_snapshot(self):
+        w=self._window(); self.addCleanup(w.close)
+        self.assertTrue(hasattr(w,"final_output_name"))
+        self.assertTrue(hasattr(w,"final_output_folder_button"))
+        w.final_output_name.setText("Entrega cliente")
+        w._set_final_output_folder(str(self.root))
+        values=w._inputs()
+        self.assertEqual(values["final_output_name"],"Entrega cliente")
+        self.assertEqual(values["final_output_folder"],str(self.root))
+
+        w._prepared_key=w._form_key(); w._auth_can_start=True; w._update_start()
+        self.assertTrue(w.start.isEnabled())
+        w.final_output_name.setText("Otro nombre")
+        self.assertIsNone(w._prepared_key)
+        self.assertFalse(w.start.isEnabled())
+
     def test_gui_M_out_of_scope_controls_absent(self):
         w=self._window(); self.addCleanup(w.close)
         for name in ("seed","sampler","scheduler","lens","manual_width","manual_height"):
@@ -209,6 +225,7 @@ class F111BGuiPreparationTests(unittest.TestCase):
             ("length", lambda: w.length.setValue(w.length.value()+1)),
             ("steps", lambda: w.steps.setValue(w.steps.value()+1)),
             ("fps", lambda: w.fps.setValue(w.fps.value()+1)),
+            ("final_output_name", lambda: w.final_output_name.setText(w.final_output_name.text()+"x")),
         )
         for name, edit in edits:
             w._prepare(); self.assertTrue(w.start.isEnabled()); edit(); self.assertFalse(w.start.isEnabled(), name)
