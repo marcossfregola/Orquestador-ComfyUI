@@ -12,6 +12,7 @@ from .final_output import (
     FinalOutputConfigError,
     final_output_snapshot,
     final_output_target,
+    requested_final_output_name,
 )
 
 @dataclass(frozen=True)
@@ -138,19 +139,27 @@ class FinalizeExecutionUseCase:
 
     def _ensure_publication_snapshot(self, project, execution):
         defaults=dict(execution.defaults)
+        if FINAL_OUTPUT_FOLDER_KEY in defaults and FINAL_OUTPUT_FILENAME_KEY in defaults:
+            try:
+                return final_output_target(
+                    defaults,
+                    project_name=project.name,
+                    project_root=self.root,
+                )
+            except FinalOutputConfigError as exc:
+                raise AssemblyError(str(exc)) from exc
         try:
             snapshot=final_output_snapshot(
                 project.name,
-                defaults.get(FINAL_OUTPUT_FILENAME_KEY),
+                requested_final_output_name(defaults),
                 defaults.get(FINAL_OUTPUT_FOLDER_KEY, self._publication_root_value()),
                 project_root=self.root,
             )
         except FinalOutputConfigError as exc:
             raise AssemblyError(str(exc)) from exc
         merged={**defaults,**snapshot}
-        if merged!=defaults:
-            execution.defaults=merged
-            self.repository.save(project,[execution])
+        execution.defaults=merged
+        self.repository.save(project,[execution])
         return final_output_target(
             execution.defaults,
             project_name=project.name,
