@@ -10,6 +10,10 @@ from types import SimpleNamespace
 
 from orquestador.adapters.assembly import AssemblyError, FFmpegAssemblyAdapter
 from orquestador.application.assembly import FinalizeExecutionUseCase
+from orquestador.application.final_output import (
+    FINAL_OUTPUT_FOLDER_KEY,
+    FINAL_OUTPUT_FILENAME_KEY,
+)
 from orquestador.application.chain_execution import ChainExecutionUseCase, ChainOutcome
 from orquestador.application.queue_recovery import ActiveQueueRecoveryUseCase
 from orquestador.application.queue_operations import QueueOperationsUseCase
@@ -179,8 +183,69 @@ class F143FinalAssemblyTests(unittest.TestCase):
         self.assertTrue(self.finalizer(adapter).is_durably_complete(final))
         destination=self.root/f"assembled-{execution.id}.mp4"
         self.assertTrue(destination.is_file())
+        published=self.root/"Project.mp4"
+        self.assertTrue(published.is_file())
+        self.assertEqual(published.read_bytes(),destination.read_bytes())
+        self.assertEqual(Path(result.detail.output) if getattr(result,"detail",None) is not None and getattr(result.detail,"output",None) else published,published)
         self.repo.finish_claimed_queue_item(self.queue_item.id,execution.id)
         self.assertEqual(self.repo.get_queue_item(self.queue_item.id).state.value,"finished")
+
+    def test_custom_folder_and_name_publish_human_final_without_removing_internal(self):
+        output_dir=self.root/"published"
+        output_dir.mkdir()
+        project,execution=self.complete_chunks(queued=True)
+        execution.defaults={
+            **dict(execution.defaults),
+            FINAL_OUTPUT_FOLDER_KEY:str(output_dir.resolve()),
+            FINAL_OUTPUT_FILENAME_KEY:"Gisell final.mp4",
+        }
+        self.repo.save(project,[execution])
+        adapter=FakeAssemblyAdapter()
+        result=self.finalizer(adapter).execute(
+            project.id,execution.id,queue_item_id=str(self.queue_item.id))
+        self.assertTrue(result.success,result.reason)
+        internal=self.root/f"assembled-{execution.id}.mp4"
+        published=output_dir/"Gisell final.mp4"
+        self.assertTrue(internal.is_file())
+        self.assertTrue(published.is_file())
+        self.assertEqual(internal.read_bytes(),published.read_bytes())
+        self.assertEqual(result.output,published)
+        self.assertTrue(self.finalizer(adapter).is_durably_complete(self.repo.load(project.id)[1][0]))
+
+    def test_external_collision_never_overwrites_and_retry_reuses_internal_assembly(self):
+        output_dir=self.root/"published"
+        output_dir.mkdir()
+        project,execution=self.complete_chunks(queued=True)
+        execution.defaults={
+            **dict(execution.defaults),
+            FINAL_OUTPUT_FOLDER_KEY:str(output_dir.resolve()),
+            FINAL_OUTPUT_FILENAME_KEY:"Project final.mp4",
+        }
+        self.repo.save(project,[execution])
+        collision=output_dir/"Project final.mp4"
+        collision.write_bytes(b"keep me")
+        adapter=FakeAssemblyAdapter()
+        finalizer=self.finalizer(adapter)
+        failed=finalizer.execute(
+            project.id,execution.id,queue_item_id=str(self.queue_item.id))
+        self.assertFalse(failed.success)
+        self.assertIn("different content",failed.reason)
+        self.assertEqual(collision.read_bytes(),b"keep me")
+        internal=self.root/f"assembled-{execution.id}.mp4"
+        self.assertTrue(internal.is_file())
+        self.assertEqual([call[0] for call in adapter.calls].count("stage"),1)
+
+        collision.unlink()
+        _,loaded=self.repo.load(project.id)
+        current=loaded[0]
+        self.assertTrue(finalizer.can_retry(current))
+        retried=finalizer.retry(
+            project.id,execution.id,queue_item_id=str(self.queue_item.id))
+        self.assertTrue(retried.success,retried.reason)
+        self.assertEqual([call[0] for call in adapter.calls].count("stage"),1)
+        self.assertEqual((output_dir/"Project final.mp4").read_bytes(),internal.read_bytes())
+        _,loaded=self.repo.load(project.id)
+        self.assertEqual(len(loaded[0].assembly_attempts),2)
 
     def test_assembly_failure_keeps_chunks_and_retry_does_not_recreate_attempts(self):
         project,execution=self.complete_chunks(queued=True)
