@@ -18,6 +18,7 @@ from .final_output import (
     FINAL_OUTPUT_FILENAME_KEY,
     FinalOutputConfigError,
     final_output_snapshot,
+    requested_final_output_name,
 )
 
 
@@ -77,7 +78,7 @@ class PreflightGuiUseCase:
         requested_output_name = (
             kwargs.get("final_output_name")
             if kwargs.get("final_output_name") is not None
-            else stored_output.get(FINAL_OUTPUT_FILENAME_KEY)
+            else requested_final_output_name(stored_output)
         )
         requested_output_folder = (
             kwargs.get("final_output_folder")
@@ -236,7 +237,7 @@ class PrepareGuiUseCase:
         requested_output_name = (
             final_output_name
             if final_output_name is not None
-            else stored_output.get(FINAL_OUTPUT_FILENAME_KEY)
+            else requested_final_output_name(stored_output)
         )
         requested_output_folder = (
             final_output_folder
