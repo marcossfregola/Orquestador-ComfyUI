@@ -3,7 +3,7 @@ from importlib import import_module
 
 QSettings = import_module("PySide6.QtCore").QSettings
 _w = import_module("PySide6.QtWidgets")
-QDialog, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox, QFormLayout, QHBoxLayout = (_w.QDialog,_w.QLineEdit,_w.QPushButton,_w.QFileDialog,_w.QDialogButtonBox,_w.QFormLayout,_w.QHBoxLayout)
+QDialog, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QMessageBox = (_w.QDialog,_w.QLineEdit,_w.QPushButton,_w.QFileDialog,_w.QDialogButtonBox,_w.QFormLayout,_w.QHBoxLayout,_w.QMessageBox)
 
 ORG, APP = "OrquestadorComfyUI", "Orquestador"
 INPUT_KEY, OUTPUT_KEY = "defaultImageFolder", "defaultVideoFolder"
@@ -43,8 +43,10 @@ class PreferencesDialog(QDialog):
         p=QFileDialog.getExistingDirectory(self, "Choose folder", edit.text() or str(Path.home()))
         if p: edit.setText(str(Path(p).expanduser().resolve()))
     def _save(self):
-        s=settings()
-        for key, edit in ((INPUT_KEY,self.image),(OUTPUT_KEY,self.video)):
-            p=Path(edit.text()).expanduser() if edit.text().strip() else None
-            s.setValue(key, str(p.resolve()) if p else "")
-        s.sync(); self.accept()
+        try:
+            save_folder(INPUT_KEY,self.image.text())
+            save_folder(OUTPUT_KEY,self.video.text())
+        except ValueError as exc:
+            QMessageBox.warning(self,"Preferences",str(exc))
+            return
+        self.accept()
