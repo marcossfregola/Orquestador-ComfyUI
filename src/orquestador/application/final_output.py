@@ -7,6 +7,7 @@ import unicodedata
 
 FINAL_OUTPUT_FOLDER_KEY = "_final_output_folder"
 FINAL_OUTPUT_FILENAME_KEY = "_final_output_filename"
+FINAL_OUTPUT_NAME_MODE_KEY = "_final_output_name_mode"
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _RESERVED = {
@@ -96,7 +97,25 @@ def final_output_snapshot(project_name, requested_name, folder, *, project_root)
     return {
         FINAL_OUTPUT_FOLDER_KEY: str(resolved_folder),
         FINAL_OUTPUT_FILENAME_KEY: resolved_name,
+        FINAL_OUTPUT_NAME_MODE_KEY: (
+            "custom"
+            if isinstance(requested_name, str) and requested_name.strip()
+            else "project"
+        ),
     }
+
+
+def requested_final_output_name(defaults):
+    """Return the editable custom name, or None when project-name mode is active."""
+    mapping = dict(defaults or {})
+    mode = mapping.get(FINAL_OUTPUT_NAME_MODE_KEY)
+    if mode == "project":
+        return None
+    name = mapping.get(FINAL_OUTPUT_FILENAME_KEY)
+    if mode == "custom":
+        return name if isinstance(name, str) and name.strip() else None
+    # Compatibility for snapshots created before the mode marker existed.
+    return name if isinstance(name, str) and name.strip() else None
 
 
 def final_output_target(defaults, *, project_name, project_root, fallback_folder=None) -> Path:
