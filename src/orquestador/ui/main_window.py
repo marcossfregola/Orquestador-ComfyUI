@@ -33,7 +33,7 @@ from ..application.create_reference_derivative import CreateReferenceDerivativeU
 from ..application.gui_facade import LibraryOperationResult, OperationResult, QueueOperationResult
 from .preparation_library import PreparationLibraryPanel
 from .queue_panel import QueuePanel
-from .preferences import PreferencesDialog, resolve_folder, INPUT_KEY, OUTPUT_KEY
+from .preferences import PreferencesDialog, resolve_folder, save_folder, INPUT_KEY, OUTPUT_KEY
 
 class _CropDialog(QDialog):
     def __init__(self, path, parent=None):
@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
         reference_host=QWidget(); self.reference_grid=QGridLayout(reference_host); self.reference_grid.setContentsMargins(4,4,4,4); self.reference_grid.setHorizontalSpacing(12); self.reference_grid.setVerticalSpacing(12); self.reference_grid.setAlignment(Qt.AlignTop); self.reference_scroll_area.setWidget(reference_host); references_page_lay.addWidget(self.reference_scroll_area,1)
         lay.addWidget(QLabel("Project / execution preparation")); self.current_context=QLabel("Proyecto: sin selección · Ejecución: sin seleccionar"); self.current_context.setObjectName("currentExecutionContext"); self.current_context.setWordWrap(True); lay.addWidget(self.current_context); self.read_only_notice=QLabel(); self.read_only_notice.setObjectName("executionReadOnlyNotice"); self.read_only_notice.setWordWrap(True); self.read_only_notice.hide(); lay.addWidget(self.read_only_notice); row=QHBoxLayout(); self.project=QLineEdit(); self.project.setObjectName("technicalProjectId"); self.project.setPlaceholderText("Project id"); self.project.hide(); row.addWidget(self.project); self.execution=QLineEdit(); self.execution.setReadOnly(True); self.execution.hide(); self.execution_number=QLabel("Execution: assigned automatically"); row.addWidget(self.execution_number); row.addWidget(self.execution); self.preflight=QPushButton("Preflight"); self.prepare=QPushButton("Prepare"); row.addWidget(self.preflight); row.addWidget(self.prepare); lay.addLayout(row)
         initial_row=QHBoxLayout(); initial_row.addWidget(QLabel("Initial image path:")); self.initial=QLineEdit(); self.initial.setPlaceholderText("empty — choose an initial image"); self.initial.setMinimumWidth(300); initial_row.addWidget(self.initial, 1); self.initial_button=QPushButton("Choose initial…"); initial_row.addWidget(self.initial_button); lay.addLayout(initial_row)
+        final_row=QHBoxLayout(); final_row.addWidget(QLabel("Video final:")); self.final_output_name=QLineEdit(); self.final_output_name.setObjectName("finalOutputName"); self.final_output_name.setPlaceholderText("vacío = nombre del proyecto"); self.final_output_name.setMinimumWidth(260); final_row.addWidget(self.final_output_name,1); self.final_output_folder_label=QLabel(); self.final_output_folder_label.setObjectName("finalOutputFolder"); self.final_output_folder_label.setWordWrap(False); final_row.addWidget(self.final_output_folder_label,2); self.final_output_folder_button=QPushButton("Elegir carpeta…"); self.final_output_folder_button.setObjectName("finalOutputFolderButton"); final_row.addWidget(self.final_output_folder_button); lay.addLayout(final_row); self._final_output_folder_path=resolve_folder(OUTPUT_KEY, project_root=self.project_root); self._set_final_output_folder(self._final_output_folder_path)
         self.reference_labels=[]
         self.references=QListWidget(); self.references.setObjectName("h3ReferenceSlots"); self.references.setVisible(False); lay.addWidget(self.references)
         self.reference_buttons=[]; self.reference_action_buttons=[]
@@ -161,7 +162,7 @@ class MainWindow(QMainWindow):
         acts=QHBoxLayout(); self.preferences=QPushButton("Preferences…"); self.preferences.clicked.connect(self._preferences); self.enqueue=QPushButton("Agregar a cola"); self.enqueue.setObjectName("enqueueExecution"); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.retry_assembly=QPushButton("Retry assembly"); self.retry_assembly.setObjectName("retryAssembly"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.preferences,self.enqueue,self.start,self.resume,self.retry,self.cancel,self.retry_assembly,self.assemble)]; lay.addLayout(acts)
         self.status=QLabel("Ready"); self.status.setObjectName("durableStatus"); lay.addWidget(self.status); self.paths=QLabel("Chunks/intermediates/results: not loaded"); self.paths.setObjectName("resultPaths"); self.paths.setWordWrap(True); lay.addWidget(self.paths); self.assembly_status=QLabel("Final assembly: none"); self.assembly_status.setObjectName("assemblyStatus"); self.assembly_status.setWordWrap(True); lay.addWidget(self.assembly_status); self.chunks=QListWidget(); self.chunks.setObjectName("chunkResults"); lay.addWidget(self.chunks); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
         self.initial_confirmation=QLabel("Initial image: empty — choose a file"); self.initial_confirmation.setObjectName("initialImagePreview"); lay.insertWidget(1,self.initial_confirmation)
-        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.enqueue.clicked.connect(self._enqueue_current); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(self._retry_execution); self.cancel.clicked.connect(self._cancel_pending); self.retry_assembly.clicked.connect(self._retry_assembly); self.assemble.clicked.connect(self._assemble); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self.enqueue.setEnabled(False); self._update_resume_recover()
+        self.initial_button.clicked.connect(self._choose_initial); self.final_output_name.textChanged.connect(self._invalidate); self.final_output_folder_button.clicked.connect(self._choose_final_output_folder); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.enqueue.clicked.connect(self._enqueue_current); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(self._retry_execution); self.cancel.clicked.connect(self._cancel_pending); self.retry_assembly.clicked.connect(self._retry_assembly); self.assemble.clicked.connect(self._assemble); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self.enqueue.setEnabled(False); self._update_resume_recover()
         self.move_up_button.clicked.connect(lambda:self._move_sequence(-1)); self.move_down_button.clicked.connect(lambda:self._move_sequence(1)); self.duplicate_button.clicked.connect(self._duplicate_sequence); self.chunk_tabs.currentChanged.connect(lambda i: (self._show_provenance(), self._update_sequence_controls()))
         self.set_override_button.clicked.connect(self._set_override); self.clear_override_button.clicked.connect(lambda _=False: self._clear_override()); self.chunks.currentRowChanged.connect(lambda i: self.chunk_tabs.setCurrentIndex(i))
         self._prompt_timer=QTimer(self); self._prompt_timer.setSingleShot(True); self._prompt_timer.setInterval(400); self._prompt_timer.timeout.connect(self._flush_prompt); self._prompt_dirty=None; self._pending_action=None; self._continuation=None
@@ -297,7 +298,28 @@ class MainWindow(QMainWindow):
         self._ensure_prompt_count(); prompts=[self.prompts[i].toPlainText() for i in range(self.chunk_count.value())]
         refs=[self.references.item(i).text().strip() for i in range(min(6,self.references.count())) if self.references.item(i) and self.references.item(i).text().strip()]
         overrides=[dict(d.overrides) for d in self._drafts[:self.chunk_count.value()]]
-        return dict(project_id=self.project.text(), execution_id=self.execution.text(), initial_image=self.initial.text(), prompts=prompts, references=refs, chunk_count=self.chunk_count.value(), megapixels=self.megapixels.value(), length=self.length.value(), steps=self.steps.value(), fps=self.fps.value(), ref_image_size=self.ref_image_size.currentText(), also_ref_first_frame=self.also_ref_first_frame.isChecked(), first_frame_as_primary_reference=self.first_frame_as_primary_reference.isChecked(), chunk_overrides=overrides)
+        return dict(project_id=self.project.text(), execution_id=self.execution.text(), initial_image=self.initial.text(), prompts=prompts, references=refs, chunk_count=self.chunk_count.value(), megapixels=self.megapixels.value(), length=self.length.value(), steps=self.steps.value(), fps=self.fps.value(), ref_image_size=self.ref_image_size.currentText(), also_ref_first_frame=self.also_ref_first_frame.isChecked(), first_frame_as_primary_reference=self.first_frame_as_primary_reference.isChecked(), chunk_overrides=overrides, final_output_name=self.final_output_name.text(), final_output_folder=self._final_output_folder_path)
+    def _set_final_output_folder(self, path):
+        value=str(path or resolve_folder(OUTPUT_KEY, project_root=self.project_root))
+        self._final_output_folder_path=value
+        self.final_output_folder_label.setText(f"Carpeta: {value}")
+        self.final_output_folder_label.setToolTip(value)
+
+    def _choose_final_output_folder(self):
+        p=QFileDialog.getExistingDirectory(
+            self,
+            "Carpeta de videos finales",
+            self._final_output_folder_path or resolve_folder(OUTPUT_KEY, project_root=self.project_root),
+        )
+        if p:
+            try:
+                saved=save_folder(OUTPUT_KEY,p)
+            except ValueError as exc:
+                self.log.append(str(exc))
+                return
+            self._set_final_output_folder(saved)
+            self._invalidate()
+
     def _choose_initial(self):
         p,_=QFileDialog.getOpenFileName(self,"Initial image",resolve_folder(INPUT_KEY, project_root=self.project_root, initial_image=self.initial.text()));
         if p: self.initial.setText(p)
@@ -646,6 +668,16 @@ class MainWindow(QMainWindow):
             self.initial.setText(initial_image)
             self.initial.blockSignals(False)
             self._update_initial_preview(initial_image)
+        final_name=getattr(s,"final_output_name",None)
+        if isinstance(final_name,str):
+            self.final_output_name.blockSignals(True)
+            self.final_output_name.setText(final_name)
+            self.final_output_name.blockSignals(False)
+        final_folder=getattr(s,"final_output_folder",None)
+        self._set_final_output_folder(
+            final_folder if isinstance(final_folder,str) and final_folder.strip()
+            else resolve_folder(OUTPUT_KEY,project_root=self.project_root)
+        )
         self._update_reference_labels()
         self.parameters.setText("Supported parameters: " + (", ".join(s.supported_parameters) if s.supported_parameters else "none reported")); self.cancel.setEnabled(s.can_cancel and not self._busy); self.cancel.setToolTip("Cancel is disabled unless exactly one safe pending job is proven" if not s.can_cancel else "Cancel the uniquely identified pending job"); self.retry.setEnabled(s.can_retry and not self._busy); self.retry.setToolTip("Retry is disabled until the durable retry contract permits it" if not s.can_retry else "Retry the failed chunk while preserving completed work"); self.resume.setToolTip("Resume/recover the durable execution" if (s.can_resume or s.can_recover) else "Enter both IDs to request a fresh durable capability snapshot"); self.retry_assembly.setEnabled(s.can_retry_assembly and not self._busy); self.retry_assembly.setToolTip("Retry only final MP4 assembly; completed chunks are preserved" if s.can_retry_assembly else "Assembly retry is unavailable or the destination is ambiguous"); self.assemble.setEnabled(s.can_assemble and not self._busy); self.assemble.setToolTip("Export MP4 through the existing F8 adapter" if s.can_assemble else "Requires all chunks to have verified outputs")
         assembly_labels={"pending":"Final assembly pending", "assembling":"Assembling final MP4", "failed":f"Final assembly failed: {s.assembly_error or 'reason unavailable'} — retry preserves completed chunks", "succeeded":f"Final MP4 validated: {s.final_output or 'durable output'}"}
@@ -832,7 +864,7 @@ class MainWindow(QMainWindow):
             return
         editable = bool(self._auth_can_edit and not self._busy)
         for widget in (
-            self.initial, self.initial_button, self.references, self.chunk_count,
+            self.initial, self.initial_button, self.final_output_name, self.final_output_folder_button, self.references, self.chunk_count,
             self.megapixels, self.length, self.steps, self.fps,
             self.ref_image_size, self.also_ref_first_frame,
             self.first_frame_as_primary_reference, self.override_key,
@@ -879,7 +911,13 @@ class MainWindow(QMainWindow):
         if project_id and execution_id:
             self._run(lambda:self.facade.retry_assembly(project_id,execution_id),"retry_assembly")
     def _preferences(self):
-        PreferencesDialog(self).exec()
+        before=resolve_folder(OUTPUT_KEY,project_root=self.project_root)
+        result=PreferencesDialog(self).exec()
+        if result==QDialog.Accepted:
+            after=resolve_folder(OUTPUT_KEY,project_root=self.project_root)
+            self._set_final_output_folder(after)
+            if after!=before:
+                self._invalidate()
     def closeEvent(self,e):
         if self._busy: e.ignore(); self.status.setText("Operation active; wait for completion")
         else:
