@@ -67,6 +67,20 @@ class FakeAssemblyAdapter:
         os.link(staged,destination)
         return destination
 
+    def publish_external(self,source,destination,*,expected_sha256):
+        source,destination=Path(source),Path(destination)
+        self.calls.append(("publish_external",destination))
+        if self._hash(source)!=expected_sha256:
+            raise AssemblyError("external source mismatch")
+        if destination.exists():
+            if self._hash(destination)==expected_sha256:
+                return destination
+            raise AssemblyError("final video destination already exists with different content")
+        if not destination.parent.is_dir():
+            raise AssemblyError("final video folder is missing or inaccessible")
+        destination.write_bytes(source.read_bytes())
+        return destination
+
 
 class CrashDuringStage(FakeAssemblyAdapter):
     def stage(self,*args,**kwargs):
