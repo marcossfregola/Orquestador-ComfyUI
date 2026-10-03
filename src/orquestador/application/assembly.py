@@ -6,6 +6,13 @@ from pathlib import Path
 from ..adapters.assembly import AssemblyError
 from ..domain.core import (AssemblyAttempt, AssemblySourceEvidence, AssemblyState,
                            ExecutionId, Lifecycle, Phase)
+from .final_output import (
+    FINAL_OUTPUT_FOLDER_KEY,
+    FINAL_OUTPUT_FILENAME_KEY,
+    FinalOutputConfigError,
+    final_output_snapshot,
+    final_output_target,
+)
 
 @dataclass(frozen=True)
 class AssemblyResult:
@@ -90,9 +97,10 @@ class FinalizationResult:
 
 class FinalizeExecutionUseCase:
     """Durably finalize a chunk-complete execution through the shared video adapter."""
-    def __init__(self, repository, assembler, trusted_root=None):
+    def __init__(self, repository, assembler, trusted_root=None, publication_root=None):
         self.repository=repository
         self.assembler=assembler
+        self.publication_root=publication_root
         configured=trusted_root if trusted_root is not None else getattr(repository,'root',None)
         if configured is None: raise ValueError('trusted project output root is required')
         self.root=Path(configured).resolve()
@@ -113,6 +121,48 @@ class FinalizeExecutionUseCase:
         if not self._under(path,self.root): raise AssemblyError('durable assembly path escapes project root')
         if must_exist and (not path.is_file() or path.stat().st_size==0): raise AssemblyError('durable assembly file is missing or empty')
         return path
+
+    def _publication_root_value(self):
+        value = self.publication_root() if callable(self.publication_root) else self.publication_root
+        return self.root if value is None else value
+
+    def _configured_publication_target(self, execution):
+        defaults=dict(execution.defaults)
+        if FINAL_OUTPUT_FOLDER_KEY not in defaults or FINAL_OUTPUT_FILENAME_KEY not in defaults:
+            return None
+        return final_output_target(
+            defaults,
+            project_name="video-final",
+            project_root=self.root,
+        )
+
+    def _ensure_publication_snapshot(self, project, execution):
+        defaults=dict(execution.defaults)
+        try:
+            snapshot=final_output_snapshot(
+                project.name,
+                defaults.get(FINAL_OUTPUT_FILENAME_KEY),
+                defaults.get(FINAL_OUTPUT_FOLDER_KEY, self._publication_root_value()),
+                project_root=self.root,
+            )
+        except FinalOutputConfigError as exc:
+            raise AssemblyError(str(exc)) from exc
+        merged={**defaults,**snapshot}
+        if merged!=defaults:
+            execution.defaults=merged
+            self.repository.save(project,[execution])
+        return final_output_target(
+            execution.defaults,
+            project_name=project.name,
+            project_root=self.root,
+        )
+
+    def _publication_matches(self, execution, expected_sha256):
+        target=self._configured_publication_target(execution)
+        if target is None or not target.is_file():
+            return False
+        digest,_=self.assembler.inspect(target)
+        return digest==expected_sha256
 
     @staticmethod
     def _sha256(path):
@@ -185,8 +235,19 @@ class FinalizeExecutionUseCase:
             sources,_=self._source_manifest(execution)
             if sources!=latest.sources: return False
             destination=self._resolve(latest.destination_uri)
-            if destination.exists(): return False
             self._resolve(latest.staging_uri)
+            if not destination.exists():
+                return True
+            if latest.expected_sha256 is None or latest.probe_signature is None:
+                return False
+            digest,signature=self.assembler.inspect(destination)
+            if digest!=latest.expected_sha256 or tuple(signature)!=latest.probe_signature:
+                return False
+            target=self._configured_publication_target(execution)
+            if target is not None and target.exists():
+                published_hash,_=self.assembler.inspect(target)
+                if published_hash!=latest.expected_sha256:
+                    return False
             return True
         except (OSError,ValueError,AssemblyError):
             return False
@@ -201,7 +262,16 @@ class FinalizeExecutionUseCase:
             if sources!=latest.sources: return False
             destination=self._resolve(latest.destination_uri,must_exist=True)
             digest,signature=self.assembler.inspect(destination)
-            return digest==latest.expected_sha256 and tuple(signature)==latest.probe_signature
+            if digest!=latest.expected_sha256 or tuple(signature)!=latest.probe_signature:
+                return False
+            # Legacy completed executions predate external publication metadata
+            # and retain their existing completion contract.
+            target=self._configured_publication_target(execution)
+            if target is None:
+                return True
+            published_hash,published_signature=self.assembler.inspect(target)
+            return (published_hash==latest.expected_sha256
+                    and tuple(published_signature)==latest.probe_signature)
         except Exception:
             return False
 
@@ -218,6 +288,7 @@ class FinalizeExecutionUseCase:
                 validator(queue_item_id,execution.id)
             elif self.repository.has_live_queue_item(execution.id):
                 raise AssemblyError('a live queue item owns this execution')
+            publication_target=self._ensure_publication_snapshot(project,execution)
             destination_uri=self._destination_uri(execution)
             destination=self._resolve(destination_uri)
             latest=execution.latest_assembly_attempt()
@@ -242,20 +313,26 @@ class FinalizeExecutionUseCase:
                         return self._fail(project,execution,latest,'durable finalization provenance no longer matches completed chunks')
                     raise AssemblyError('durable finalization provenance no longer matches completed chunks')
                 if latest.state is AssemblyState.SUCCEEDED:
-                    if not self.is_durably_complete(execution): raise AssemblyError('recorded final MP4 failed provenance/hash/FFprobe validation; destination will not be overwritten')
-                    return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
+                    if not self.is_durably_complete(execution): raise AssemblyError('recorded final MP4 failed provenance/hash/FFprobe/publication validation; destination will not be overwritten')
+                    return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,publication_target)
                 if latest.state is AssemblyState.FAILED:
                     if not retry: return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=latest.error or 'assembly failed; explicit assembly retry is required')
-                    if destination.exists(): raise AssemblyError('final MP4 destination already exists; retry will not overwrite it')
                     if not self.can_retry(execution): raise AssemblyError('assembly retry is not safe for the current durable evidence')
+                    previous=latest
+                    reuse_internal=destination.exists()
                     number=latest.number+1
                     latest=AssemblyAttempt(execution.id,number,AssemblyState.PENDING,destination_uri,
                         self._staging_uri(execution,number),sources)
                     execution.assembly_attempts.append(latest)
                     self.repository.save(project,[execution])
+                    if reuse_internal:
+                        latest.transition(AssemblyState.ASSEMBLING)
+                        latest.record_staged_output(previous.expected_sha256,previous.probe_signature)
+                        self.repository.save(project,[execution])
+                        return self._adopt_published(project,execution,latest,destination)
             latest=execution.latest_assembly_attempt()
             if latest.state is AssemblyState.SUCCEEDED:
-                return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
+                return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,publication_target)
             if latest.state is AssemblyState.FAILED:
                 return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=latest.error or 'assembly failed')
             staging=self._resolve(latest.staging_uri)
@@ -303,10 +380,21 @@ class FinalizeExecutionUseCase:
             current_sources,_=self._source_manifest(execution)
             if current_sources!=attempt.sources:
                 return self._fail(project,execution,attempt,'published MP4 source provenance changed during recovery')
+            target=self._configured_publication_target(execution)
+            if target is None:
+                raise AssemblyError('final video publication target is missing')
+            publisher=getattr(self.assembler,'publish_external',None)
+            if not callable(publisher):
+                raise AssemblyError('final video publication adapter is unavailable')
+            published=publisher(destination,target,expected_sha256=attempt.expected_sha256)
+            published_hash,published_signature=self.assembler.inspect(published)
+            if (published_hash!=attempt.expected_sha256
+                    or tuple(published_signature)!=attempt.probe_signature):
+                raise AssemblyError('published final video failed integrity validation')
             attempt.transition(AssemblyState.SUCCEEDED)
             execution.transition(Lifecycle.SUCCEEDED)
             self.repository.save(project,[execution])
-            return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
+            return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,Path(published))
         except Exception as exc:
             return self._fail(project,execution,attempt,f'published MP4 validation/finalization failed: {exc}')
 
