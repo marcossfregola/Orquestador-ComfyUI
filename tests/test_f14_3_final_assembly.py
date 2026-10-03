@@ -86,6 +86,20 @@ class FakeAssemblyAdapter:
         return destination
 
 
+class FileOnlyAssemblyAdapter(FFmpegAssemblyAdapter):
+    """Exercise publication mechanics without requiring FFmpeg binaries."""
+    signature=("fake",)
+
+    def __init__(self):
+        pass
+
+    def inspect(self,path):
+        path=Path(path)
+        if path.suffix.lower()!=".mp4" or not path.is_file() or path.stat().st_size==0:
+            raise AssemblyError("test publication is not a nonempty MP4")
+        return hashlib.sha256(path.read_bytes()).hexdigest(),self.signature
+
+
 class CrashDuringStage(FakeAssemblyAdapter):
     def stage(self,*args,**kwargs):
         self.calls.append(("stage-crash",()))
@@ -163,6 +177,29 @@ class F143FinalAssemblyTests(unittest.TestCase):
 
     def finalizer(self,adapter=None,repository=None):
         return FinalizeExecutionUseCase(repository or self.repo,adapter or FakeAssemblyAdapter(),self.root)
+
+    def test_external_publisher_is_idempotent_and_never_overwrites(self):
+        source=self.root/"source.mp4"
+        source.write_bytes(b"validated-final")
+        destination_dir=self.root/"user-output"
+        destination_dir.mkdir()
+        destination=destination_dir/"Human name.mp4"
+        adapter=FileOnlyAssemblyAdapter()
+        expected=hashlib.sha256(source.read_bytes()).hexdigest()
+
+        published=adapter.publish_external(source,destination,expected_sha256=expected)
+        self.assertEqual(published,destination)
+        self.assertEqual(destination.read_bytes(),source.read_bytes())
+        self.assertFalse(any(path.name.endswith(".publishing.mp4") for path in destination_dir.iterdir()))
+
+        adopted=adapter.publish_external(source,destination,expected_sha256=expected)
+        self.assertEqual(adopted,destination)
+        self.assertEqual(destination.read_bytes(),source.read_bytes())
+
+        destination.write_bytes(b"different")
+        with self.assertRaisesRegex(AssemblyError,"different content"):
+            adapter.publish_external(source,destination,expected_sha256=expected)
+        self.assertEqual(destination.read_bytes(),b"different")
 
     def test_chunks_do_not_finish_queue_item_until_validated_final_exists(self):
         project,execution=self.complete_chunks(queued=True)
