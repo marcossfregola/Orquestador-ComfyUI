@@ -10,6 +10,17 @@ INPUT_KEY, OUTPUT_KEY = "defaultImageFolder", "defaultVideoFolder"
 
 def settings(): return QSettings(ORG, APP)
 def _saved(key): return str(settings().value(key, "") or "")
+def saved_folder(key): return _saved(key)
+def save_folder(key, value):
+    s=settings()
+    raw=str(value or "").strip()
+    if not raw:
+        s.setValue(key, ""); s.sync(); return ""
+    p=Path(raw).expanduser()
+    if not p.is_absolute() or not p.exists() or not p.is_dir():
+        raise ValueError("folder must be an existing absolute directory")
+    resolved=str(p.resolve())
+    s.setValue(key, resolved); s.sync(); return resolved
 def _valid_dir(value):
     p = Path(value).expanduser()
     return p.resolve() if p.exists() and p.is_dir() else None
@@ -25,7 +36,7 @@ class PreferencesDialog(QDialog):
         super().__init__(parent); self.setWindowTitle("Preferences")
         self.image = QLineEdit(_saved(INPUT_KEY)); self.video = QLineEdit(_saved(OUTPUT_KEY))
         form = QFormLayout(self)
-        for label, edit in (("Default image folder", self.image), ("Default video folder", self.video)):
+        for label, edit in (("Default image folder", self.image), ("Final video folder", self.video)):
             row=QHBoxLayout(); row.addWidget(edit); b=QPushButton("Browse"); b.clicked.connect(lambda _=False,e=edit:self._browse(e)); row.addWidget(b); c=QPushButton("Clear / Use default"); c.clicked.connect(edit.clear); row.addWidget(c); form.addRow(label, row)
         box=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel); box.accepted.connect(self._save); box.rejected.connect(self.reject); form.addRow(box)
     def _browse(self, edit):
