@@ -336,6 +336,7 @@ class FinalizeExecutionUseCase:
                     self.repository.save(project,[execution])
                     if reuse_internal:
                         latest.transition(AssemblyState.ASSEMBLING)
+                        self.repository.save(project,[execution])
                         latest.record_staged_output(previous.expected_sha256,previous.probe_signature)
                         self.repository.save(project,[execution])
                         return self._adopt_published(project,execution,latest,destination)
