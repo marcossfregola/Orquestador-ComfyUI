@@ -20,6 +20,8 @@ class ExecutionSnapshot:
     configuration: tuple[tuple[str, object], ...] | None = None
     # Durable source image is separate from global generation controls.
     initial_image: str | None = None
+    final_output_name: str | None = None
+    final_output_folder: str | None = None
     execution_number: int|None = None
     # ``None`` preserves compatibility for older injected snapshot seams;
     # authoritative F13.6 snapshots spell out whether structural editing is
@@ -349,7 +351,7 @@ class GuiFacade:
                              tuple((str(k), value) for k, value in dict(raw_configuration).items()))
             raw_can_edit = v.get("can_edit")
             can_edit = raw_can_edit if type(raw_can_edit) is bool else None
-            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), assembly_state=str(v.get("assembly_state","")), assembly_error=str(v.get("assembly_error","")), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_retry_assembly=bool(v.get("can_retry_assembly",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, initial_image=v.get("initial_image"), execution_number=v.get("execution_number"), can_edit=can_edit, edit_reason=str(v.get("edit_reason", "")))
+            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), assembly_state=str(v.get("assembly_state","")), assembly_error=str(v.get("assembly_error","")), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_retry_assembly=bool(v.get("can_retry_assembly",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, initial_image=v.get("initial_image"), final_output_name=v.get("final_output_name"), final_output_folder=v.get("final_output_folder"), execution_number=v.get("execution_number"), can_edit=can_edit, edit_reason=str(v.get("edit_reason", "")))
         chunks=[]
         for i,c in enumerate(getattr(v,"chunks",()) or ()):
             attempts=getattr(c,"attempts",()) or (); a=attempts[-1] if attempts else None
@@ -365,4 +367,4 @@ class GuiFacade:
                          tuple((str(k), value) for k, value in dict(raw_configuration).items()))
         raw_can_edit = getattr(v, "can_edit", None)
         can_edit = raw_can_edit if type(raw_can_edit) is bool else None
-        return ExecutionSnapshot(execution_id=str(getattr(v,"execution_id",getattr(v,"id",""))) or None,state=str(getattr(getattr(v,"state",None),"value",getattr(v,"outcome","unknown"))),chunks=tuple(chunks),errors=tuple(str(x) for x in getattr(v,"errors",()) or ()), reference_slots=reference_slots, configuration=configuration, initial_image=getattr(v, "initial_image", None), can_edit=can_edit, edit_reason=str(getattr(v, "edit_reason", "")))
+        return ExecutionSnapshot(execution_id=str(getattr(v,"execution_id",getattr(v,"id",""))) or None,state=str(getattr(getattr(v,"state",None),"value",getattr(v,"outcome","unknown"))),chunks=tuple(chunks),errors=tuple(str(x) for x in getattr(v,"errors",()) or ()), reference_slots=reference_slots, configuration=configuration, initial_image=getattr(v, "initial_image", None), final_output_name=getattr(v, "final_output_name", None), final_output_folder=getattr(v, "final_output_folder", None), can_edit=can_edit, edit_reason=str(getattr(v, "edit_reason", "")))
