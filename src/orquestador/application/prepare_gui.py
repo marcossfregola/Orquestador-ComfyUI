@@ -13,7 +13,12 @@ from ..domain.config import (
 from ..domain.core import Chunk, Execution, ExecutionId, Project, ProjectId, WorkflowProfileRef, editable_virgin
 from ..persistence.sqlite import PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
-from .final_output import FinalOutputConfigError, final_output_snapshot
+from .final_output import (
+    FINAL_OUTPUT_FOLDER_KEY,
+    FINAL_OUTPUT_FILENAME_KEY,
+    FinalOutputConfigError,
+    final_output_snapshot,
+)
 
 
 class PreparationError(ValueError):
@@ -68,11 +73,22 @@ class PreflightGuiUseCase:
         existing = next((e for e in (executions or ()) if str(e.id) == str(execution_id)), None)
         if project is None: project_defaults, execution_defaults = {}, {}
         else: project_defaults, execution_defaults = project.defaults, (existing.defaults if existing else {})
+        stored_output = dict(execution_defaults or {})
+        requested_output_name = (
+            kwargs.get("final_output_name")
+            if kwargs.get("final_output_name") is not None
+            else stored_output.get(FINAL_OUTPUT_FILENAME_KEY)
+        )
+        requested_output_folder = (
+            kwargs.get("final_output_folder")
+            if kwargs.get("final_output_folder") is not None
+            else stored_output.get(FINAL_OUTPUT_FOLDER_KEY)
+        )
         try:
             final_output_snapshot(
                 getattr(project, "name", None) or str(project_id or "Proyecto generado"),
-                kwargs.get("final_output_name"),
-                kwargs.get("final_output_folder"),
+                requested_output_name,
+                requested_output_folder,
                 project_root=self.root,
             )
         except FinalOutputConfigError as exc:
@@ -192,15 +208,6 @@ class PrepareGuiUseCase:
             if str(exc).strip().lower() != "project not found":
                 raise PreparationError(f"project load failed: {exc}") from exc
             project, executions = Project(pid), []
-        try:
-            publication = final_output_snapshot(
-                project.name,
-                final_output_name,
-                final_output_folder,
-                project_root=self.root,
-            )
-        except FinalOutputConfigError as exc:
-            raise PreparationError(str(exc)) from exc
         def has_live_queue_item(item):
             try:
                 return self.repository.has_live_queue_item(item.id)
@@ -225,6 +232,26 @@ class PrepareGuiUseCase:
         existing = matches[0] if matches else None
         if existing is not None and has_live_queue_item(existing):
             raise PreparationError("cannot re-prepare execution with live queue item")
+        stored_output = dict(existing.defaults) if existing is not None else {}
+        requested_output_name = (
+            final_output_name
+            if final_output_name is not None
+            else stored_output.get(FINAL_OUTPUT_FILENAME_KEY)
+        )
+        requested_output_folder = (
+            final_output_folder
+            if final_output_folder is not None
+            else stored_output.get(FINAL_OUTPUT_FOLDER_KEY)
+        )
+        try:
+            publication = final_output_snapshot(
+                project.name,
+                requested_output_name,
+                requested_output_folder,
+                project_root=self.root,
+            )
+        except FinalOutputConfigError as exc:
+            raise PreparationError(str(exc)) from exc
         scopes = [project.defaults]
         if existing is not None:
             scopes.append(existing.defaults)
