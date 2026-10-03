@@ -5,6 +5,7 @@ from pathlib import Path
 from orquestador.application.final_output import (
     FINAL_OUTPUT_FOLDER_KEY,
     FINAL_OUTPUT_FILENAME_KEY,
+    FINAL_OUTPUT_NAME_MODE_KEY,
     FinalOutputConfigError,
     final_output_filename,
 )
@@ -85,6 +86,23 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
             execution.defaults[FINAL_OUTPUT_FILENAME_KEY],
             "Mi Proyecto.mp4",
         )
+        self.assertEqual(
+            execution.defaults[FINAL_OUTPUT_NAME_MODE_KEY],
+            "project",
+        )
+
+        self.repo.rename_project(self.selection.project_id, "Proyecto Renombrado")
+        use(**self.candidate())
+        _,executions=self.repo.load(self.selection.project_id)
+        execution=executions[0]
+        self.assertEqual(
+            execution.defaults[FINAL_OUTPUT_FILENAME_KEY],
+            "Proyecto Renombrado.mp4",
+        )
+        self.assertEqual(
+            execution.defaults[FINAL_OUTPUT_NAME_MODE_KEY],
+            "project",
+        )
 
         use(**self.candidate(final_output_name="Entrega final"))
         _,executions=self.repo.load(self.selection.project_id)
@@ -92,6 +110,30 @@ class FinalVideoPublicationPreparationTests(unittest.TestCase):
         self.assertEqual(
             execution.defaults[FINAL_OUTPUT_FILENAME_KEY],
             "Entrega final.mp4",
+        )
+        self.assertEqual(
+            execution.defaults[FINAL_OUTPUT_NAME_MODE_KEY],
+            "custom",
+        )
+
+        self.repo.rename_project(self.selection.project_id, "Otro nombre de proyecto")
+        use(
+            project_id=self.selection.project_id,
+            execution_id=self.selection.execution_id,
+            initial_image=str(self.input),
+            references=[],
+            prompts=["uno","dos"],
+            chunk_count=2,
+            final_output_folder=str(self.output),
+        )
+        _,executions=self.repo.load(self.selection.project_id)
+        self.assertEqual(
+            executions[0].defaults[FINAL_OUTPUT_FILENAME_KEY],
+            "Entrega final.mp4",
+        )
+        self.assertEqual(
+            executions[0].defaults[FINAL_OUTPUT_NAME_MODE_KEY],
+            "custom",
         )
 
     def test_invalid_reprepare_does_not_replace_prior_publication_snapshot(self):
