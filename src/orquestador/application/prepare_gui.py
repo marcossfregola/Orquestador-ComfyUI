@@ -13,6 +13,7 @@ from ..domain.config import (
 from ..domain.core import Chunk, Execution, ExecutionId, Project, ProjectId, WorkflowProfileRef, editable_virgin
 from ..persistence.sqlite import PersistenceError
 from ..profiles.minimax_h3 import H3_PROFILE
+from .final_output import FinalOutputConfigError, final_output_snapshot
 
 
 class PreparationError(ValueError):
@@ -67,6 +68,15 @@ class PreflightGuiUseCase:
         existing = next((e for e in (executions or ()) if str(e.id) == str(execution_id)), None)
         if project is None: project_defaults, execution_defaults = {}, {}
         else: project_defaults, execution_defaults = project.defaults, (existing.defaults if existing else {})
+        try:
+            final_output_snapshot(
+                getattr(project, "name", None) or str(project_id or "Proyecto generado"),
+                kwargs.get("final_output_name"),
+                kwargs.get("final_output_folder"),
+                project_root=self.root,
+            )
+        except FinalOutputConfigError as exc:
+            raise PreparationError(str(exc)) from exc
         generation = effective_generation_config(project_defaults, execution_defaults, updates)
         prompts = generation.prompts
         refs = generation.references
@@ -153,6 +163,8 @@ class PrepareGuiUseCase:
         also_ref_first_frame=None,
         chunk_overrides=None,
         orchestration_timeout_seconds=None,
+        final_output_name=None,
+        final_output_folder=None,
         **extra,
     ):
         updates = self._updates(
@@ -180,6 +192,15 @@ class PrepareGuiUseCase:
             if str(exc).strip().lower() != "project not found":
                 raise PreparationError(f"project load failed: {exc}") from exc
             project, executions = Project(pid), []
+        try:
+            publication = final_output_snapshot(
+                project.name,
+                final_output_name,
+                final_output_folder,
+                project_root=self.root,
+            )
+        except FinalOutputConfigError as exc:
+            raise PreparationError(str(exc)) from exc
         def has_live_queue_item(item):
             try:
                 return self.repository.has_live_queue_item(item.id)
@@ -267,6 +288,7 @@ class PrepareGuiUseCase:
             raise PreparationError(str(exc)) from exc
         if generation.profile_ref != H3_PROFILE.name:
             raise PreparationError("execution is not prepared for minimax-h3-ui")
+        durable_defaults = {**generation.to_mapping(), **publication}
         if existing is not None:
             if existing.project_id != project.id or existing.workflow_profile_ref is None or existing.workflow_profile_ref.value != H3_PROFILE.name:
                 raise PreparationError("existing execution conflicts with preparation")
@@ -285,7 +307,7 @@ class PrepareGuiUseCase:
             existing = Execution(
                 project.id,
                 requested_eid or ExecutionId(str(uuid4())),
-                defaults=generation.to_mapping(),
+                defaults=durable_defaults,
                 workflow_profile_ref=WorkflowProfileRef(H3_PROFILE.name),
             )
             for index in range(count_value):
@@ -304,8 +326,8 @@ class PrepareGuiUseCase:
                     made_dirs.extend(missing)
                     target.write_bytes(data)
                     made.append(target)
-            if dict(existing.defaults) != generation.to_mapping():
-                existing.defaults = generation.to_mapping()
+            if dict(existing.defaults) != durable_defaults:
+                existing.defaults = durable_defaults
             # Materialize the complete per-position override set before the
             # single transactional preparation save.  Failed validation above
             # leaves the prior aggregate untouched.
