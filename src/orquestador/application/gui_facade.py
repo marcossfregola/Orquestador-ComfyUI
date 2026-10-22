@@ -1,10 +1,11 @@
 """UI-facing application facade.  Infrastructure is supplied by injection."""
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from .results import OutputResolution
 
 @dataclass(frozen=True)
 class ChunkSnapshot:
-    order: int; state: str; attempt_ref: str|None=None; error: str|None=None; output: str|None=None; transition: str|None=None; chunk_id: str|None=None; prompt: str = ""; overrides: tuple[tuple[str, object], ...] = ()
+    order: int; state: str; attempt_ref: str|None=None; error: str|None=None; output: str|None=None; transition: str|None=None; chunk_id: str|None=None; prompt: str = ""; overrides: tuple[tuple[str, object], ...] = (); resolved_output: OutputResolution|None=None
 
 @dataclass(frozen=True)
 class ExecutionSnapshot:
@@ -26,6 +27,7 @@ class ExecutionSnapshot:
     # permitted for the selected durable execution.
     can_edit: bool | None = None
     edit_reason: str = ""
+    final_result: OutputResolution|None = None
 
 @dataclass(frozen=True)
 class OperationResult:
@@ -340,7 +342,16 @@ class GuiFacade:
         if isinstance(v,ExecutionSnapshot): return v
         if v is None: return self.refresh()
         if isinstance(v,dict):
-            chunks=tuple(ChunkSnapshot(**c) if isinstance(c,dict) else c for c in v.get("chunks",()))
+            chunks=[]
+            for value in v.get("chunks",()):
+                if isinstance(value,dict):
+                    value=dict(value)
+                    value["resolved_output"]=self._to_output_resolution(value.get("resolved_output"))
+                    chunks.append(ChunkSnapshot(**value))
+                else:
+                    chunks.append(value)
+            chunks=tuple(chunks)
+            final_result=self._to_output_resolution(v.get("final_result"))
             raw_reference_slots = v.get("reference_slots")
             reference_slots = (None if raw_reference_slots is None
                                else tuple(map(str, raw_reference_slots)))
@@ -349,7 +360,7 @@ class GuiFacade:
                              tuple((str(k), value) for k, value in dict(raw_configuration).items()))
             raw_can_edit = v.get("can_edit")
             can_edit = raw_can_edit if type(raw_can_edit) is bool else None
-            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), assembly_state=str(v.get("assembly_state","")), assembly_error=str(v.get("assembly_error","")), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_retry_assembly=bool(v.get("can_retry_assembly",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, initial_image=v.get("initial_image"), execution_number=v.get("execution_number"), can_edit=can_edit, edit_reason=str(v.get("edit_reason", "")))
+            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), assembly_state=str(v.get("assembly_state","")), assembly_error=str(v.get("assembly_error","")), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_retry_assembly=bool(v.get("can_retry_assembly",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, initial_image=v.get("initial_image"), execution_number=v.get("execution_number"), can_edit=can_edit, edit_reason=str(v.get("edit_reason", "")), final_result=final_result)
         chunks=[]
         for i,c in enumerate(getattr(v,"chunks",()) or ()):
             attempts=getattr(c,"attempts",()) or (); a=attempts[-1] if attempts else None
@@ -366,3 +377,15 @@ class GuiFacade:
         raw_can_edit = getattr(v, "can_edit", None)
         can_edit = raw_can_edit if type(raw_can_edit) is bool else None
         return ExecutionSnapshot(execution_id=str(getattr(v,"execution_id",getattr(v,"id",""))) or None,state=str(getattr(getattr(v,"state",None),"value",getattr(v,"outcome","unknown"))),chunks=tuple(chunks),errors=tuple(str(x) for x in getattr(v,"errors",()) or ()), reference_slots=reference_slots, configuration=configuration, initial_image=getattr(v, "initial_image", None), can_edit=can_edit, edit_reason=str(getattr(v, "edit_reason", "")))
+
+    @staticmethod
+    def _to_output_resolution(value):
+        if isinstance(value, OutputResolution): return value
+        if isinstance(value, dict):
+            return OutputResolution(
+                status=str(value.get("status", "unavailable")),
+                path=value.get("path"),
+                message=str(value.get("message", "")),
+                attempt_number=value.get("attempt_number"),
+            )
+        return None

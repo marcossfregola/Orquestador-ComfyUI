@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: **PLANNED — NO INICIADA — NO AUTORIZADA**. Es la próxima etapa planificada después del cierre de F14; requiere una nueva tarea explícita y se tratará como etapa visual separada.
+- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA**. El estado vigente está en [STATUS.md](STATUS.md); las demás mejoras F11.6 siguen fuera de alcance hasta autorización explícita.
 
 ## F12 — first frame como referencia primaria
 
@@ -243,7 +243,7 @@ La vista integra los estados `queued`/activos ya durables de F13.7 sólo como pr
 
 ## F14 — Cierre funcional del producto actual
 
-**F14 — CLOSED — APROBADO.** F14.1–F14.4 están **CLOSED — APROBADAS**. F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`; el baseline validado de F14.4 es `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6 queda como próxima etapa planificada, pero **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita. Contrato: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); evidencia: [TESTING.md](TESTING.md).
+**F14 — CLOSED — APROBADO.** F14.1–F14.4 están **CLOSED — APROBADAS**. F14.3 está publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`; el baseline validado de F14.4 es `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. Al cierre de F14, F11.6 quedó como etapa planificada sin iniciar; la autorización posterior de F11.6A y su estado actual están en [STATUS.md](STATUS.md). Contrato: [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md); evidencia: [TESTING.md](TESTING.md).
 
 F14 no agrega una línea nueva de producto: termina tres comportamientos incompletos de la versión F13.10 antes del pulido visual F11.6.
 
@@ -287,7 +287,7 @@ La regresión cubrió migraciones hasta schema 10, nombres durables, rename/clon
 
 **Dependencia:** F14.1–F14.3 cerradas.
 
-**Fuera de F14:** F11.6 visual, nuevos modelos/workflows, IA, cloud, multi-GPU, búsqueda/etiquetas avanzadas y cualquier feature no necesaria para cerrar los tres huecos funcionales anteriores. F11.6 es la próxima etapa planificada, pero sigue **NO INICIADA / NO AUTORIZADA** hasta una tarea explícita.
+**Fuera de F14:** F11.6 visual, nuevos modelos/workflows, IA, cloud, multi-GPU, búsqueda/etiquetas avanzadas y cualquier feature no necesaria para cerrar los tres huecos funcionales anteriores. Al cerrar F14, F11.6 seguía sin iniciar; la tarea posterior autorizó únicamente F11.6A.
 
 
 ## Regla de avance

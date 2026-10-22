@@ -1,10 +1,10 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-10-02
+**Última actualización:** 2026-10-22
 **Implementación F14.2:** `8b7258304eca384d20d4721f35639268a6036e01`; diagnóstico documental posterior `5a17e450982a67360bf08f4740528c0f90500eb9`; cierre humano aprobado el 2026-09-29.
 **Baseline validado F14.4:** `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 **Implementación F14.3 publicada:** `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
-**Estado vivo:** F13.0–F13.10 y F14.1–F14.4 están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6 es la próxima etapa planificada, **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
+**Estado vivo:** F13.0–F13.10 y F14.1–F14.4 están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6A — acceso directo a resultados — está **IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA**. F11.6 permanece abierta.
 **Mejora de Biblioteca cerrada 2026-10-02:** eliminación segura de proyectos **CLOSED — APROBADA**; requiere confirmación humana, elimina sólo estado durable propio del proyecto, preserva archivos físicos y bloquea trabajos vivos/recovery relevante.
 **Mejora visual de Biblioteca cerrada 2026-10-02:** orden por nombre A→Z/Z→A, eliminación del prefijo redundante `Proyecto:` y ocultación del rótulo `Ejecución 1` cuando el proyecto sólo tiene una ejecución. Si existen varias ejecuciones, sus números vuelven a mostrarse. **CLOSED — APROBADA** por validación humana Windows.
 
@@ -13,7 +13,7 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 ## Fotografía viva verificada contra código
 
 - F0–F10 están cerradas en la historia del proyecto. El núcleo incluye dominio y SQLite versionado, adaptador ComfyUI, perfil MiniMax H3, ejecución por chunks, retry/recovery, chaining por último frame real y ensamblado FFmpeg/FFprobe.
-- F11.0–F11.5 están cerradas según la evidencia histórica. F11.6, pulido UX final, no está cerrado.
+- F11.0–F11.5 están cerradas según la evidencia histórica. F11.6A agrega acceso directo a resultados; su auditoría diferencial terminó con NEW_REGRESSIONS=0 y Marcos aprobó la validación humana Windows. La etapa queda lista para cierre técnico, todavía no cerrada.
 - La GUI PySide6 permite preparar y reabrir una ejecución pendiente, editar imagen inicial, referencias, prompts, chunks y parámetros, iniciar la cadena y operar recovery/retry/cancelación segura/ensamblado mediante casos de uso.
 - `ProjectId` es identidad técnica opaca, global e inmutable, separada del nombre humano durable de `Project`. Biblioteca y Cola muestran, ordenan y permiten seleccionar mediante ese nombre; la GUI conserva IDs técnicos internamente. Renombrar no altera ejecuciones ni evidencia.
 - La Biblioteca también permite eliminar un proyecto con confirmación explícita. El borrado es transaccional sobre SQLite: retira proyecto, ejecuciones y estado durable asociado sólo cuando no hay `QueueItem` vivo, ejecución/attempt activo o recovery/assembly relevante. No elimina MP4, chunks, frames ni otros archivos físicos.
@@ -54,7 +54,7 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F14 — cierre funcional del producto actual — está **CLOSED — APROBADO**. F14.1–F14.4 están **CLOSED — APROBADAS** sobre el baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6 es la próxima etapa planificada, pero está **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita. El contrato completo está en [FUNCTIONAL_COMPLETION.md](FUNCTIONAL_COMPLETION.md) y la evidencia de pruebas en [TESTING.md](TESTING.md).
+F14 — cierre funcional del producto actual — está **CLOSED — APROBADO**. F14.1–F14.4 están **CLOSED — APROBADAS** sobre el baseline validado ea2d50deeb59f185fddeee142e4feb39e6f2b258. F11.6A está **IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA**. La evidencia automatizada, la aprobación humana y sus límites están en [TESTING.md](TESTING.md).
 
 Orden aprobado:
 
@@ -64,7 +64,7 @@ Orden aprobado:
 3. **F14.3 — CLOSED — APROBADA**: implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`; pruebas automáticas y diferencial aprobados (`NEW_REGRESSIONS=0`) y smoke humano Windows aprobado. La evidencia detallada permanece en [TESTING.md](TESTING.md).
 4. **F14.4 — CLOSED — APROBADA**: regresión integrada F14.1–F14.3 sin regresiones nuevas y smoke real Windows/ComfyUI aprobado; evidencia y clasificación de deuda histórica en [TESTING.md](TESTING.md).
 
-**F14 — CLOSED — APROBADO.** F11.6 pasa a ser la próxima etapa planificada, pero permanece **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita. No se agregaron características nuevas ni pulido visual dentro de F14.
+**F14 — CLOSED — APROBADO.** Al cerrar F14, F11.6 quedó planificada sin iniciar. La nueva tarea explícita del 2026-10-21 autorizó F11.6A; su estado actual es **IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA**. No se agregaron características dentro del alcance F14.
 
 **Cierre F14.4 (2026-10-01):** focales 303 ejecuciones (302 OK, 1 skip, 0 FAIL/ERROR); integrada 301 tests (300 OK, 1 skip, 0 FAIL/ERROR); suite completa válida del baseline limpio 816 tests (8 FAIL, 6 ERROR, 2 skips). Las 14 incidencias de suite completa coinciden con deuda histórica conocida; `NEW_REGRESSIONS=0`. Smoke integrado real con ComfyUI aprobado y reproducción humana completa del MP4: **VIDEO OK**. Detalle en [TESTING.md](TESTING.md).
 
@@ -132,4 +132,4 @@ Se observó que el render de preview carga QPixmap sincrónicamente y puede caus
 
 El incidente no reapareció en el smoke humano posterior tras reinicio de Windows: `Prepare` volvió a operar normalmente y la prueba real de cola pudo completarse. La causa raíz del freeze aislado sigue sin demostrarse; si reaparece se capturará stack/dump antes de cualquier corrección. No se modifica producción por una hipótesis no reproducida.
 
-Estado histórico al cerrar F14.3 (2026-09-30): F14.2 y F14.3 estaban **CLOSED — APROBADAS**; F14.4 aún estaba planificada. El estado vigente posterior es F14 completo **CLOSED — APROBADO** según el cierre F14.4 del 2026-10-01. F11.6 es la siguiente etapa planificada, pero continúa **NO INICIADA / NO AUTORIZADA** hasta una nueva tarea explícita.
+Estado histórico al cerrar F14.3 (2026-09-30): F14.2 y F14.3 estaban **CLOSED — APROBADAS**; F14.4 aún estaba planificada. El estado vigente posterior fue F14 completo **CLOSED — APROBADO** según el cierre F14.4 del 2026-10-01. F11.6 se planificó en ese momento; la autorización posterior y el estado actual de F11.6A se registran al comienzo de este documento.

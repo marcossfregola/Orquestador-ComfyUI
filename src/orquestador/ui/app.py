@@ -26,6 +26,7 @@ from ..application.prepare_gui import PrepareGuiUseCase, PreflightGuiUseCase
 from ..application.start_gui_chain import StartGuiChainUseCase
 from ..application.f11_1b import InputMaterializationService
 from ..application.preparation_library import PreparationLibraryUseCase
+from ..application.results import ExecutionResultsResolver
 from ..application.queue_dashboard import QueueDashboardUseCase
 from ..application.queue_dispatch import QueueDispatchSession
 from ..application.scheduler import SchedulerBackgroundRunner, SchedulerExecutionBoundary, SchedulerInstanceLock, SingleExecutionScheduler
@@ -159,6 +160,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     chain_real = (ChainExecutionUseCase(repository, chain_coordinator, **chain_kwargs)
         if chain_usecase is None else chain_usecase)
     assembly_roots = (cfg.project_root,) if cfg.comfyui_output_root is None else (cfg.project_root, cfg.comfyui_output_root)
+    results_resolver = ExecutionResultsResolver(cfg.project_root, cfg.comfyui_output_root)
     assembly_real = AssembleExecutionUseCase(
         assembler, cfg.project_root,
         source_roots=assembly_roots)
@@ -193,12 +195,17 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             matches=[e for e in executions if str(e.id)==str(execution_id)]
         if len(matches)!=1: return {"project_id":str(project_id),"state":"unavailable","errors":("execution selection is ambiguous or missing",), "can_edit":False}
         e=matches[0]; chunks=[]; outputs=[]
+        result_files = results_resolver.resolve(e)
+        result_by_chunk_id = {
+            str(chunk.id): resolved
+            for chunk, resolved in zip(e.chunks, result_files.chunks)
+        }
         for c in e.chunks:
             a=c.attempts[-1] if c.attempts else None
             transition = c.first_frame
             materialized = getattr(transition, "materialized_ref", None) if transition else None
             transition_uri = "/".join(x for x in (materialized.subfolder, materialized.name) if x) if materialized else (transition.source_output.uri if transition else None)
-            chunks.append({"order":c.order,"chunk_id":str(c.id),"state":c.state.value,"attempt_ref":str(a.id) if a else None,"error":a.error.message if a and a.error else None,"output":a.output.uri if a and a.output else None,"transition":transition_uri,"prompt":str(dict(c.defaults).get("prompt", "")),"overrides":tuple((str(k),v) for k,v in dict(c.defaults).items() if k != "prompt")})
+            chunks.append({"order":c.order,"chunk_id":str(c.id),"state":c.state.value,"attempt_ref":str(a.id) if a else None,"error":a.error.message if a and a.error else None,"output":a.output.uri if a and a.output else None,"resolved_output":result_by_chunk_id.get(str(c.id)),"transition":transition_uri,"prompt":str(dict(c.defaults).get("prompt", "")),"overrides":tuple((str(k),v) for k,v in dict(c.defaults).items() if k != "prompt")})
             if a and a.output and a.state is Lifecycle.SUCCEEDED: outputs.append(a.output.uri)
         target=select_active_cancellation_target(e)
         retryable = _retry_capability(retry_usecase, e, repo)
@@ -222,7 +229,8 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         snapshot = {"project_id":str(project_id),"execution_id":str(e.id),"execution_number":e.execution_number,"state":e.state.value,"chunks":chunks,"artifacts":[a.output.uri for a in e.artifacts],**caps.__dict__,"cancel_reason":"no unique safe pending target" if not caps.can_cancel else "", "can_edit":editable, "edit_reason":edit_reason,
                     "assembly_state":e.assembly_state.value if e.assembly_state is not None else "",
                     "assembly_error":final_attempt.error if final_attempt is not None else "",
-                    "final_output":final_attempt.destination_uri if final_attempt is not None and final_attempt.state is AssemblyState.SUCCEEDED else None}
+                    "final_output":final_attempt.destination_uri if final_attempt is not None and final_attempt.state is AssemblyState.SUCCEEDED else None,
+                    "final_result":result_files.final}
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
         # A persisted execution is authoritative even when it has not yet
@@ -580,7 +588,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     "assembler": assembler, "submitter": submitter, "coordinator": coordinator,
                     "chain": chain_usecase, "resume": resume_usecase, "recover": recover_usecase,
                     "retry": retry_usecase,
-                    "assemble": assembly_usecase, "finalize": finalization_usecase, "library": library, "queue": queue,
+                    "assemble": assembly_usecase, "finalize": finalization_usecase, "results": results_resolver, "library": library, "queue": queue,
                     "scheduler": scheduler, "dispatch_session": dispatch_session}
 
 def launch(config: AppConfig) -> int:

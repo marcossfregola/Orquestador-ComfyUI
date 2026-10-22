@@ -1,6 +1,6 @@
-# CODEX_TASK — frontera F14 / F11.6
+# CODEX_TASK — frontera F11.6A
 
-## Estado vigente
+## Cierre validado anterior
 
 - **F14.4 — CLOSED — APROBADA.**
 - **F14 — CLOSED — APROBADO.**
@@ -12,8 +12,14 @@
 
 La evidencia, el tratamiento de la primera corrida inválida de `git archive` y los detalles del smoke permanecen en `TESTING.md`.
 
-## Próxima etapa y frontera de autorización
+## Tarea explícita actual
 
-**F11.6 — PLANNED — NO INICIADA — NO AUTORIZADA.** Es la próxima etapa planificada después del cierre de F14, pero esta frontera no autoriza iniciarla. Esperar una nueva tarea explícita antes de inspección orientada a implementación, modificación de archivos, ejecución de pruebas de F11.6 o preparación de publicación.
+La tarea del usuario del 2026-10-21 autoriza **F11.6A — acceso directo a resultados**. El alcance es resolver únicamente outputs acreditados por evidencia durable, presentarlos en Principal y abrirlos mediante el reproductor predeterminado de Windows o el Explorador. Incluye rutas contenidas, evidencia de ensamblado, ejecución parcial e histórica, estado de disponibilidad y pruebas focales.
 
-No queda una tarea activa de implementación F14. No iniciar F11.6 ni inferir autorización a partir de este estado documental.
+**Estado: IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA.** La suite F11.6A terminó con 14 OK y 1 skip por privilegio de symlink en Windows; una prueba temporal con junction verificó el rechazo de escapes. Marcos confirmó y aprobó las cuatro comprobaciones visuales Windows. Los resultados diferenciales, la aprobación y sus límites están registrados en TESTING.md.
+
+## Frontera vigente
+
+- La validación humana Windows fue aprobada; F11.6A queda preparada para cierre técnico, pero todavía no está cerrada.
+- F11.6A no autoriza otras mejoras de F11.6.
+- Esta tarea no autoriza commit, push, PR, merge, tag ni release.
