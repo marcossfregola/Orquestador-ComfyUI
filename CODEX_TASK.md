@@ -1,36 +1,25 @@
-# CODEX_TASK — frontera F11.6B
+# CODEX_TASK — frontera F11.6C
 
-## Cierre validado anterior — F14
+## Cierres previos
 
-- **F14.4 — CLOSED — APROBADA.**
-- **F14 — CLOSED — APROBADO.**
-- Baseline de código validado: `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
-- Baterías focales: **303 ejecuciones, 302 OK, 1 skip, 0 FAIL/ERROR**.
-- Regresión integrada F14.1–F14.3: **301 tests, 300 OK, 1 skip, 0 FAIL/ERROR**.
-- Suite completa canónica: **816 tests, 8 FAIL, 6 ERROR, 2 skips**. Las 14 incidencias son deuda histórica conocida y no hubo regresiones nuevas.
-- El smoke integrado real con ComfyUI fue aprobado; el MP4 final se reprodujo completo y la persona confirmó **VIDEO OK**.
-
-La evidencia, el tratamiento de la primera corrida inválida de `git archive` y los detalles del smoke permanecen en `TESTING.md`.
-
-## Cierre previo — F11.6A
-
-- **F11.6A — acceso directo a resultados: CLOSED — APROBADA** en el commit local aprobado `a69c65cb28a07a15933830763ac40677afa01b5d`, rama `codex/f11-6a-results`.
-- Marcos aprobó la validación humana Windows de F11.6A: MP4 final, chunks individuales, mostrar en Explorador y cambio de proyecto sin resultados cruzados.
-- La auditoría diferencial registrada para F11.6A concluyó `NEW_REGRESSIONS=0`; la omisión de symlink por WinError 1314 está documentada en `TESTING.md`.
+- **F14.4 — CLOSED — APROBADA**; baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
+- **F11.6A — CLOSED — APROBADA** en `a69c65cb28a07a15933830763ac40677afa01b5d`, rama `codex/f11-6a-results`.
+- **F11.6B — CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`, rama `codex/f11-6b-library-scroll-navigation`. Marcos aprobó su validación humana Windows 5/5 el 2026-10-22.
 
 ## Tarea explícita actual
 
-El usuario autorizó **F11.6B — corregir scroll y navegación de Biblioteca**, en una rama nueva desde el commit anterior. Alcance:
+Completar la auditoría final de **F11.6C — recuperación durable de videos finales históricos** en `codex/f11-6c-historical-final-video`, derivada del commit F11.6B indicado arriba. La implementación está lista y Marcos aprobó tanto la recuperación real del caso como su validación humana Windows el 2026-10-22.
 
-- La rueda dentro de la lista de proyectos queda consumida por la lista incluso en sus límites; fuera de ella, el scroll vertical de Biblioteca sigue funcionando.
-- Biblioteca conserva la posición y la selección al abrir un proyecto, cambiar de pestaña y refrescar.
-- No se altera selección, doble clic ni navegación por teclado; el foco Qt automático no debe desplazar la página.
-- No tocar generación, resultados, ComfyUI, SQLite, cola ni ensamblado.
+El alcance habilita una acción explícita «Generar video final histórico» para una ejecución durable `succeeded` sin AssemblyAttempt, si y sólo si todos sus chunks exitosos, artifacts, transiciones y archivos son inequívocos y válidos. Reutiliza la finalización F14.3, publica bajo el proyecto sin solicitar destino y mantiene sin cambios el estado `succeeded` de Execution y QueueItem. La apertura desde Biblioteca nunca inicia FFmpeg.
 
-**Estado:** implementación y pruebas automáticas realizadas; Marcos aprobó la validación humana Windows el 2026-10-22 (5/5). F11.6B está **READY_FOR_COMMIT**, aún sin commit y **NO CERRADA**. Evidencia actual en `TESTING.md`.
+Se bloquea la generación cuando la ejecución está activa, fallida, incompleta, ambigua, carece de procedencia o existe el destino final sin evidencia durable. El video final sólo queda disponible después de guardar AssemblyAttempt exitoso con hash y firma FFprobe. Los fallos e interrupciones deben conservar datos y permitir recuperación segura sólo si la evidencia sigue coincidiendo.
+
+Caso real ya recuperado con autorización de Marcos, no usar como fixture: proyecto `f241170c`, ejecución `77267374-1393-43bd-9c9d-08b8d3d57409`.
 
 ## Frontera vigente
 
-- Rama de trabajo: `codex/f11-6b-library-scroll-navigation`, derivada del commit local F11.6A indicado arriba.
-- Detenerse antes del commit. No hacer commit, push, merge, tag ni release.
-- La modificación se limita a F11.6B y su documentación/evidencia. No ejecutar nuevas generaciones ComfyUI.
+- No repetir la recuperación real ni modificar la SQLite, los MP4 o la evidencia del proyecto indicado. La auditoría final puede leer esa ejecución con SQLite `mode=ro`/`PRAGMA query_only=ON`, calcular hashes y ejecutar FFprobe.
+- Las pruebas automatizadas F11.6C usan exclusivamente fixtures aisladas.
+- No ejecutar generaciones ComfyUI ni FFmpeg de ensamblado; no alterar la generación, la cola, exports manuales o ensamblado F14.3 fuera de la integración ya auditada.
+- Detenerse antes del commit; no hacer push, merge, tag ni release.
+- No utilizar ChatGPT–Codex Bridge.

@@ -28,6 +28,7 @@ class ExecutionSnapshot:
     can_edit: bool | None = None
     edit_reason: str = ""
     final_result: OutputResolution|None = None
+    can_generate_historical_final: bool = False
 
 @dataclass(frozen=True)
 class OperationResult:
@@ -64,7 +65,7 @@ class QueueOperationResult:
     detail: Any = None
 
 class GuiFacade:
-    def __init__(self, *, prepare=None, preflight=None, chain=None, resume=None, recover=None, retry=None, retry_assembly=None, assemble=None, cancel=None, snapshot=None, sequence_edit=None, library=None, queue=None):
+    def __init__(self, *, prepare=None, preflight=None, chain=None, resume=None, recover=None, retry=None, retry_assembly=None, historical_assembly=None, assemble=None, cancel=None, snapshot=None, sequence_edit=None, library=None, queue=None):
         self._ops = locals()
         self._snapshot = snapshot
         self._sequence_edit = sequence_edit
@@ -144,6 +145,7 @@ class GuiFacade:
     def recover_execution(self,*a,**k): return self._call("recover",*a,**k)
     def retry_execution(self,*a,**k): return self._call("retry",*a,**k)
     def retry_assembly(self,*a,**k): return self._call("retry_assembly",*a,**k)
+    def generate_historical_video(self,*a,**k): return self._call("historical_assembly",*a,**k)
     def assemble(self, project_id, execution_id, destination):
         return self._call("assemble", project_id, execution_id, destination)
     def cancel_pending(self,*a,**k):
@@ -360,7 +362,7 @@ class GuiFacade:
                              tuple((str(k), value) for k, value in dict(raw_configuration).items()))
             raw_can_edit = v.get("can_edit")
             can_edit = raw_can_edit if type(raw_can_edit) is bool else None
-            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), assembly_state=str(v.get("assembly_state","")), assembly_error=str(v.get("assembly_error","")), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_retry_assembly=bool(v.get("can_retry_assembly",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, initial_image=v.get("initial_image"), execution_number=v.get("execution_number"), can_edit=can_edit, edit_reason=str(v.get("edit_reason", "")), final_result=final_result)
+            return ExecutionSnapshot(project_id=v.get("project_id"), execution_id=v.get("execution_id"), state=str(v.get("state","unknown")), chunks=chunks, errors=tuple(map(str,v.get("errors",()))), artifacts=tuple(map(str,v.get("artifacts",()))), final_output=v.get("final_output"), assembly_state=str(v.get("assembly_state","")), assembly_error=str(v.get("assembly_error","")), can_cancel=bool(v.get("can_cancel",False)), cancel_reason=str(v.get("cancel_reason","")), can_retry=bool(v.get("can_retry",False)), can_retry_assembly=bool(v.get("can_retry_assembly",False)), can_generate_historical_final=bool(v.get("can_generate_historical_final",False)), can_start=bool(v.get("can_start",False)), can_resume=bool(v.get("can_resume",False)), can_recover=bool(v.get("can_recover",False)), can_assemble=bool(v.get("can_assemble",False)), busy=bool(v.get("busy",False)), supported_parameters=tuple(map(str,v.get("supported_parameters",()))), reference_slots=reference_slots, configuration=configuration, initial_image=v.get("initial_image"), execution_number=v.get("execution_number"), can_edit=can_edit, edit_reason=str(v.get("edit_reason", "")), final_result=final_result)
         chunks=[]
         for i,c in enumerate(getattr(v,"chunks",()) or ()):
             attempts=getattr(c,"attempts",()) or (); a=attempts[-1] if attempts else None

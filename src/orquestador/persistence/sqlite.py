@@ -768,7 +768,17 @@ class SQLiteProjectRepository:
      if previous.destination_uri!=attempt.destination_uri or previous.sources!=attempt.sources: raise PersistenceDataError('assembly retries changed destination or source provenance')
      if previous.state is not AssemblyState.FAILED or attempt.state not in {AssemblyState.PENDING,AssemblyState.ASSEMBLING,AssemblyState.FAILED,AssemblyState.SUCCEEDED}: raise PersistenceDataError('assembly retry history is invalid')
     previous=attempt; e.assembly_attempts.append(attempt)
-   if e.state is Lifecycle.SUCCEEDED and len(e.chunks)>1 and rows and not e.has_valid_assembly_evidence(): raise PersistenceDataError('successful execution lacks matching final assembly evidence')
+   if e.state is Lifecycle.SUCCEEDED and len(e.chunks)>1 and rows:
+    latest=e.latest_assembly_attempt()
+    if latest is None or latest.state is AssemblyState.SUCCEEDED:
+     if not e.has_valid_assembly_evidence(): raise PersistenceDataError('successful execution lacks matching final assembly evidence')
+    elif (len(latest.sources)!=len(e.chunks)
+          or any(chunk.state is not Lifecycle.SUCCEEDED for chunk in e.chunks)):
+     # Legacy terminal successes may append a provenance-complete historical
+     # assembly attempt without reopening Execution or its finished QueueItem.
+     # Until the attempt succeeds, results remain unavailable and F14.3's
+     # durable-success check still fails closed.
+     raise PersistenceDataError('historical assembly attempt on successful execution lacks complete chunk provenance')
   return p,es
  def list_project_ids(self):
   """Return durable project identities only; product classification lives in application."""

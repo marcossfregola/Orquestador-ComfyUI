@@ -213,7 +213,9 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
         live_queue = repo.has_live_queue_item(e.id)
         editable = editable_virgin(e) and not live_queue
         final_attempt=e.latest_assembly_attempt()
-        can_retry_assembly=FinalizeExecutionUseCase(repo,assembler,cfg.project_root).can_retry(e)
+        finalizer=FinalizeExecutionUseCase(repo,assembler,cfg.project_root)
+        can_retry_assembly=(finalizer.can_retry(e) or finalizer.can_retry_historical(e))
+        can_generate_historical_final=finalizer.can_generate_historical(e)
         caps=derive_capabilities(e, can_cancel_candidate=(target is not None), retryable=retryable,
             retry_only=retry_only, startable=not live_queue,
             assemble=(len(outputs)==len(e.chunks) and len(outputs)>=2),
@@ -230,6 +232,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
                     "assembly_state":e.assembly_state.value if e.assembly_state is not None else "",
                     "assembly_error":final_attempt.error if final_attempt is not None else "",
                     "final_output":final_attempt.destination_uri if final_attempt is not None and final_attempt.state is AssemblyState.SUCCEEDED else None,
+                    "can_generate_historical_final":can_generate_historical_final,
                     "final_result":result_files.final}
         snapshot["reference_slots"] = tuple(map(str, dict(e.defaults).get("references", ())))
         durable_defaults = dict(e.defaults)
@@ -556,8 +559,16 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
             active=next((item for item in op_repo.list_queue_items(states=('active',))
                          if str(item.execution_id)==str(execution.id)),None)
             finalizer=FinalizeExecutionUseCase(op_repo,assembler,cfg.project_root)
+            if execution.state is Lifecycle.SUCCEEDED:
+                return finalizer.retry_historical(project_id,execution_id)
             return finalizer.retry(project_id,execution_id,
                 queue_item_id=str(active.id) if active is not None else None)
+        finally: op_repo.close()
+    def historical_assembly_route(project_id,execution_id=None,**_):
+        op_repo=_operation_repository()
+        try:
+            finalizer=FinalizeExecutionUseCase(op_repo,assembler,cfg.project_root)
+            return finalizer.generate_historical(project_id,execution_id)
         finally: op_repo.close()
     def assemble_route(project_id, execution_id=None, destination=None, **_):
         op_repo = _operation_repository()
@@ -580,7 +591,7 @@ def compose(config: AppConfig, *, repository_factory=SQLiteProjectRepository,
     scheduler = SchedulerBackgroundRunner(_scheduler_factory)
     queue = _QueueDashboardGateway()
     facade = GuiFacade(prepare=_prepare_operation, preflight=preflight, retry=retry_route,
-                       retry_assembly=retry_assembly_route, chain=start_chain,
+                       retry_assembly=retry_assembly_route, historical_assembly=historical_assembly_route, chain=start_chain,
                        resume=resume_route, recover=recover_route, assemble=assemble_route,
                        cancel=cancel, snapshot=snapshot, sequence_edit=sequence_edit,
                        library=library, queue=queue)

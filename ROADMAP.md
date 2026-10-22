@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **CLOSED — APROBADA** en el commit local `a69c65cb28a07a15933830763ac40677afa01b5d`. F11.6B, scroll y navegación de Biblioteca, está implementada, con pruebas Qt automáticas y validación humana Windows aprobada por Marcos el 2026-10-22 (5/5). Está **READY_FOR_COMMIT**, aún sin commit, y permanece abierta hasta completar el cierre técnico. Las demás mejoras F11.6 requieren autorización explícita.
+- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **CLOSED — APROBADA** en `a69c65cb28a07a15933830763ac40677afa01b5d`; F11.6B, scroll y navegación de Biblioteca, está **CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`, con validación humana Windows 5/5. F11.6C implementa la generación explícita y durable de videos finales para ejecuciones históricas exitosas, sin regenerar chunks ni reabrir el ciclo de vida. Tras corregir la primera validación visual fallida, Marcos aprobó la interfaz y la recuperación real de `f241170c`; la auditoría durable de sólo lectura confirmó un intento exitoso, hash/FFprobe coincidentes, cinco chunks preservados y cero attempts de generación nuevos. F11.6C está **READY_FOR_COMMIT**, todavía sin commit; F11.6 sigue abierta.
 
 ## F12 — first frame como referencia primaria
 
