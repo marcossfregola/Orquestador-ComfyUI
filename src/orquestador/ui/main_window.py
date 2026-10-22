@@ -808,6 +808,15 @@ class MainWindow(QMainWindow):
         self._update_start()
     def _run(self,op,kind="other"):
         if self._busy: return
+        if self.tabs.currentIndex() == getattr(self, "library_tab_index", -1):
+            focus = _widgets.QApplication.focusWidget()
+            scroll_area = self.library_panel.scroll_area
+            if focus is not None and scroll_area.isAncestorOf(focus):
+                # Disabling the focused library control makes Qt walk focus
+                # through the remaining controls. QScrollArea then scrolls
+                # each newly focused child into view. Move focus outside the
+                # scroll area before marking the panel busy.
+                self.tabs.tabBar().setFocus(Qt.OtherFocusReason)
         if kind in {"library_open", "library_create_draft", "library_clone", "queue_select", "load_project"}:
             self._clear_results("Cargando resultados de la nueva selección…")
         self._operation_kind=kind; self._busy=True; self._set_enabled(False)

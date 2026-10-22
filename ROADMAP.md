@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA**. El estado vigente está en [STATUS.md](STATUS.md); las demás mejoras F11.6 siguen fuera de alcance hasta autorización explícita.
+- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **CLOSED — APROBADA** en el commit local `a69c65cb28a07a15933830763ac40677afa01b5d`. F11.6B, scroll y navegación de Biblioteca, está implementada, con pruebas Qt automáticas y validación humana Windows aprobada por Marcos el 2026-10-22 (5/5). Está **READY_FOR_COMMIT**, aún sin commit, y permanece abierta hasta completar el cierre técnico. Las demás mejoras F11.6 requieren autorización explícita.
 
 ## F12 — first frame como referencia primaria
 

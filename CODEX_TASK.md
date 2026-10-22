@@ -1,6 +1,6 @@
-# CODEX_TASK — frontera F11.6A
+# CODEX_TASK — frontera F11.6B
 
-## Cierre validado anterior
+## Cierre validado anterior — F14
 
 - **F14.4 — CLOSED — APROBADA.**
 - **F14 — CLOSED — APROBADO.**
@@ -12,14 +12,25 @@
 
 La evidencia, el tratamiento de la primera corrida inválida de `git archive` y los detalles del smoke permanecen en `TESTING.md`.
 
+## Cierre previo — F11.6A
+
+- **F11.6A — acceso directo a resultados: CLOSED — APROBADA** en el commit local aprobado `a69c65cb28a07a15933830763ac40677afa01b5d`, rama `codex/f11-6a-results`.
+- Marcos aprobó la validación humana Windows de F11.6A: MP4 final, chunks individuales, mostrar en Explorador y cambio de proyecto sin resultados cruzados.
+- La auditoría diferencial registrada para F11.6A concluyó `NEW_REGRESSIONS=0`; la omisión de symlink por WinError 1314 está documentada en `TESTING.md`.
+
 ## Tarea explícita actual
 
-La tarea del usuario del 2026-10-21 autoriza **F11.6A — acceso directo a resultados**. El alcance es resolver únicamente outputs acreditados por evidencia durable, presentarlos en Principal y abrirlos mediante el reproductor predeterminado de Windows o el Explorador. Incluye rutas contenidas, evidencia de ensamblado, ejecución parcial e histórica, estado de disponibilidad y pruebas focales.
+El usuario autorizó **F11.6B — corregir scroll y navegación de Biblioteca**, en una rama nueva desde el commit anterior. Alcance:
 
-**Estado: IMPLEMENTADA — AUDITORÍA DIFERENCIAL COMPLETADA (NEW_REGRESSIONS=0) — VALIDACIÓN HUMANA WINDOWS APROBADA — LISTA PARA CIERRE TÉCNICO — NO CERRADA.** La suite F11.6A terminó con 14 OK y 1 skip por privilegio de symlink en Windows; una prueba temporal con junction verificó el rechazo de escapes. Marcos confirmó y aprobó las cuatro comprobaciones visuales Windows. Los resultados diferenciales, la aprobación y sus límites están registrados en TESTING.md.
+- La rueda dentro de la lista de proyectos queda consumida por la lista incluso en sus límites; fuera de ella, el scroll vertical de Biblioteca sigue funcionando.
+- Biblioteca conserva la posición y la selección al abrir un proyecto, cambiar de pestaña y refrescar.
+- No se altera selección, doble clic ni navegación por teclado; el foco Qt automático no debe desplazar la página.
+- No tocar generación, resultados, ComfyUI, SQLite, cola ni ensamblado.
+
+**Estado:** implementación y pruebas automáticas realizadas; Marcos aprobó la validación humana Windows el 2026-10-22 (5/5). F11.6B está **READY_FOR_COMMIT**, aún sin commit y **NO CERRADA**. Evidencia actual en `TESTING.md`.
 
 ## Frontera vigente
 
-- La validación humana Windows fue aprobada; F11.6A queda preparada para cierre técnico, pero todavía no está cerrada.
-- F11.6A no autoriza otras mejoras de F11.6.
-- Esta tarea no autoriza commit, push, PR, merge, tag ni release.
+- Rama de trabajo: `codex/f11-6b-library-scroll-navigation`, derivada del commit local F11.6A indicado arriba.
+- Detenerse antes del commit. No hacer commit, push, merge, tag ni release.
+- La modificación se limita a F11.6B y su documentación/evidencia. No ejecutar nuevas generaciones ComfyUI.

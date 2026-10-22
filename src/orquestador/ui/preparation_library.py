@@ -136,6 +136,17 @@ class _LibraryWheelClickPolicy(QObject):
         return super().eventFilter(watched, event)
 
 
+class _LibraryExecutionList(QListWidget):
+    """Keep wheel gestures inside the project list, including at its ends."""
+
+    def wheelEvent(self, event):
+        super().wheelEvent(event)
+        # QAbstractScrollArea may ignore a wheel event when its scrollbar is
+        # already at an end. Accept it here so the enclosing page cannot take
+        # ownership of the same gesture.
+        event.accept()
+
+
 class PreparationLibraryPanel(QWidget):
     """F13.6's simple project/execution and saved-configuration library."""
 
@@ -215,7 +226,7 @@ class PreparationLibraryPanel(QWidget):
         self._wheel_click_policy.protect(self.project_sort)
         sort_row.addStretch(1)
         work_form.addLayout(sort_row)
-        self.execution_list = QListWidget()
+        self.execution_list = _LibraryExecutionList()
         self.execution_list.setObjectName("libraryExecutionList")
         self.execution_list.setMinimumHeight(150)
         work_form.addWidget(self.execution_list)
@@ -840,8 +851,6 @@ class PreparationLibraryPanel(QWidget):
         if not isinstance(result, LibraryOperationResult):
             self.show_error("resultado inesperado de la Biblioteca")
             return
-        if result.success and result.selection is not None:
-            self._focus_new_entry = True
         if result.selection is not None:
             self._selection = result.selection
         if result.library is not None:
