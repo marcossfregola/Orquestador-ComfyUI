@@ -7,7 +7,7 @@ Este documento reúne ideas futuras no comprometidas. No cambia el alcance del p
 - Perfiles para Wan, Hunyuan u otros modelos y workflows.
 - Varios backends, ComfyUI remoto o cloud.
 - Multi-GPU, concurrencia avanzada y planificación de recursos.
-- Biblioteca avanzada de personajes y referencias, e importación/exportación de proyectos.
+- Organización avanzada de personajes/referencias, importación/exportación de proyectos y funciones de biblioteca más allá del alcance inicial F16 (ver [ROADMAP.md](ROADMAP.md) y [F16_LIBRARY_DESIGN.md](F16_LIBRARY_DESIGN.md)).
 - Regeneración selectiva, branching, variantes y comparación A/B.
 - Editor o timeline de video.
 - Formatos de salida adicionales y políticas de calidad ampliadas.

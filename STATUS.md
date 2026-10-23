@@ -1,10 +1,11 @@
 # Estado del proyecto
 
-**Última actualización:** 2026-10-22
+**Última actualización:** 2026-10-23
 **Implementación F14.2:** `8b7258304eca384d20d4721f35639268a6036e01`; diagnóstico documental posterior `5a17e450982a67360bf08f4740528c0f90500eb9`; cierre humano aprobado el 2026-09-29.
 **Baseline validado F14.4:** `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
 **Implementación F14.3 publicada:** `4f1bd9320c005ef9dc0ac89855f10abc3f529681`.
-**Estado vivo:** F13.0–F13.10 y F14.1–F14.4 están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6A — acceso directo a resultados — está **CLOSED — APROBADA** en el commit local `a69c65cb28a07a15933830763ac40677afa01b5d`. F11.6B — scroll y navegación de Biblioteca — quedó **CLOSED — APROBADA** en el commit local `16c91f653f56438bd563a5fc2e88639865bf3518`, con validación humana Windows aprobada por Marcos (5/5). F11.6C — recuperación durable de videos históricos — está implementada en `codex/f11-6c-historical-final-video`; Marcos aprobó la recuperación real y la validación humana Windows del 2026-10-22. La auditoría durable de sólo lectura y las pruebas focales pasaron. Está **READY_FOR_COMMIT**, sin commit; F11.6 continúa abierta.
+**Regresión F15 sobre PR #4:** 858 tests (836 OK, 13 FAIL, 6 ERROR, 3 skips). La suite no está globalmente verde. El diferencial focal de los 19 IDs contra el padre pre-PR #4 da `NEW_REGRESSIONS=0`; la clasificación y las limitaciones están en [TESTING.md](TESTING.md).
+**Estado vivo:** F13.0–F13.10, F14.1–F14.4 y F11.6A–C están **CLOSED — APROBADAS**; **F14 — CLOSED — APROBADO**. F11.6A–C quedaron integradas mediante PR #4 en `0c84890c2b2802ce013e486f42ca08db056cd930`; sus cierres son `a69c65cb28a07a15933830763ac40677afa01b5d`, `16c91f653f56438bd563a5fc2e88639865bf3518` y `a6cb9688e93a8d82e6adb522100a3f9cccd0af57`. F15 — consolidación documental y baseline — está **READY_FOR_COMMIT** en `codex/f15-consolidation`, basada en ese merge. F16 — bibliotecas locales de imágenes de referencia y prompts individuales — tiene orden aprobado, pero no está implementada; el diseño preliminar y las decisiones pendientes están en [F16_LIBRARY_DESIGN.md](F16_LIBRARY_DESIGN.md).
 **Mejora de Biblioteca cerrada 2026-10-02:** eliminación segura de proyectos **CLOSED — APROBADA**; requiere confirmación humana, elimina sólo estado durable propio del proyecto, preserva archivos físicos y bloquea trabajos vivos/recovery relevante.
 **Mejora visual de Biblioteca cerrada 2026-10-02:** orden por nombre A→Z/Z→A, eliminación del prefijo redundante `Proyecto:` y ocultación del rótulo `Ejecución 1` cuando el proyecto sólo tiene una ejecución. Si existen varias ejecuciones, sus números vuelven a mostrarse. **CLOSED — APROBADA** por validación humana Windows.
 
@@ -13,7 +14,7 @@ Este documento es la autoridad única de estado vivo. El detalle histórico de e
 ## Fotografía viva verificada contra código
 
 - F0–F10 están cerradas en la historia del proyecto. El núcleo incluye dominio y SQLite versionado, adaptador ComfyUI, perfil MiniMax H3, ejecución por chunks, retry/recovery, chaining por último frame real y ensamblado FFmpeg/FFprobe.
-- F11.0–F11.5 están cerradas según la evidencia histórica. F11.6A agrega acceso directo a resultados y F11.6B corrige scroll y navegación de Biblioteca; ambas quedaron cerradas en sus commits locales aprobados. F11.6C agrega una acción explícita para generar el video final de una ejecución histórica que no tiene `AssemblyAttempt`, reutilizando F14.3 y preservando `Execution.succeeded` y el QueueItem terminado. La acción sólo se habilita con chunks, artifacts, transiciones, archivos y paths durables inequívocos; una ruta final preexistente sin hash/FFprobe durable bloquea la publicación. La recuperación real y la validación humana de `f241170c` fueron aprobadas por Marcos; la auditoría durable confirma hash/probe y procedencia. F11.6C está preparada para commit independiente y aún no está cerrada.
+- F11.0–F11.5 y F11.6A–C están cerradas según la evidencia histórica y PR #4. F11.6A agrega acceso directo a resultados; F11.6B corrige el scroll y la navegación de Biblioteca; F11.6C agrega la generación explícita y durable de videos finales históricos sin regenerar chunks ni reabrir el lifecycle. Sus commits y el merge están registrados arriba y la evidencia detallada, incluida la recuperación aprobada de `f241170c`, permanece en [TESTING.md](TESTING.md). El episodio aislado «No responde» no fue reproducido ni tiene causa demostrada.
 - La GUI PySide6 permite preparar y reabrir una ejecución pendiente, editar imagen inicial, referencias, prompts, chunks y parámetros, iniciar la cadena y operar recovery/retry/cancelación segura/ensamblado mediante casos de uso.
 - `ProjectId` es identidad técnica opaca, global e inmutable, separada del nombre humano durable de `Project`. Biblioteca y Cola muestran, ordenan y permiten seleccionar mediante ese nombre; la GUI conserva IDs técnicos internamente. Renombrar no altera ejecuciones ni evidencia.
 - La Biblioteca también permite eliminar un proyecto con confirmación explícita. El borrado es transaccional sobre SQLite: retira proyecto, ejecuciones y estado durable asociado sólo cuando no hay `QueueItem` vivo, ejecución/attempt activo o recovery/assembly relevante. No elimina MP4, chunks, frames ni otros archivos físicos.
@@ -56,7 +57,7 @@ Decisiones centrales:
 
 ## Próximo paso
 
-F14 — cierre funcional del producto actual — está **CLOSED — APROBADO**. F14.1–F14.4 están **CLOSED — APROBADAS** sobre el baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6A está **CLOSED — APROBADA** en `a69c65cb28a07a15933830763ac40677afa01b5d`; F11.6B está **CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`, con validación humana Windows 5/5. F11.6C está **READY_FOR_COMMIT** en `codex/f11-6c-historical-final-video`; Marcos aprobó la corrección visual y la recuperación real de `f241170c`, cuya evidencia durable se auditó en modo de sólo lectura. F11.6C aún no tiene commit y F11.6 permanece abierta. La evidencia y sus límites están en [TESTING.md](TESTING.md).
+F14 está **CLOSED — APROBADO** sobre el baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`. F11.6A–C quedaron **CLOSED — APROBADAS** e integradas por PR #4 en `0c84890c2b2802ce013e486f42ca08db056cd930`. F15 consolidó la documentación y el diferencial focal `NEW_REGRESSIONS=0` en la rama `codex/f15-consolidation` y queda **READY_FOR_COMMIT**. F16 es la siguiente fase aprobada, con diseño preliminar documentado y sin implementación.
 
 Orden aprobado:
 
@@ -65,6 +66,9 @@ Orden aprobado:
 2. **F14.2 — CLOSED — APROBADA**: política durable auto/manual verificada con pruebas automáticas y smoke humano Windows con ComfyUI real; no se observó doble submit ni paralelismo indebido.
 3. **F14.3 — CLOSED — APROBADA**: implementación publicada en `4f1bd9320c005ef9dc0ac89855f10abc3f529681`; pruebas automáticas y diferencial aprobados (`NEW_REGRESSIONS=0`) y smoke humano Windows aprobado. La evidencia detallada permanece en [TESTING.md](TESTING.md).
 4. **F14.4 — CLOSED — APROBADA**: regresión integrada F14.1–F14.3 sin regresiones nuevas y smoke real Windows/ComfyUI aprobado; evidencia y clasificación de deuda histórica en [TESTING.md](TESTING.md).
+
+5. **F15 — READY_FOR_COMMIT**: consolidación de F11.6A–C después de PR #4, corrección de estado documental, clasificación diferencial de los 19 incidentes y regresión reproducible. El dictamen y sus límites están en [TESTING.md](TESTING.md); el diseño preliminar F16 está en [F16_LIBRARY_DESIGN.md](F16_LIBRARY_DESIGN.md).
+6. **F16 — ORDEN APROBADO; NO IMPLEMENTADA**: F16.0 investigación y diseño; F16.1 biblioteca local de imágenes de referencia; F16.2 biblioteca local de prompts individuales; F16.3 integración GUI y validación. Las decisiones pendientes del dueño del producto están enumeradas en [F16_LIBRARY_DESIGN.md](F16_LIBRARY_DESIGN.md).
 
 **F14 — CLOSED — APROBADO.** Al cerrar F14, F11.6 quedó planificada sin iniciar. Luego se autorizó F11.6A, cerrada en el commit local indicado arriba, y la tarea actual autorizó F11.6B. No se agregaron características dentro del alcance F14.
 
