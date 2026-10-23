@@ -1,19 +1,25 @@
-# CODEX_TASK — frontera F14 / F11.6
+# CODEX_TASK — frontera F11.6C
 
-## Estado vigente
+## Cierres previos
 
-- **F14.4 — CLOSED — APROBADA.**
-- **F14 — CLOSED — APROBADO.**
-- Baseline de código validado: `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
-- Baterías focales: **303 ejecuciones, 302 OK, 1 skip, 0 FAIL/ERROR**.
-- Regresión integrada F14.1–F14.3: **301 tests, 300 OK, 1 skip, 0 FAIL/ERROR**.
-- Suite completa canónica: **816 tests, 8 FAIL, 6 ERROR, 2 skips**. Las 14 incidencias son deuda histórica conocida y no hubo regresiones nuevas.
-- El smoke integrado real con ComfyUI fue aprobado; el MP4 final se reprodujo completo y la persona confirmó **VIDEO OK**.
+- **F14.4 — CLOSED — APROBADA**; baseline validado `ea2d50deeb59f185fddeee142e4feb39e6f2b258`.
+- **F11.6A — CLOSED — APROBADA** en `a69c65cb28a07a15933830763ac40677afa01b5d`, rama `codex/f11-6a-results`.
+- **F11.6B — CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`, rama `codex/f11-6b-library-scroll-navigation`. Marcos aprobó su validación humana Windows 5/5 el 2026-10-22.
 
-La evidencia, el tratamiento de la primera corrida inválida de `git archive` y los detalles del smoke permanecen en `TESTING.md`.
+## Tarea explícita actual
 
-## Próxima etapa y frontera de autorización
+Completar la auditoría final de **F11.6C — recuperación durable de videos finales históricos** en `codex/f11-6c-historical-final-video`, derivada del commit F11.6B indicado arriba. La implementación está lista y Marcos aprobó tanto la recuperación real del caso como su validación humana Windows el 2026-10-22.
 
-**F11.6 — PLANNED — NO INICIADA — NO AUTORIZADA.** Es la próxima etapa planificada después del cierre de F14, pero esta frontera no autoriza iniciarla. Esperar una nueva tarea explícita antes de inspección orientada a implementación, modificación de archivos, ejecución de pruebas de F11.6 o preparación de publicación.
+El alcance habilita una acción explícita «Generar video final histórico» para una ejecución durable `succeeded` sin AssemblyAttempt, si y sólo si todos sus chunks exitosos, artifacts, transiciones y archivos son inequívocos y válidos. Reutiliza la finalización F14.3, publica bajo el proyecto sin solicitar destino y mantiene sin cambios el estado `succeeded` de Execution y QueueItem. La apertura desde Biblioteca nunca inicia FFmpeg.
 
-No queda una tarea activa de implementación F14. No iniciar F11.6 ni inferir autorización a partir de este estado documental.
+Se bloquea la generación cuando la ejecución está activa, fallida, incompleta, ambigua, carece de procedencia o existe el destino final sin evidencia durable. El video final sólo queda disponible después de guardar AssemblyAttempt exitoso con hash y firma FFprobe. Los fallos e interrupciones deben conservar datos y permitir recuperación segura sólo si la evidencia sigue coincidiendo.
+
+Caso real ya recuperado con autorización de Marcos, no usar como fixture: proyecto `f241170c`, ejecución `77267374-1393-43bd-9c9d-08b8d3d57409`.
+
+## Frontera vigente
+
+- No repetir la recuperación real ni modificar la SQLite, los MP4 o la evidencia del proyecto indicado. La auditoría final puede leer esa ejecución con SQLite `mode=ro`/`PRAGMA query_only=ON`, calcular hashes y ejecutar FFprobe.
+- Las pruebas automatizadas F11.6C usan exclusivamente fixtures aisladas.
+- No ejecutar generaciones ComfyUI ni FFmpeg de ensamblado; no alterar la generación, la cola, exports manuales o ensamblado F14.3 fuera de la integración ya auditada.
+- Detenerse antes del commit; no hacer push, merge, tag ni release.
+- No utilizar ChatGPT–Codex Bridge.

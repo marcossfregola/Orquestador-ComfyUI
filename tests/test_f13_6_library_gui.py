@@ -751,6 +751,185 @@ class F136QtLibraryTests(unittest.TestCase):
                 self.assertIsNotNone(layout.itemAtPosition(row, 3).widget())
                 self.assertIsNotNone(layout.itemAtPosition(row, 4).widget())
 
+    def _add_scroll_projects(self, count=30):
+        defaults = {
+            "profile_ref": "minimax-h3-ui",
+            "initial_image": "inputs/start.png",
+            "references": ["inputs/reference.png"],
+            "prompts": ["one", "two"],
+            "chunk_count": 2,
+        }
+        for index in range(count):
+            self.drafts.create(
+                f"scroll-project-{index:02}",
+                execution_id=f"scroll-execution-{index:02}",
+                defaults=defaults,
+                chunks=[{"prompt": "one"}, {"prompt": "two"}],
+            )
+
+    def test_execution_list_wheel_stays_inside_at_both_scroll_limits(self):
+        from PySide6.QtCore import QPoint, QPointF, Qt
+        from PySide6.QtGui import QWheelEvent
+        from PySide6.QtWidgets import QApplication
+
+        self._add_scroll_projects()
+        panel = self.window.library_panel
+        self.window.resize(1000, 400)
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+        panel.refresh()
+        self.wait_for_worker()
+        self.app.processEvents()
+
+        outer = panel.scroll_area.verticalScrollBar()
+        inner = panel.execution_list.verticalScrollBar()
+        self.assertGreater(outer.maximum(), 0)
+        self.assertGreater(inner.maximum(), 0)
+        panel.execution_list.setCurrentRow(0)
+        selected = panel._current_execution()
+        outer.setValue(min(100, outer.maximum()))
+
+        def send_wheel(target, delta, position=None):
+            position = target.rect().center() if position is None else position
+            event = QWheelEvent(
+                QPointF(position),
+                QPointF(target.mapToGlobal(position)),
+                QPoint(),
+                QPoint(0, delta),
+                Qt.NoButton,
+                Qt.NoModifier,
+                Qt.ScrollUpdate,
+                False,
+            )
+            QApplication.sendEvent(target, event)
+            self.app.processEvents()
+            return event
+
+        inner.setValue(inner.minimum())
+        outer_before = outer.value()
+        at_minimum = send_wheel(panel.execution_list.viewport(), 120)
+        self.assertEqual(inner.value(), inner.minimum())
+        self.assertEqual(outer.value(), outer_before)
+        self.assertTrue(at_minimum.isAccepted())
+
+        inner.setValue(inner.minimum() + 1)
+        inner_before = inner.value()
+        send_wheel(panel.execution_list.viewport(), -120)
+        self.assertGreater(inner.value(), inner_before)
+        self.assertEqual(outer.value(), outer_before)
+
+        inner.setValue(inner.maximum())
+        at_maximum = send_wheel(panel.execution_list.viewport(), -120)
+        self.assertEqual(inner.value(), inner.maximum())
+        self.assertEqual(outer.value(), outer_before)
+        self.assertEqual(panel._current_execution(), selected)
+        self.assertTrue(at_maximum.isAccepted())
+
+        outer.setValue(min(100, outer.maximum() - 1))
+        outer_before = outer.value()
+        outside_position = panel.selection_context.mapTo(
+            panel.scroll_area.viewport(), panel.selection_context.rect().center()
+        )
+        outside = send_wheel(
+            panel.scroll_area.viewport(), -120, outside_position
+        )
+        self.assertGreater(outer.value(), outer_before)
+        self.assertTrue(outside.isAccepted())
+
+    def test_opening_and_returning_to_library_preserves_scroll_selection_and_keyboard_use(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QGroupBox
+
+        self._add_scroll_projects()
+        panel = self.window.library_panel
+        self.window.resize(1000, 400)
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+        panel.refresh()
+        self.wait_for_worker()
+        self.app.processEvents()
+
+        outer = panel.scroll_area.verticalScrollBar()
+        self.assertGreater(outer.maximum(), 0)
+        project_group = next(
+            group for group in panel.findChildren(QGroupBox)
+            if group.title() == "Proyectos y ejecuciones"
+        )
+        group_top = project_group.mapTo(panel.scroll_area.viewport(), QPoint(0, 0)).y()
+        self.assertGreaterEqual(group_top, 0)
+        self.assertLess(group_top, panel.scroll_area.viewport().height())
+        self.assertEqual(outer.value(), 0)
+
+        panel.execution_list.setFocus(Qt.OtherFocusReason)
+        panel.execution_list.setCurrentRow(0)
+        QTest.keyClick(panel.execution_list, Qt.Key_Down)
+        self.assertEqual(panel.execution_list.currentRow(), 1)
+
+        selected_item = self.select_execution("visible-project", self.draft.execution_id)
+        panel.execution_list.scrollToItem(selected_item)
+        outer.setValue(min(80, outer.maximum()))
+        self.app.processEvents()
+        expected_scroll = outer.value()
+        self.assertGreater(expected_scroll, 0)
+        expected_group_top = project_group.mapTo(
+            panel.scroll_area.viewport(), QPoint(0, 0)
+        ).y()
+        position = panel.execution_list.visualItemRect(selected_item).center()
+        QTest.mouseClick(
+            panel.execution_list.viewport(),
+            Qt.LeftButton,
+            Qt.NoModifier,
+            position,
+        )
+        QTest.mouseDClick(
+            panel.execution_list.viewport(),
+            Qt.LeftButton,
+            Qt.NoModifier,
+            position,
+        )
+        self.wait_for_worker()
+        self.assertEqual(self.window.tabs.currentIndex(), 0)
+        self.assertEqual(outer.value(), expected_scroll)
+        self.assertEqual(self.window.execution.text(), self.draft.execution_id)
+
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.app.processEvents()
+        self.assertEqual(outer.value(), expected_scroll)
+        selection = panel._current_execution()
+        self.assertEqual(selection.project_id, "visible-project")
+        self.assertEqual(selection.execution_id, self.draft.execution_id)
+        group_top = project_group.mapTo(panel.scroll_area.viewport(), QPoint(0, 0)).y()
+        self.assertEqual(group_top, expected_group_top)
+
+    def test_library_refresh_preserves_scroll_and_selected_project(self):
+        self._add_scroll_projects()
+        panel = self.window.library_panel
+        self.window.resize(1000, 400)
+        self.window.show()
+        self.window.tabs.setCurrentIndex(self.window.library_tab_index)
+        self.wait_for_worker()
+        panel.refresh()
+        self.wait_for_worker()
+        self.app.processEvents()
+
+        self.select_execution("visible-project", self.draft.execution_id)
+        outer = panel.scroll_area.verticalScrollBar()
+        expected_scroll = min(80, outer.maximum())
+        outer.setValue(expected_scroll)
+        selected = panel._current_execution()
+        panel.execution_list.setFocus()
+        panel.refresh()
+        self.wait_for_worker()
+        self.app.processEvents()
+
+        self.assertEqual(outer.value(), min(expected_scroll, outer.maximum()))
+        actual = panel._current_execution()
+        self.assertEqual(actual.project_id, selected.project_id)
+        self.assertEqual(actual.execution_id, selected.execution_id)
+
     def test_library_wheel_requires_explicit_click_before_mutating_spinbox(self):
         from PySide6.QtCore import QPoint, QPointF, Qt
         from PySide6.QtGui import QWheelEvent

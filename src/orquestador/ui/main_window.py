@@ -5,12 +5,32 @@ from uuid import UUID, uuid4
 from pathlib import Path
 QThread = import_module("PySide6.QtCore").QThread
 _widgets = import_module("PySide6.QtWidgets")
-QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QPushButton,QLabel,QListWidget,QTextEdit,QFileDialog,QComboBox,QSpinBox,QDoubleSpinBox,QCheckBox,QTabWidget,QGridLayout = (_widgets.QMainWindow,_widgets.QWidget,_widgets.QVBoxLayout,_widgets.QHBoxLayout,_widgets.QLineEdit,_widgets.QPushButton,_widgets.QLabel,_widgets.QListWidget,_widgets.QTextEdit,_widgets.QFileDialog,_widgets.QComboBox,_widgets.QSpinBox,_widgets.QDoubleSpinBox,_widgets.QCheckBox,_widgets.QTabWidget,_widgets.QGridLayout)
-_gui=import_module("PySide6.QtGui"); QPixmap = _gui.QPixmap; QCursor = _gui.QCursor
+QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QPushButton,QLabel,QListWidget,QTextEdit,QFileDialog,QComboBox,QSpinBox,QDoubleSpinBox,QCheckBox,QTabWidget,QGridLayout,QStyledItemDelegate,QStyleOptionViewItem,QStyle = (_widgets.QMainWindow,_widgets.QWidget,_widgets.QVBoxLayout,_widgets.QHBoxLayout,_widgets.QLineEdit,_widgets.QPushButton,_widgets.QLabel,_widgets.QListWidget,_widgets.QTextEdit,_widgets.QFileDialog,_widgets.QComboBox,_widgets.QSpinBox,_widgets.QDoubleSpinBox,_widgets.QCheckBox,_widgets.QTabWidget,_widgets.QGridLayout,_widgets.QStyledItemDelegate,_widgets.QStyleOptionViewItem,_widgets.QStyle)
+_gui=import_module("PySide6.QtGui"); QPixmap = _gui.QPixmap; QCursor = _gui.QCursor; QDesktopServices = _gui.QDesktopServices
 QImage=_gui.QImage
-_core=import_module("PySide6.QtCore"); QRect=_core.QRect; Qt=_core.Qt; Slot=_core.Slot; QTimer=_core.QTimer
+_core=import_module("PySide6.QtCore"); QRect=_core.QRect; Qt=_core.Qt; Slot=_core.Slot; QTimer=_core.QTimer; QProcess=_core.QProcess; QUrl=_core.QUrl
 QDialog,QDialogButtonBox,QScrollArea,QRubberBand,QFrame,QGroupBox,QFormLayout = _widgets.QDialog,_widgets.QDialogButtonBox,_widgets.QScrollArea,_widgets.QRubberBand,_widgets.QFrame,_widgets.QGroupBox,_widgets.QFormLayout
-QSizePolicy = _widgets.QSizePolicy
+QSizePolicy = _widgets.QSizePolicy; QListWidgetItem=_widgets.QListWidgetItem
+
+class _ChunkResultDelegate(QStyledItemDelegate):
+    """Keep item data accessible without painting it beneath the custom row."""
+
+    def _style_option(self, option, index):
+        styled=QStyleOptionViewItem(option)
+        self.initStyleOption(styled,index)
+        view=self.parent()
+        if view is not None and view.indexWidget(index) is not None:
+            styled.text=""
+        return styled
+
+    def paint(self,painter,option,index):
+        view=self.parent()
+        if view is None or view.indexWidget(index) is None:
+            return super().paint(painter,option,index)
+        styled=self._style_option(option,index)
+        style=styled.widget.style() if styled.widget is not None else _widgets.QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem,styled,painter,styled.widget)
+
 # Compact reference preview bounding box, shared by the label geometry and
 # the rendered pixmap so the effective preview cannot silently shrink.
 REFERENCE_PREVIEW_WIDTH, REFERENCE_PREVIEW_HEIGHT = 220, 150
@@ -159,9 +179,21 @@ class MainWindow(QMainWindow):
         library_page=QWidget(); self.library_tab_index=self.tabs.addTab(library_page,"Biblioteca"); library_layout=QVBoxLayout(library_page); self.library_panel=PreparationLibraryPanel(self.facade,self._run,library_page); library_layout.addWidget(self.library_panel)
         queue_page=QWidget(); self.queue_tab_index=self.tabs.addTab(queue_page,"Cola"); queue_layout=QVBoxLayout(queue_page); self.queue_panel=QueuePanel(self.facade,self._run,queue_page); queue_layout.addWidget(self.queue_panel)
         acts=QHBoxLayout(); self.preferences=QPushButton("Preferences…"); self.preferences.clicked.connect(self._preferences); self.enqueue=QPushButton("Agregar a cola"); self.enqueue.setObjectName("enqueueExecution"); self.start=QPushButton("Start chain"); self.resume=QPushButton("Resume / Recover"); self.retry=QPushButton("Retry"); self.cancel=QPushButton("Cancel pending"); self.retry_assembly=QPushButton("Retry assembly"); self.retry_assembly.setObjectName("retryAssembly"); self.assemble=QPushButton("Assemble MP4"); [acts.addWidget(x) for x in (self.preferences,self.enqueue,self.start,self.resume,self.retry,self.cancel,self.retry_assembly,self.assemble)]; lay.addLayout(acts)
-        self.status=QLabel("Ready"); self.status.setObjectName("durableStatus"); lay.addWidget(self.status); self.paths=QLabel("Chunks/intermediates/results: not loaded"); self.paths.setObjectName("resultPaths"); self.paths.setWordWrap(True); lay.addWidget(self.paths); self.assembly_status=QLabel("Final assembly: none"); self.assembly_status.setObjectName("assemblyStatus"); self.assembly_status.setWordWrap(True); lay.addWidget(self.assembly_status); self.chunks=QListWidget(); self.chunks.setObjectName("chunkResults"); lay.addWidget(self.chunks); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
+        self.status=QLabel("Ready"); self.status.setObjectName("durableStatus"); lay.addWidget(self.status)
+        self.results_group=QGroupBox("Resultados"); self.results_group.setObjectName("executionResults"); results_layout=QVBoxLayout(self.results_group)
+        final_row=QHBoxLayout(); self.final_result_status=QLabel("Abrí una ejecución para consultar sus resultados."); self.final_result_status.setObjectName("finalResultStatus"); self.final_result_status.setWordWrap(True); final_row.addWidget(self.final_result_status,1)
+        self.open_final_result=QPushButton("Abrir video final"); self.open_final_result.setObjectName("openFinalResult"); self.open_final_result.setEnabled(False)
+        self.show_final_result_in_folder=QPushButton("Mostrar en carpeta"); self.show_final_result_in_folder.setObjectName("showFinalResultInFolder"); self.show_final_result_in_folder.setEnabled(False)
+        self.generate_historical_final=QPushButton("Generar video final histórico"); self.generate_historical_final.setObjectName("generateHistoricalFinal"); self.generate_historical_final.setVisible(False); self.generate_historical_final.setEnabled(False)
+        final_row.addWidget(self.generate_historical_final); final_row.addWidget(self.open_final_result); final_row.addWidget(self.show_final_result_in_folder); results_layout.addLayout(final_row)
+        results_layout.addWidget(QLabel("Chunks")); self.chunks=QListWidget(); self.chunks.setObjectName("chunkResults"); self.chunks.setItemDelegate(_ChunkResultDelegate(self.chunks)); self.chunks.setMinimumHeight(96); results_layout.addWidget(self.chunks)
+        self.result_action_status=QLabel(""); self.result_action_status.setObjectName("resultActionStatus"); self.result_action_status.setWordWrap(True); results_layout.addWidget(self.result_action_status)
+        lay.addWidget(self.results_group)
+        self.paths=QLabel("Chunks/intermediates/results: not loaded"); self.paths.setObjectName("resultPaths"); self.paths.setWordWrap(True); lay.addWidget(self.paths); self.assembly_status=QLabel("Final assembly: none"); self.assembly_status.setObjectName("assemblyStatus"); self.assembly_status.setWordWrap(True); lay.addWidget(self.assembly_status); self.log=QTextEdit(); self.log.setReadOnly(True); lay.addWidget(self.log)
+        self._result_generation=0; self._final_result_path=None; self._chunk_result_paths={}
         self.initial_confirmation=QLabel("Initial image: empty — choose a file"); self.initial_confirmation.setObjectName("initialImagePreview"); lay.insertWidget(1,self.initial_confirmation)
-        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.enqueue.clicked.connect(self._enqueue_current); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(self._retry_execution); self.cancel.clicked.connect(self._cancel_pending); self.retry_assembly.clicked.connect(self._retry_assembly); self.assemble.clicked.connect(self._assemble); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self.enqueue.setEnabled(False); self._update_resume_recover()
+        self.initial_button.clicked.connect(self._choose_initial); self.chunk_count.valueChanged.connect(lambda _ : (self._invalidate(), self._sync_prompt_visibility())); self.add_chunk_button.clicked.connect(self._add_chunk_control); self.remove_chunk_button.clicked.connect(self._remove_chunk_control); [w.textChanged.connect(self._invalidate) for w in (self.project,self.execution,self.initial)]; self.project.textChanged.connect(self._project_selection_changed); self.project.editingFinished.connect(self._load_project); self.initial.textChanged.connect(self._update_initial_preview); [w.textChanged.connect(self._invalidate) for w in self.prompts]; [w.valueChanged.connect(self._general_value_changed) for w in (self.megapixels,self.length,self.steps,self.fps)]; self.ref_image_size.currentTextChanged.connect(self._general_value_changed); self.also_ref_first_frame.toggled.connect(self._general_value_changed); self.references.itemChanged.connect(lambda item: (self._update_reference_labels(), self._invalidate())); self.preflight.clicked.connect(self._preflight); self.prepare.clicked.connect(self._prepare); self.enqueue.clicked.connect(self._enqueue_current); self.start.clicked.connect(self._start_chain); self.resume.clicked.connect(self._resume_or_recover); self.retry.clicked.connect(self._retry_execution); self.cancel.clicked.connect(self._cancel_pending); self.retry_assembly.clicked.connect(self._retry_assembly); self.assemble.clicked.connect(self._assemble); self.open_final_result.clicked.connect(self._open_final_result); self.show_final_result_in_folder.clicked.connect(self._show_final_result_in_folder); self.tabs.currentChanged.connect(self._tab_changed); self._sync_prompt_visibility(); self.start.setEnabled(False); self.enqueue.setEnabled(False); self._update_resume_recover()
+        self.generate_historical_final.clicked.connect(self._generate_historical_final)
         self.move_up_button.clicked.connect(lambda:self._move_sequence(-1)); self.move_down_button.clicked.connect(lambda:self._move_sequence(1)); self.duplicate_button.clicked.connect(self._duplicate_sequence); self.chunk_tabs.currentChanged.connect(lambda i: (self._show_provenance(), self._update_sequence_controls()))
         self.set_override_button.clicked.connect(self._set_override); self.clear_override_button.clicked.connect(lambda _=False: self._clear_override()); self.chunks.currentRowChanged.connect(lambda i: self.chunk_tabs.setCurrentIndex(i))
         self._prompt_timer=QTimer(self); self._prompt_timer.setSingleShot(True); self._prompt_timer.setInterval(400); self._prompt_timer.timeout.connect(self._flush_prompt); self._prompt_dirty=None; self._pending_action=None; self._continuation=None
@@ -293,6 +325,151 @@ class MainWindow(QMainWindow):
         detail=getattr(result,"detail",None)
         if isinstance(detail,dict): self.provenance.setText(" | ".join(f"{k}={v['value']} ({v['source']})" for k,v in detail.items()))
     def refresh(self): self.render(self.facade.refresh())
+    def _project_selection_changed(self, value):
+        snapshot = self._last_snapshot
+        current = str(getattr(snapshot, "project_id", "") or "") if snapshot is not None else ""
+        if str(value or "").strip() != current:
+            self._clear_results("Cargando resultados de la nueva selección…")
+    def _clear_results(self, message="Sin resultados cargados"):
+        self._result_generation += 1
+        self._final_result_path = None
+        self._chunk_result_paths = {}
+        self.open_final_result.setEnabled(False)
+        self.show_final_result_in_folder.setEnabled(False)
+        self.generate_historical_final.setEnabled(False)
+        self.generate_historical_final.setVisible(False)
+        self.open_final_result.setToolTip("")
+        self.show_final_result_in_folder.setToolTip("")
+        self.final_result_status.setText(message)
+        self.result_action_status.clear()
+        self.chunks.clear()
+    def _render_results(self, snapshot):
+        self._clear_results("Esta ejecución todavía no tiene un video final disponible.")
+        generation = self._result_generation
+        can_generate_historical=bool(getattr(snapshot,"can_generate_historical_final",False))
+        self.generate_historical_final.setVisible(can_generate_historical)
+        self.generate_historical_final.setEnabled(can_generate_historical and not self._busy)
+        self.generate_historical_final.setToolTip(
+            "Generar y registrar el MP4 final durable de esta ejecución histórica; no ejecuta ComfyUI."
+            if can_generate_historical else ""
+        )
+        final = getattr(snapshot, "final_result", None)
+        if final is not None and getattr(final, "available", False):
+            self._final_result_path = str(final.path)
+            self.final_result_status.setText("Video final disponible: " + self._final_result_path)
+            self.open_final_result.setEnabled(True)
+            self.show_final_result_in_folder.setEnabled(True)
+            self.open_final_result.setToolTip(self._final_result_path)
+            self.show_final_result_in_folder.setToolTip(self._final_result_path)
+        elif final is not None and getattr(final, "message", ""):
+            self.final_result_status.setText(str(final.message))
+        elif getattr(snapshot, "state", "") in {"unavailable", "new", "error"}:
+            self.final_result_status.setText("Abrí una ejecución desde Biblioteca para consultar resultados.")
+
+        chunks = tuple(getattr(snapshot, "chunks", ()) or ())
+        if not chunks:
+            empty = QListWidgetItem("No hay chunks en esta ejecución.")
+            empty.setFlags(Qt.NoItemFlags)
+            self.chunks.addItem(empty)
+            return
+        for index, chunk in enumerate(chunks):
+            order = int(getattr(chunk, "order", index))
+            state = str(getattr(chunk, "state", "desconocido"))
+            access = getattr(chunk, "resolved_output", None)
+            available = access is not None and getattr(access, "available", False)
+            if available:
+                self._chunk_result_paths[index] = str(access.path)
+                attempt = getattr(access, "attempt_number", None)
+                availability = "Disponible" + (f" (intento {attempt})" if attempt is not None else "")
+            else:
+                availability = str(getattr(access, "message", "") or "Sin output exitoso disponible.")
+            legacy_text = (
+                f"Chunk {order+1} (order {order+1}): {state}"
+                + (f" [{chunk.attempt_ref}]" if getattr(chunk, "attempt_ref", None) else "")
+                + (f" error={chunk.error}" if getattr(chunk, "error", None) else "")
+                + (f" output={chunk.output}" if getattr(chunk, "output", None) else "")
+                + (f" transition={chunk.transition}" if getattr(chunk, "transition", None) else "")
+            )
+            item = QListWidgetItem(legacy_text)
+            self.chunks.addItem(item)
+            row = QWidget(self.chunks)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(4, 1, 4, 1)
+            label = QLabel(f"Chunk {order+1} · Estado: {state} · {availability}", row)
+            label.setWordWrap(True)
+            row_layout.addWidget(label, 1)
+            button = QPushButton("Abrir", row)
+            button.setObjectName(f"chunkOpenButton{index+1}")
+            button.setEnabled(bool(available))
+            if available:
+                button.setToolTip(str(access.path))
+                button.clicked.connect(
+                    lambda _checked=False, row_index=index, result_generation=generation:
+                        self._open_chunk_result(row_index, result_generation)
+                )
+            else:
+                button.setToolTip(availability)
+            row_layout.addWidget(button)
+            self.chunks.setItemWidget(item, row)
+            item.setSizeHint(row.sizeHint())
+    def _record_result_action_error(self, message):
+        self.result_action_status.setText(message)
+        self.status.setText(message)
+        self.log.append(message)
+    @staticmethod
+    def _existing_result_path(path):
+        try:
+            candidate = Path(path)
+            return candidate if candidate.is_file() and candidate.stat().st_size > 0 else None
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return None
+    def _open_result_path(self, path, description):
+        candidate = self._existing_result_path(path)
+        if candidate is None:
+            message = f"El archivo de {description} ya no está disponible. Actualizá la ejecución para revisar su estado."
+            if description == "el video final":
+                self.final_result_status.setText(message)
+            self._record_result_action_error(message)
+            return False
+        try:
+            opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(candidate)))
+        except Exception as exc:
+            opened = False
+            message = f"No se pudo abrir {description}: {exc}"
+        else:
+            message = f"Windows no pudo abrir {description} con la aplicación predeterminada."
+        if not opened:
+            self._record_result_action_error(message)
+            return False
+        return True
+    def _open_final_result(self):
+        if self._final_result_path:
+            self._open_result_path(self._final_result_path, "el video final")
+    def _open_chunk_result(self, index, generation):
+        if generation != self._result_generation:
+            return
+        path = self._chunk_result_paths.get(index)
+        if path:
+            self._open_result_path(path, f"el chunk {index+1}")
+    def _show_final_result_in_folder(self):
+        if not self._final_result_path:
+            return
+        candidate = self._existing_result_path(self._final_result_path)
+        if candidate is None:
+            message = "El archivo del video final ya no está disponible. Actualizá la ejecución para revisar su estado."
+            self.final_result_status.setText(message)
+            self._record_result_action_error(message)
+            return
+        try:
+            started = QProcess.startDetached("explorer.exe", [f"/select,{candidate}"])
+            success = bool(started[0]) if isinstance(started, tuple) else bool(started)
+        except Exception as exc:
+            success = False
+            message = f"No se pudo mostrar el video final en el Explorador: {exc}"
+        else:
+            message = "Windows no pudo abrir el Explorador para mostrar el video final."
+        if not success:
+            self._record_result_action_error(message)
     def _inputs(self):
         self._ensure_prompt_count(); prompts=[self.prompts[i].toPlainText() for i in range(self.chunk_count.value())]
         refs=[self.references.item(i).text().strip() for i in range(min(6,self.references.count())) if self.references.item(i) and self.references.item(i).text().strip()]
@@ -600,7 +777,7 @@ class MainWindow(QMainWindow):
             self.execution.setText(s.execution_id)
         self.execution_number.setText(f"Execution {s.execution_number}" if s.execution_number is not None else "Execution: assigned automatically")
         self._update_current_context(s)
-        self.status.setText(s.state + (": "+"; ".join(s.errors) if s.errors else "")); self.chunks.clear(); self._sequence_ids=[c.chunk_id for c in s.chunks];
+        self.status.setText(s.state + (": "+"; ".join(s.errors) if s.errors else "")); self._sequence_ids=[c.chunk_id for c in s.chunks];
         if self._sequence_ids:
             self.chunk_count.blockSignals(True); self.chunk_count.setValue(max(2,len(self._sequence_ids))); self.chunk_count.blockSignals(False)
             self._drafts=[ChunkDraft(draft_id=str(c.chunk_id) if c.chunk_id else uuid4().hex, prompt=str(getattr(c,"prompt","") or ""), overrides=dict(getattr(c,"overrides",()) or ())) for c in s.chunks]
@@ -615,7 +792,6 @@ class MainWindow(QMainWindow):
             self.chunk_tabs.blockSignals(True); self.chunk_tabs.setCurrentIndex(target_index); self.chunk_tabs.blockSignals(False)
         else:
             self._ensure_prompt_count()
-        [self.chunks.addItem(f"Chunk {c.order+1} (order {c.order+1}): {c.state}" + (f" [{c.attempt_ref}]" if c.attempt_ref else "") + (f" error={c.error}" if c.error else "") + (f" output={c.output}" if c.output else "") + (f" transition={c.transition}" if c.transition else "")) for c in s.chunks];
         # An explicitly empty reference_slots is authoritative: clear any
         # references from the previously rendered snapshot.  Objects that do
         # not expose reference_slots have no authority over this GUI state.
@@ -653,6 +829,9 @@ class MainWindow(QMainWindow):
         try: artifacts = tuple(s.artifacts or ())
         except TypeError: artifacts = ()
         self.paths.setText("Chunks/intermediates/results: " + ("; ".join(artifacts) if artifacts else "none published yet"))
+        self._render_results(s)
+        if previous_selected_id in self._sequence_ids:
+            self.chunks.setCurrentRow(self._sequence_ids.index(previous_selected_id))
         self._update_edit_controls()
         self._update_read_only_notice()
         self._update_sequence_controls()
@@ -660,6 +839,17 @@ class MainWindow(QMainWindow):
         self._update_start()
     def _run(self,op,kind="other"):
         if self._busy: return
+        if self.tabs.currentIndex() == getattr(self, "library_tab_index", -1):
+            focus = _widgets.QApplication.focusWidget()
+            scroll_area = self.library_panel.scroll_area
+            if focus is not None and scroll_area.isAncestorOf(focus):
+                # Disabling the focused library control makes Qt walk focus
+                # through the remaining controls. QScrollArea then scrolls
+                # each newly focused child into view. Move focus outside the
+                # scroll area before marking the panel busy.
+                self.tabs.tabBar().setFocus(Qt.OtherFocusReason)
+        if kind in {"library_open", "library_create_draft", "library_clone", "queue_select", "load_project"}:
+            self._clear_results("Cargando resultados de la nueva selección…")
         self._operation_kind=kind; self._busy=True; self._set_enabled(False)
         # Keep the QThread owned by the GUI window.  It is deliberately not
         # deleted from ``QThread.finished``: on Windows that teardown can race
@@ -713,6 +903,8 @@ class MainWindow(QMainWindow):
                 # Never keep a PreparedIdentity from a prior selection alive.
                 self._prepared_identity=None; self._prepared_key=None; self._prepared_selection=None
                 self.render(r.snapshot)
+                if self._operation_kind == "queue_select":
+                    self.tabs.setCurrentIndex(0)
             if r.success and self._operation_kind in {"queue_enqueue", "queue_start"}:
                 self.tabs.setCurrentIndex(self.queue_tab_index)
             if not r.success:
@@ -720,6 +912,8 @@ class MainWindow(QMainWindow):
             return
         if isinstance(r, LibraryOperationResult):
             self.library_panel.handle_result(r)
+            if r.success and self._operation_kind == "library_open":
+                self.tabs.setCurrentIndex(0)
             if r.success and self._operation_kind == "library_project_delete":
                 deleted_project = str(r.detail or "")
                 self._project_display_names.pop(deleted_project, None)
@@ -860,6 +1054,9 @@ class MainWindow(QMainWindow):
                         restore.setEnabled(editable)
         self._update_sequence_controls()
     def _set_enabled(self,v):
+        self.generate_historical_final.setEnabled(
+            v and bool(getattr(self._last_snapshot,"can_generate_historical_final",False))
+        )
         [x.setEnabled(v) for x in (self.preflight,self.prepare,self.enqueue,self.start,self.retry,self.cancel,self.retry_assembly,self.assemble,self.add_chunk_button,self.remove_chunk_button,self.move_up_button,self.move_down_button,self.duplicate_button,self.set_override_button,self.clear_override_button)]
         self.project.setEnabled(v)
         self._update_edit_controls()
@@ -878,6 +1075,10 @@ class MainWindow(QMainWindow):
         project_id=self.project.text().strip(); execution_id=self.execution.text().strip()
         if project_id and execution_id:
             self._run(lambda:self.facade.retry_assembly(project_id,execution_id),"retry_assembly")
+    def _generate_historical_final(self):
+        project_id=self.project.text().strip(); execution_id=self.execution.text().strip()
+        if project_id and execution_id:
+            self._run(lambda:self.facade.generate_historical_video(project_id,execution_id),"historical_assembly")
     def _preferences(self):
         PreferencesDialog(self).exec()
     def closeEvent(self,e):

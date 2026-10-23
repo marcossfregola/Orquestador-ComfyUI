@@ -122,13 +122,17 @@ class FinalizeExecutionUseCase:
                 digest.update(block)
         return digest.hexdigest()
 
-    def _source_manifest(self,execution):
+    def _source_manifest(self,execution,*,require_exact_transitions=False):
         if len(execution.chunks)<2 or any(chunk.state.value!='succeeded' for chunk in execution.chunks):
             raise AssemblyError('every execution chunk must be successful before final assembly')
         try:
             transitions=tuple(self.repository.load_transitions(execution.id))
         except Exception as exc:
             raise AssemblyError(f'durable chunk transitions are unavailable: {exc}') from exc
+        # Each successful chunk persists one checkpoint. Intermediate
+        # checkpoints target the next chunk; the final checkpoint is targetless.
+        if require_exact_transitions and len(transitions)!=len(execution.chunks):
+            raise AssemblyError('durable continuity transition set is missing or ambiguous')
         entries=[]; paths=[]
         for order,chunk in enumerate(execution.chunks):
             if chunk.order!=order or str(chunk.execution_id)!=str(execution.id): raise AssemblyError('chunk order or ownership is inconsistent')
@@ -156,6 +160,25 @@ class FinalizeExecutionUseCase:
                         or not isinstance(transition.source_frame_index,int)
                         or transition.source_frame_index!=transition.frame_count-1):
                     raise AssemblyError(f'chunk {order} has contradictory durable continuity evidence')
+            elif require_exact_transitions:
+                terminal=[transition for transition in transitions
+                          if transition.source_chunk_id==chunk.id]
+                if len(terminal)!=1:
+                    raise AssemblyError('terminal durable transition is missing or ambiguous')
+                transition=terminal[0]
+                if (transition.project_id!=execution.project_id
+                        or transition.execution_id!=execution.id
+                        or transition.source_attempt_id!=attempt.id
+                        or transition.target_chunk_id is not None
+                        or transition.source_output!=attempt.output
+                        or isinstance(transition.frame_count,bool)
+                        or not isinstance(transition.frame_count,int)
+                        or transition.frame_count<=0
+                        or isinstance(transition.source_frame_index,bool)
+                        or not isinstance(transition.source_frame_index,int)
+                        or transition.source_frame_index!=transition.frame_count-1
+                        or transition.materialized_ref is not None):
+                    raise AssemblyError('terminal durable transition evidence is contradictory')
             path=self._resolve(attempt.output.uri,must_exist=True)
             entries.append(AssemblySourceEvidence(order,chunk.id,attempt.id,artifacts[0].id,attempt.output.uri,self._sha256(path)))
             paths.append(path)
@@ -175,29 +198,71 @@ class FinalizeExecutionUseCase:
         return f'.orquestador-assembly/{execution.id}/attempt-{number}.mp4'
 
     def can_retry(self,execution):
+        return self._can_retry(execution, expected_state=Lifecycle.RUNNING,
+            require_no_live_queue=False,require_exact_transitions=False)
+
+    def can_retry_historical(self,execution):
+        """Whether a failed historical final-video attempt can be retried safely."""
+        return self._can_retry(execution, expected_state=Lifecycle.SUCCEEDED,
+            require_no_live_queue=True,require_exact_transitions=True)
+
+    def _can_retry(self,execution,*,expected_state,require_no_live_queue,require_exact_transitions):
         latest=execution.latest_assembly_attempt()
         if (latest is None or latest.state is not AssemblyState.FAILED
-                or execution.state is not Lifecycle.RUNNING
+                or execution.state is not expected_state
                 or len(latest.sources)!=len(execution.chunks)
                 or not execution.chunks or any(chunk.state is not Lifecycle.SUCCEEDED for chunk in execution.chunks)):
             return False
         try:
-            sources,_=self._source_manifest(execution)
+            if require_no_live_queue and self.repository.has_live_queue_item(execution.id): return False
+            sources,_=self._source_manifest(execution,require_exact_transitions=require_exact_transitions)
             if sources!=latest.sources: return False
             destination=self._resolve(latest.destination_uri)
             if destination.exists(): return False
             self._resolve(latest.staging_uri)
             return True
-        except (OSError,ValueError,AssemblyError):
+        except Exception:
             return False
 
-    def is_durably_complete(self,execution):
+    def can_generate_historical(self,execution):
+        """Expose only legacy successes with complete, unambiguous source evidence.
+
+        A fresh historical assembly may start only when no assembly record or
+        internal destination/stage already exists. An interrupted F11.6C
+        attempt may be resumed only while its source manifest and deterministic
+        paths still match. Existing files without hash/probe evidence are never
+        adopted by name.
+        """
+        if execution.state is not Lifecycle.SUCCEEDED:
+            return False
+        latest=execution.latest_assembly_attempt()
+        if latest is not None and latest.state not in {AssemblyState.PENDING,AssemblyState.ASSEMBLING}:
+            return False
+        try:
+            if self.repository.has_live_queue_item(execution.id): return False
+            sources,_=self._source_manifest(execution,require_exact_transitions=True)
+            destination_uri=self._destination_uri(execution)
+            destination=self._resolve(destination_uri)
+            if latest is None:
+                staging=self._resolve(self._staging_uri(execution,1))
+                return not destination.exists() and not staging.exists()
+            if (latest.destination_uri!=destination_uri
+                    or latest.staging_uri!=self._staging_uri(execution,latest.number)
+                    or latest.sources!=sources):
+                return False
+            if destination.exists() and latest.expected_sha256 is None:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def is_durably_complete(self,execution,*,historical=False):
         latest=execution.latest_assembly_attempt()
         if (execution.state is not Lifecycle.SUCCEEDED or latest is None
                 or latest.state is not AssemblyState.SUCCEEDED
                 or not execution.has_valid_assembly_evidence()): return False
         try:
-            sources,_=self._source_manifest(execution)
+            sources,_=self._source_manifest(execution,require_exact_transitions=historical)
             if sources!=latest.sources: return False
             destination=self._resolve(latest.destination_uri,must_exist=True)
             digest,signature=self.assembler.inspect(destination)
@@ -206,32 +271,66 @@ class FinalizeExecutionUseCase:
             return False
 
     def execute(self,project_id,execution_id,*,queue_item_id=None,retry=False):
+        return self._execute(project_id,execution_id,queue_item_id=queue_item_id,retry=retry)
+
+    def generate_historical(self,project_id,execution_id):
+        """Explicitly assemble a legacy successful execution without reopening it."""
+        return self._execute(project_id,execution_id,historical=True)
+
+    def retry_historical(self,project_id,execution_id):
+        """Retry only a failed historical assembly, preserving terminal state."""
+        return self._execute(project_id,execution_id,historical=True,retry=True)
+
+    def _execute(self,project_id,execution_id,*,queue_item_id=None,retry=False,historical=False):
         try:
             project,execution=self._load_exact(project_id,execution_id)
-            if execution.state is not Lifecycle.RUNNING:
+            if historical:
+                if queue_item_id is not None:
+                    raise AssemblyError('historical assembly cannot claim or mutate a queue item')
+                if execution.state is not Lifecycle.SUCCEEDED:
+                    raise AssemblyError('historical assembly requires a durably succeeded execution')
+                if self.repository.has_live_queue_item(execution.id):
+                    raise AssemblyError('historical assembly is blocked by a live queue item')
+            elif execution.state is not Lifecycle.RUNNING:
                 raise AssemblyError('only a running execution can be finalized')
             if not execution.chunks or any(chunk.state is not Lifecycle.SUCCEEDED for chunk in execution.chunks):
                 raise AssemblyError('all chunks must be successful before finalization')
-            if queue_item_id is not None:
+            if historical:
+                latest=execution.latest_assembly_attempt()
+                if retry and (latest is None or latest.state is not AssemblyState.FAILED):
+                    raise AssemblyError('historical retry requires an explicit failed assembly record')
+            elif queue_item_id is not None:
                 validator=getattr(self.repository,'validate_active_queue_claim',None)
                 if not callable(validator): raise AssemblyError('active queue claim validation is unavailable')
                 validator(queue_item_id,execution.id)
-            elif self.repository.has_live_queue_item(execution.id):
+            elif not historical and self.repository.has_live_queue_item(execution.id):
                 raise AssemblyError('a live queue item owns this execution')
             destination_uri=self._destination_uri(execution)
             destination=self._resolve(destination_uri)
             latest=execution.latest_assembly_attempt()
             try:
-                sources,source_paths=self._source_manifest(execution)
+                sources,source_paths=self._source_manifest(execution,require_exact_transitions=historical)
             except Exception as exc:
                 if latest is None:
+                    if historical:
+                        return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,
+                            reason=str(exc).strip() or 'historical chunk source validation failed')
                     attempt=AssemblyAttempt(execution.id,1,AssemblyState.FAILED,destination_uri,
                         self._staging_uri(execution,1),(),error=str(exc).strip() or 'chunk source validation failed')
                     execution.assembly_attempts.append(attempt)
                     self.repository.save(project,[execution])
                     return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=attempt.error)
+                if historical and latest.state in {AssemblyState.PENDING,AssemblyState.ASSEMBLING}:
+                    return self._fail(project,execution,latest,
+                        f'historical chunk source validation failed: {str(exc).strip() or exc}')
                 raise
             if latest is None:
+                if historical:
+                    if destination.exists():
+                        raise AssemblyError('final MP4 exists without durable assembly evidence; overwrite and adoption are prohibited')
+                    initial_staging=self._resolve(self._staging_uri(execution,1))
+                    if initial_staging.exists():
+                        raise AssemblyError('historical staging MP4 exists without durable assembly evidence; overwrite is prohibited')
                 latest=AssemblyAttempt(execution.id,1,AssemblyState.PENDING,destination_uri,
                     self._staging_uri(execution,1),sources)
                 execution.assembly_attempts.append(latest)
@@ -242,12 +341,13 @@ class FinalizeExecutionUseCase:
                         return self._fail(project,execution,latest,'durable finalization provenance no longer matches completed chunks')
                     raise AssemblyError('durable finalization provenance no longer matches completed chunks')
                 if latest.state is AssemblyState.SUCCEEDED:
-                    if not self.is_durably_complete(execution): raise AssemblyError('recorded final MP4 failed provenance/hash/FFprobe validation; destination will not be overwritten')
+                    if not self.is_durably_complete(execution,historical=historical): raise AssemblyError('recorded final MP4 failed provenance/hash/FFprobe validation; destination will not be overwritten')
                     return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
                 if latest.state is AssemblyState.FAILED:
                     if not retry: return FinalizationResult(False,str(execution.id),AssemblyState.FAILED.value,reason=latest.error or 'assembly failed; explicit assembly retry is required')
                     if destination.exists(): raise AssemblyError('final MP4 destination already exists; retry will not overwrite it')
-                    if not self.can_retry(execution): raise AssemblyError('assembly retry is not safe for the current durable evidence')
+                    retryable=self.can_retry_historical(execution) if historical else self.can_retry(execution)
+                    if not retryable: raise AssemblyError('assembly retry is not safe for the current durable evidence')
                     number=latest.number+1
                     latest=AssemblyAttempt(execution.id,number,AssemblyState.PENDING,destination_uri,
                         self._staging_uri(execution,number),sources)
@@ -265,7 +365,7 @@ class FinalizeExecutionUseCase:
                 latest.transition(AssemblyState.ASSEMBLING)
                 self.repository.save(project,[execution])
             if destination.exists():
-                return self._adopt_published(project,execution,latest,destination)
+                return self._adopt_published(project,execution,latest,destination,preserve_execution_state=historical)
             if latest.expected_sha256 is not None:
                 if not staging.is_file(): return self._fail(project,execution,latest,'validated staged MP4 is missing after restart')
                 try:
@@ -284,27 +384,32 @@ class FinalizeExecutionUseCase:
             try:
                 self.assembler.publish(staging,destination,expected_sha256=latest.expected_sha256)
             except Exception as exc:
-                if destination.exists(): return self._adopt_published(project,execution,latest,destination)
+                if destination.exists():
+                    return self._adopt_published(project,execution,latest,destination,preserve_execution_state=historical)
                 return self._fail(project,execution,latest,str(exc))
-            return self._adopt_published(project,execution,latest,destination)
+            return self._adopt_published(project,execution,latest,destination,preserve_execution_state=historical)
         except Exception as exc:
             return FinalizationResult(False,str(execution_id),AssemblyState.FAILED.value,reason=str(exc))
 
     def retry(self,project_id,execution_id,*,queue_item_id=None):
-        return self.execute(project_id,execution_id,queue_item_id=queue_item_id,retry=True)
+        return self._execute(project_id,execution_id,queue_item_id=queue_item_id,retry=True)
 
-    def _adopt_published(self,project,execution,attempt,destination):
+    def _adopt_published(self,project,execution,attempt,destination,*,preserve_execution_state=False):
         if attempt.expected_sha256 is None or attempt.probe_signature is None:
             return self._fail(project,execution,attempt,'final destination exists without durable output hash/probe provenance; overwrite is prohibited')
         try:
             digest,signature=self.assembler.inspect(destination)
             if digest!=attempt.expected_sha256 or tuple(signature)!=attempt.probe_signature:
                 return self._fail(project,execution,attempt,'published MP4 failed hash/FFprobe provenance validation; overwrite is prohibited')
-            current_sources,_=self._source_manifest(execution)
+            current_sources,_=self._source_manifest(execution,require_exact_transitions=preserve_execution_state)
             if current_sources!=attempt.sources:
                 return self._fail(project,execution,attempt,'published MP4 source provenance changed during recovery')
             attempt.transition(AssemblyState.SUCCEEDED)
-            execution.transition(Lifecycle.SUCCEEDED)
+            if preserve_execution_state:
+                if execution.state is not Lifecycle.SUCCEEDED:
+                    raise AssemblyError('historical execution lifecycle changed during assembly recovery')
+            else:
+                execution.transition(Lifecycle.SUCCEEDED)
             self.repository.save(project,[execution])
             return FinalizationResult(True,str(execution.id),AssemblyState.SUCCEEDED.value,destination)
         except Exception as exc:
