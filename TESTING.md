@@ -6,7 +6,7 @@
 - `python -B -m compileall -q src tests` y `git diff --check`: código 0.
 - Diferencial con baseline limpio 7dba957e80bea0bac514fb00830dafe2d3f20471 y la rama modificada: mismo comando python -B -m unittest tests.test_f11_5_operations tests.test_f13_6_library_gui tests.test_f14_3_final_assembly -q, Python 3.13.14, Qt offscreen y temporales aislados. Se ejecutó fuera del sandbox porque las ACL owner-only que tempfile.TemporaryDirectory crea impedían escribir fixtures con WinError 5. Baseline: 42 tests, 2 fallos: F11.5 test_id_first_recovery_completes_chunk_one_then_submits_chunk_two_once (API template integrity mismatch en el artefacto de perfil del checkout limpio) y F13.6 test_offscreen_wiring_selection_editability_clone_and_saved_configuration (la aserción espera Proyecto: visible-project, pero la fila muestra visible-project · Borrador editable). Rama modificada: 42 tests, sólo el mismo fallo F13.6. De los 11 fallos observados inicialmente en sandbox, los 10 os.link con WinError 5 desaparecen al ejecutar la misma suite con permisos de filesystem suficientes; no pertenecen al diff. La discrepancia F11.5 aparece sólo en baseline y el perfil no forma parte del diff. NEW_REGRESSIONS=0.
 - Preflight read-only de la base actual: 29 proyectos, 18 ejecuciones succeeded y 2 ensamblados exitosos más recientes. Los 2 archivos finales y sus 7/7 fuentes existen bajo la raíz del proyecto y sus hashes coinciden con la evidencia durable. La cola contiene 17 items finished y ninguno queued/active. La comprobación no escribió SQLite ni outputs.
-- **Validación humana Windows — aprobada por Marcos (2026-10-22, confirmación del usuario):** abrió el MP4 final; abrió chunks individuales; mostró el archivo en Explorador; cambió a otro proyecto y confirmó que no persistieron resultados anteriores. Las cuatro comprobaciones fueron satisfactorias. No se ejecutaron nuevas generaciones ComfyUI para esta validación. F11.6A quedó cerrada en el commit local `a69c65cb28a07a15933830763ac40677afa01b5d`.
+- **Validación humana Windows — aprobada por Marcos (2026-10-22, confirmación del usuario):** abrió el MP4 final; abrió chunks individuales; mostró el archivo en Explorador; cambió a otro proyecto y confirmó que no persistieron resultados anteriores. Las cuatro comprobaciones fueron satisfactorias. No se ejecutaron nuevas generaciones ComfyUI para esta validación. F11.6A cerró en `a69c65cb28a07a15933830763ac40677afa01b5d` y quedó integrada por PR #4 en `0c84890c2b2802ce013e486f42ca08db056cd930`.
 
 ## F11.6B — Scroll y navegación de Biblioteca (2026-10-22)
 
@@ -20,7 +20,7 @@
 - Regresión `tests.test_f11_6a_results`: **15 tests, 14 OK y 1 skip**. `test_symlink_escape_is_rejected_when_windows_allows_symlink_creation` se omite porque el usuario de Windows carece del privilegio de creación de symlink (WinError 1314). No se ejecutaron nuevas generaciones ComfyUI.
 - Las fixtures temporales recibieron WinError 5 dentro del sandbox al crear directorios en `C:\Codex\Orquestador-Test-Temp`; se repitieron las pruebas autorizadas fuera del sandbox y terminaron con los resultados anteriores. La omisión WinError 1314 es un privilegio Windows distinto y permanece explícita.
 - **Validación humana Windows — APROBADA por Marcos el 2026-10-22 (confirmación del usuario): 5/5.** Verificados: scroll de la lista detenido en su límite inferior; scroll detenido en su límite superior; scroll exterior funcionando normalmente; ausencia de salto al regresar desde Principal; conservación de la posición vertical y la selección al cambiar de pestañas. No se repitió esta validación.
-- **Estado:** comprobaciones automatizadas y humanas completas; **CLOSED — APROBADA** en el commit local `16c91f653f56438bd563a5fc2e88639865bf3518`; validación humana Windows 5/5 aprobada por Marcos el 2026-10-22.
+- **Estado:** comprobaciones automatizadas y humanas completas; **CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`; integrada por PR #4 en `0c84890c2b2802ce013e486f42ca08db056cd930`. Validación humana Windows 5/5 aprobada por Marcos el 2026-10-22.
 
 ## F11.6C — Recuperación de video final histórico (2026-10-22)
 
@@ -41,7 +41,7 @@
 - Aislamiento del flujo F14.3: dos tests focales reutilizados (`test_chunks_do_not_finish_queue_item_until_validated_final_exists` y `test_assembly_failure_keeps_chunks_and_retry_does_not_recreate_attempts`) se intentaron de nuevo sin FFmpeg real. Con el tempfile predeterminado, SQLite temporal no pudo abrirse (WinError 5); con `tempfile.tempdir='.'`, ambos llegaron a publicación y fallaron únicamente porque el sandbox denegó `os.link` entre los archivos fixture (WinError 5). La restricción coincide con los fallos de publicación sintética ya registrados; no se modificó código ni se ejecutó fuera del sandbox. Se conserva el resultado previo de esos guards: 2/2 OK fuera del sandbox.
 - Segunda recuperación histórica real, proyecto `653ba785`, ejecución `6a57ffd9-d7d2-402e-b2c0-3108897ee0fd`: Marcos confirmó que «Abrir video final» quedó habilitado, que el MP4 unificado abrió y reprodujo correctamente y que pudo continuar usando la aplicación. La consulta durable de sólo lectura (`mode=ro`, `PRAGMA query_only=ON`, timeout 500 ms) encontró un único `AssemblyAttempt #1 succeeded`, destino `assembled-6a57ffd9-d7d2-402e-b2c0-3108897ee0fd.mp4`, con cinco fuentes vinculadas a sus cinco chunks/artifacts originales. El hash calculado coincide con el registrado (`a9c64198c6f35a798ce6aff278b141d7a4a0332711a4b4a48aaffda0d0c5ca71`). FFprobe coincide con la firma durable: H.264/avc1 High, 704×896, yuv420p, 24/1 fps, time base 1/12288, sin audio. `Execution` continúa `succeeded`, QueueItem `abb21166-571a-44e8-8395-241501cbc32c` continúa `finished`; los cinco chunks conservan un único Attempt exitoso cada uno y sus outputs/artifacts siguen presentes. El destino y el staging (`.orquestador-assembly/6a57ffd9-d7d2-402e-b2c0-3108897ee0fd/attempt-1.mp4`) son el mismo archivo publicado. Esta auditoría sólo leyó SQLite/archivos y ejecutó hash y FFprobe; no ejecutó FFmpeg ni ComfyUI ni escribió los datos.
 - Incidente observado durante esa segunda recuperación: Marcos reportó «Orquestador (No responde)» mientras la interfaz aún mostraba la acción histórica y el panel «Operation completed». En la inspección posterior el AssemblyAttempt ya figuraba exitoso y el MP4 publicado existía con evidencia durable. No se encontró un proceso coincidente en la sesión de inspección; Windows denegó la consulta CIM de línea de comandos/parentesco y no había log persistente de aplicación disponible. El texto del panel es genérico y no tiene timestamp, por lo que no se pudo correlacionar con certeza ni demostrar la causa del episodio. La revisión del flujo encontró el ensamblado delegado a `QThread`; no se reprodujo un bloqueo ni se implementó una optimización basada en hipótesis. Tras el incidente, Marcos confirmó que el resultado abre/reproduce correctamente y que la aplicación continúa funcionando normalmente. Se registra como observación aislada no reproducida, no como defecto confirmado.
-- **Estado:** F11.6C está **READY_FOR_COMMIT**, sin commit. F11.6A y F11.6B conservan sus cierres aprobados; F11.6 sigue abierta.
+- **Estado:** F11.6C está **CLOSED — APROBADA** en `a6cb9688e93a8d82e6adb522100a3f9cccd0af57` y quedó integrada mediante PR #4 en `0c84890c2b2802ce013e486f42ca08db056cd930`. F11.6A–C están cerradas; las tres confirmaciones y el merge forman la baseline consolidada de F15.
 
 ## Evidencia verificada de F2 (task 026)
 
@@ -707,3 +707,107 @@ La etiqueta visible de cada fila deja de anteponer `Proyecto:`. Cuando un proyec
 Se agregaron pruebas Qt focales para el orden A→Z/Z→A, conservación del criterio tras refresh/rename y la presentación condicional de números de ejecución. En este cierre no se registra una nueva corrida automática independiente porque no se recibió su salida textual como evidencia; la cobertura queda versionada en el repositorio.
 
 Validación humana Windows separada: **APROBADA por el usuario** sobre la rama de trabajo. Se verificó visualmente la presentación simplificada y el comportamiento de orden de proyectos. No se ejecutó ComfyUI ni generación de video como parte de esta mejora visual.
+
+## F15 — Consolidación y baseline posterior a PR #4 (2026-10-23)
+
+### Estado de entrada y cierre documental
+
+- Estado inicial verificado: rama `main`; `HEAD`, `refs/heads/main` y `refs/remotes/origin/main` coincidían en `0c84890c2b2802ce013e486f42ca08db056cd930`. La consulta de sólo lectura `git ls-remote origin refs/heads/main` confirmó el mismo SHA remoto. Índice, worktree y rutas no ignoradas estaban limpios.
+- La rama independiente `codex/f15-consolidation` parte del merge PR #4 `0c84890c2b2802ce013e486f42ca08db056cd930`. F11.6A–C cerraron respectivamente en `a69c65cb28a07a15933830763ac40677afa01b5d`, `16c91f653f56438bd563a5fc2e88639865bf3518` y `a6cb9688e93a8d82e6adb522100a3f9cccd0af57`.
+- La inspección corrigió el estado vivo de F11.6C en `STATUS.md`, `ROADMAP.md`, `TESTING.md` y el registro obsoleto `CODEX_TASK.md`. Las notas históricas de F14 se conservaron como historia. No se cambiaron código, pruebas, schema ni comportamiento funcional.
+
+### Regresión reproducible
+
+Entorno: Windows, Python **3.13.14**, PySide6 **6.11.1**, Qt offscreen. Se aisló el almacenamiento temporal en `C:\Codex\Orquestador-Test-Temp\f15-20261023-elevated`; el log completo quedó en `f15-full-suite-20261023.log` dentro de esa carpeta.
+
+```powershell
+$env:PYTHONPATH = 'src'
+$env:QT_QPA_PLATFORM = 'offscreen'
+$env:ORQ_TEST_TMP = 'C:\Codex\Orquestador-Test-Temp\f15-20261023-elevated'
+$env:TEMP = $env:ORQ_TEST_TMP
+$env:TMP = $env:ORQ_TEST_TMP
+python -B -m unittest discover -s tests -v
+```
+
+Resultado: **858 tests en 90.862 s; 836 OK, 13 FAIL, 6 ERROR y 3 skips**. La suite no queda globalmente verde.
+
+Resultados focales que contienen F11.6 y sus dependencias directas dentro de esa corrida:
+
+- F11.6A Results: **14 OK, 1 skip de 15**.
+- F11.6B scroll/navegación: sus tres pruebas focales pasan dentro de F13.6; la suite F13.6 queda **16 OK, 1 fallo de 17**.
+- F11.6C recuperación histórica: **16/16 OK**.
+- F11.5 operaciones: **16/16 OK**; F13.10 Queue GUI: **8/8 OK**; F14.3 ensamblado: **12/12 OK**.
+
+### Deuda y atribución
+
+- **Diferencial focal por identificador exacto:** se usó el padre limpio pre-PR #4 `7dba957e80bea0bac514fb00830dafe2d3f20471` (`improve Library project sorting and labels`), primer padre del merge actual y ancestro inmediato de PR #4. La copia de fuentes exacta se generó con `git archive --format=tar 7dba957e80bea0bac514fb00830dafe2d3f20471 | tar -xf - -C C:\Codex\Orquestador-Test-Temp\f15-pr4-parent-7dba957`; los mismos 19 casos se ejecutaron, en el mismo orden, tanto allí como en F15, con Python 3.13.14, PySide6 6.11.1, Qt offscreen, temporales frescos y los mismos permisos Windows. No se repitió la suite completa sobre el baseline. Baseline focal: **19 tests, 9 FAIL, 6 ERROR, 4 OK**. F15 focal: **19 tests, 13 FAIL, 6 ERROR, 0 OK**. El baseline F14.4 continúa siendo la referencia histórica de **816 tests, 8 FAIL, 6 ERROR y 2 skips**, pero sus totales no se comparan directamente con F15 porque cambió el conjunto de pruebas.
+
+Comando reproducible para ambos árboles (ejecutado fuera del sandbox por las ACL owner-only de fixtures temporales; cambiar el directorio actual y `ORQ_TEST_TMP` por el árbol/temporal indicado):
+
+```powershell
+$cases = @(
+  'tests.test_f10_gui_preparation.F10GuiMatrixTests.test_architecture_boundaries_and_real_defaults',
+  'tests.test_f10_gui_preparation.F10GuiMatrixTests.test_fast_e2e_flag_uses_copy_without_persisting_defaults',
+  'tests.test_f10_gui_preparation.F10GuiMatrixTests.test_real_chain_cross_chunk_composition',
+  'tests.test_f10_gui_preparation.F10GuiMatrixTests.test_six_refs_order_and_ref6_unbound',
+  'tests.test_f10_gui_preparation.F10GuiMatrixTests.test_start_overrides_and_zero_chain_calls_on_failures',
+  'tests.test_f11_4_human_validation_corrections.F114HumanValidationCorrections.test_f11_5_smoke_capability_gating_and_worker_boundary',
+  'tests.test_f11_4_mainwindow_acceptance.MainWindowF114AcceptanceTests.test_add_button_dispatches_exactly_once_for_prepared_sequence',
+  'tests.test_f11_4_mainwindow_acceptance.MainWindowF114AcceptanceTests.test_prompt_identity_survives_reorder_duplicate_remove_and_reopen',
+  'tests.test_f11_4_mainwindow_acceptance.MainWindowF114AcceptanceTests.test_references_have_dedicated_tab_grid_and_controls_below',
+  'tests.test_f11_4_mainwindow_acceptance.MainWindowF114AcceptanceTests.test_remove_button_dispatches_once_and_respects_floor',
+  'tests.test_f13_6_library_gui.F136QtLibraryTests.test_offscreen_wiring_selection_editability_clone_and_saved_configuration',
+  'tests.test_f2_r5b_atomicity_imports.ImportAuditTests.test_production_imports_are_stdlib_or_local',
+  'tests.test_f9_composition.CompositionTests.test_snapshot_missing_fails_closed',
+  'tests.test_f11_1b_gui_preparation.F111BGuiPreparationTests.test_real_worker_start_uses_worker_local_sqlite_repository',
+  'tests.test_f11_2a_visual_preparation.F112AVisualPreparationTests.test_crop_destination_uses_configured_root_when_cwd_changes',
+  'tests.test_f11_2a_visual_preparation.F112AVisualPreparationTests.test_empty_and_reference_cardinality_and_order_operations',
+  'tests.test_f11_2a_visual_preparation.F112AVisualPreparationTests.test_initial_preview_identifiable_and_parameters_passed_unchanged',
+  'tests.test_f11_4_mainwindow_acceptance.MainWindowF114AcceptanceTests.test_render_snapshot_without_reference_authority_preserves_existing_state',
+  'tests.test_f2_r5b_atomicity_imports.MigrationAtomicityTests.test_failing_future_migration_rolls_back_everything'
+)
+$env:PYTHONPATH = 'src'
+$env:QT_QPA_PLATFORM = 'offscreen'
+# Padre limpio: C:\Codex\Orquestador-Test-Temp\f15-pr4-parent-7dba957\run-logged
+# Rama F15:     C:\Codex\Orquestador-Test-Temp\f15-current-focused-19
+$env:ORQ_TEST_TMP = 'C:\Codex\Orquestador-Test-Temp\f15-pr4-parent-7dba957\run-logged'
+$env:TEMP = $env:ORQ_TEST_TMP
+$env:TMP = $env:ORQ_TEST_TMP
+python -B -m unittest -v $cases
+```
+
+| Incidente F15 | Baseline 7dba957 → F15 | Clasificación y evidencia |
+|---|---:|---|
+| F10 `test_architecture_boundaries_and_real_defaults` | OK → FAIL | **Introducido por cambio legítimo de contrato.** F11.6C añadió al tooltip la frase explicativa `no ejecuta ComfyUI`; la prueba rechaza cualquier aparición léxica de `ComfyUI` en `main_window.py`. El diff agrega esa cadena, no una dependencia ni una llamada de ejecución. |
+| F10 `test_fast_e2e_flag_uses_copy_without_persisting_defaults` | FAIL → FAIL | **Histórico demostrado.** El mismo ID falla en el padre pre-PR #4. |
+| F10 `test_real_chain_cross_chunk_composition` | FAIL → FAIL | **Histórico demostrado.** El mismo ID falla en el padre pre-PR #4. |
+| F10 `test_six_refs_order_and_ref6_unbound` | FAIL → FAIL | **Histórico demostrado.** El mismo ID falla en el padre pre-PR #4. |
+| F10 `test_start_overrides_and_zero_chain_calls_on_failures` | FAIL → FAIL | **Histórico demostrado.** El mismo ID falla en el padre pre-PR #4. |
+| F11.5 `test_f11_5_smoke_capability_gating_and_worker_boundary` | FAIL → FAIL | **Histórico demostrado.** El mismo ID falla en el padre pre-PR #4. |
+| F11.4 `test_add_button_dispatches_exactly_once_for_prepared_sequence` | OK → FAIL | **Introducido por cambio legítimo de contrato.** Al actualizar la lista Results, la sincronización de selección refresca procedencia dos veces. `read_provenance` es una lectura: `EditChunkSequenceUseCase` retorna antes de `save_preparation_sequence`; la operación `add` sigue siendo única. La aserción histórica cuenta también lecturas de fachada. |
+| F11.4 `test_prompt_identity_survives_reorder_duplicate_remove_and_reopen` | OK → FAIL | **Introducido por cambio legítimo de contrato.** La lista Results sincroniza la selección del chunk y refresca procedencia; el caso no produce una escritura por edición de prompt. El spy histórico esperaba una lista vacía de toda llamada, incluidas lecturas. |
+| F11.4 `test_references_have_dedicated_tab_grid_and_controls_below` | FAIL → FAIL | **Histórico demostrado.** La pestaña `Cola` ya existe en el padre pre-PR #4; la aserción sólo espera cuatro pestañas. |
+| F11.4 `test_remove_button_dispatches_once_and_respects_floor` | OK → FAIL | **Introducido por cambio legítimo de contrato.** La operación `remove` sigue siendo única; la sincronización de Results agrega una lectura `read_provenance`, que retorna sin persistir. |
+| F13.6 `test_offscreen_wiring_selection_editability_clone_and_saved_configuration` | FAIL → FAIL | **Histórico demostrado.** Persiste el mismatch de etiqueta documentado: expectativa `Proyecto: visible-project`, actual `visible-project · Borrador editable`. |
+| F2 `test_production_imports_are_stdlib_or_local` | FAIL → FAIL | **Histórico demostrado.** El mismo chequeo detecta `PySide6` en el padre pre-PR #4. |
+| F9 `test_snapshot_missing_fails_closed` | FAIL → FAIL | **Histórico demostrado.** Devuelve `new` en vez de `error`, igual que en el padre y en registros históricos. |
+| F11.1B `test_real_worker_start_uses_worker_local_sqlite_repository` | ERROR → ERROR | **Histórico demostrado.** La fixture `ControlledChain` no admite el argumento `finalizer`, también en el padre. |
+| F11.2A `test_crop_destination_uses_configured_root_when_cwd_changes` | ERROR → ERROR | **Histórico demostrado.** La fixture entrega `Mock` como `project_id`; `QLineEdit.setText` lo rechaza en ambos árboles. |
+| F11.2A `test_empty_and_reference_cardinality_and_order_operations` | ERROR → ERROR | **Histórico demostrado.** La fixture entrega `Mock` como `project_id`; `QLineEdit.setText` lo rechaza en ambos árboles. |
+| F11.2A `test_initial_preview_identifiable_and_parameters_passed_unchanged` | ERROR → ERROR | **Histórico demostrado.** La fixture entrega `Mock` como `project_id`; `QLineEdit.setText` lo rechaza en ambos árboles. |
+| F11.4 `test_render_snapshot_without_reference_authority_preserves_existing_state` | ERROR → ERROR | **Histórico demostrado.** `NoReferenceAuthority` no declara `project_id`; el mismo acceso falla en el padre. |
+| F2 `test_failing_future_migration_rolls_back_everything` | ERROR → ERROR | **Histórico demostrado.** La fixture de migración alcanza `duplicate column name: execution_number` en ambos árboles. |
+
+El comparativo no encontró IDs actuales sin contraparte ni errores nuevos: **`NEW_REGRESSIONS=0`**. Cuatro aserciones que pasan en el padre fallan en F15; las cuatro diferencias tienen causa directa en cambios de interfaz integrados por PR #4 y no demuestran una regresión funcional: una es un falso positivo léxico del tooltip y tres contabilizan una consulta de procedencia de sólo lectura. No se alteraron pruebas ni aserciones. No queda ningún caso de los 19 como regresión potencial o sin atribución; la suite completa sigue roja por deuda histórica.
+
+- **Omisiones de privilegio Windows:** tres pruebas de symlink quedaron skip por WinError 1314: `test_invalid_crop_collision_and_root_escape_rejected`, `test_symlink_escape_is_rejected_when_windows_allows_symlink_creation` y `test_broken_or_escaping_symlink_fails_closed_when_supported`. No equivalen a fallos funcionales.
+- Logs conservados: `C:\Codex\Orquestador-Test-Temp\f15-20261023-elevated\f15-full-suite-20261023.log`, `C:\Codex\Orquestador-Test-Temp\f15-pr4-parent-7dba957\focused-19.log` y `C:\Codex\Orquestador-Test-Temp\f15-current-focused-19.log`.
+- Un primer intento dentro del sandbox registró **12 FAIL y 457 ERROR de 858** por WinError 5 al crear/restaurar ACL de directorios temporales. No se cuenta como baseline válido. La misma batería, comando y configuración se repitió fuera del sandbox usando un directorio temporal nuevo; el resultado válido es el indicado arriba.
+
+La suite utilizó bases y archivos sintéticos temporales; las pruebas focales de ensamblado pueden usar FFmpeg/FFprobe sobre fixtures. No se abrió ni modificó la SQLite de usuario, no se usó ComfyUI para generar contenido y no se leyeron ni modificaron videos reales. La prueba F11.6A que crea symlink fue omitida por privilegios Windows.
+
+### Dictamen
+
+**F15 — READY_FOR_COMMIT.** Baseline de código consolidada en `0c84890c2b2802ce013e486f42ca08db056cd930`; los cambios de esta rama son documentales. La suite completa permanece roja por deuda histórica, con diferencial focal `NEW_REGRESSIONS=0`. F16 queda preparada documentalmente en [F16_LIBRARY_DESIGN.md](F16_LIBRARY_DESIGN.md), sin implementación ni decisiones de producto adoptadas.
+
+- **Finales de línea:** Git de sistema tiene `core.autocrlf=true` y no hay atributos `text/eol` específicos para estos archivos. `git ls-files --eol` muestra `BACKLOG.md`, `CODEX_TASK.md` y `F16_LIBRARY_DESIGN.md` como `i/lf w/crlf`, y `ROADMAP.md`, `STATUS.md` y `TESTING.md` como mixtos. El `git diff --cached --check` predeterminado señaló retornos CR al final de líneas; `git -c core.whitespace=cr-at-eol diff --cached --check` pasó, sin otros espacios finales. No se normalizaron finales ni se cambió la configuración persistente.

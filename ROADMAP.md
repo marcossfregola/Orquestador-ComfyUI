@@ -14,7 +14,7 @@ Este documento contiene trabajo decidido. Las ideas no comprometidas pertenecen 
 - F11.3 configuración H3 ampliada: **CLOSED**.
 - F11.4 editor de chunks: **CLOSED**.
 - F11.5 operación, recovery y resultados: **CLOSED**.
-- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **CLOSED — APROBADA** en `a69c65cb28a07a15933830763ac40677afa01b5d`; F11.6B, scroll y navegación de Biblioteca, está **CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`, con validación humana Windows 5/5. F11.6C implementa la generación explícita y durable de videos finales para ejecuciones históricas exitosas, sin regenerar chunks ni reabrir el ciclo de vida. Tras corregir la primera validación visual fallida, Marcos aprobó la interfaz y la recuperación real de `f241170c`; la auditoría durable de sólo lectura confirmó un intento exitoso, hash/FFprobe coincidentes, cinco chunks preservados y cero attempts de generación nuevos. F11.6C está **READY_FOR_COMMIT**, todavía sin commit; F11.6 sigue abierta.
+- F11.6 pulido UX: F11.6A, acceso directo a resultados, está **CLOSED — APROBADA** en `a69c65cb28a07a15933830763ac40677afa01b5d`; F11.6B, scroll y navegación de Biblioteca, está **CLOSED — APROBADA** en `16c91f653f56438bd563a5fc2e88639865bf3518`, con validación humana Windows 5/5; y F11.6C, recuperación durable de videos históricos, está **CLOSED — APROBADA** en `a6cb9688e93a8d82e6adb522100a3f9cccd0af57`. Las tres slices se integraron mediante PR #4 en `0c84890c2b2802ce013e486f42ca08db056cd930`. F11.6C conserva la recuperación real aprobada de `f241170c`, con hash/FFprobe coincidentes, cinco chunks preservados y cero attempts de generación nuevos. Evidencia: [TESTING.md](TESTING.md).
 
 ## F12 — first frame como referencia primaria
 
@@ -289,6 +289,25 @@ La regresión cubrió migraciones hasta schema 10, nombres durables, rename/clon
 
 **Fuera de F14:** F11.6 visual, nuevos modelos/workflows, IA, cloud, multi-GPU, búsqueda/etiquetas avanzadas y cualquier feature no necesaria para cerrar los tres huecos funcionales anteriores. Al cerrar F14, F11.6 seguía sin iniciar; la tarea posterior autorizó únicamente F11.6A.
 
+
+## F15 — Consolidación y baseline posterior a PR #4
+
+**Estado:** **READY_FOR_COMMIT** en `codex/f15-consolidation`; baseline verificado: merge PR #4 `0c84890c2b2802ce013e486f42ca08db056cd930`.
+
+F15 cierra documentalmente F11.6A–C, registra sus tres commits y el merge, clasifica la deuda histórica de pruebas y establece una regresión reproducible de la versión integrada. No incluye refactors generales, cambios funcionales, migraciones, acceso de escritura a SQLite de usuario, generación ComfyUI ni edición de videos reales. La evidencia actual, los resultados y las omisiones están en [TESTING.md](TESTING.md).
+
+La preparación F16 de F15 es documental y preliminar. No inicia la implementación F16.
+
+## F16 — Bibliotecas locales de recursos
+
+**Orden aprobado; implementación no iniciada.** Alcance inicial:
+
+- **F16.0 — Investigación y diseño de bibliotecas.** Reutilización del modelo de proyectos, importación actual de inputs, distinción entre prompts individuales y Chunk Templates, persistencia, integridad, deduplicación, miniaturas, selección en borradores y compatibilidad H3. El diseño de entrada está en [F16_LIBRARY_DESIGN.md](F16_LIBRARY_DESIGN.md); alternativas que requieren decisión del dueño siguen abiertas.
+- **F16.1 — Biblioteca local de imágenes de referencia.** Alcance detallado sujeto a decisiones de F16.0.
+- **F16.2 — Biblioteca local de prompts individuales.** Cada prompt es un recurso individual; no sustituye ni modifica las plantillas ordenadas de varios chunks de F13.5.
+- **F16.3 — Integración GUI y validación.** Incorporación de recursos seleccionados a borradores editables, pruebas automatizadas y validación humana según el contrato aprobado.
+
+No comenzar F16.1–F16.3 ni adoptar decisiones abiertas de almacenamiento/eliminación hasta una nueva autorización posterior a la auditoría F15.
 
 ## Regla de avance
 
